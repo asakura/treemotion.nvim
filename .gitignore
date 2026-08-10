@@ -1,2 +1,6 @@
-.dependencies/
 /result
+/.luarc.json
+/.busted
+/luacov.stats.out
+/luacov.report.out
+/luacov_html
