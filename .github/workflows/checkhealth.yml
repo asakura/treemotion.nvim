@@ -27,7 +27,7 @@ jobs:
           # `vim.treesitter` and nothing else.
           #
           - neovim: v0.10.0
-            checks: "plugin_template provider.* vim.lsp vim.treesitter"
+            checks: "treemotion provider.* vim.lsp vim.treesitter"
             core_checks: "nvim"
 
           # NOTE: On 0.11+ the core check is `vim.health` and the providers were
@@ -35,10 +35,10 @@ jobs:
           # 0.12-or-newer.
           #
           - neovim: stable
-            checks: "plugin_template vim.deprecated vim.lsp vim.pack vim.provider vim.treesitter"
+            checks: "treemotion vim.deprecated vim.lsp vim.pack vim.provider vim.treesitter"
             core_checks: "vim.health"
           - neovim: nightly
-            checks: "plugin_template vim.deprecated vim.lsp vim.pack vim.provider vim.treesitter"
+            checks: "treemotion vim.deprecated vim.lsp vim.pack vim.provider vim.treesitter"
             core_checks: "vim.health"
 
     runs-on: ${{ matrix.os }}
