@@ -7,9 +7,23 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
     branches:
     - main
+    paths: &paths
+      - 'doc/**'
+      - 'lua/**'
+      - 'plugin/**'
+      - 'scripts/**'
+      - 'spec/**'
+      - 'CHANGELOG.md'
+      - 'README.md'
+      - '.github/workflows/urlchecker.yml'
   push:
     branches:
       - main
+    paths: *paths
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   urlchecker:
@@ -18,6 +32,12 @@ jobs:
     steps:
     - name: Checkout
       uses: actions/checkout@v6
+
+    - name: Cache pip
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/pip
+        key: pip-urlchecker
 
     - name: Install urlchecker
       run: |
@@ -72,7 +92,7 @@ jobs:
       run: |
         urlchecker check \
           --branch main \
-          --subfolder scripts \
+          --subfolder spec \
           --no-print \
           --file-types .json,.lua,.md,.txt,.vim,.yml \
           --retry-count 1 \
@@ -85,7 +105,7 @@ jobs:
         urlchecker check \
           --branch main \
           --subfolder . \
-          --exclude-patterns "https://github.com/ColinKennedy/nvim-best-practices-plugin-template/compare/v" \
+          --exclude-patterns "https://github.com/asakura/treemotion.nvim/compare/v" \
           --files CHANGELOG.md \
           --no-print \
           --file-types .json,.lua,.md,.txt,.vim,.yml \
