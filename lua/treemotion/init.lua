@@ -16,7 +16,17 @@ local M = {}
 
 configuration.initialize_data_if_needed()
 
--- TODO: (you) - Change this file to whatever you need. These are just examples
+--- Configure `treemotion`, e.g. from a plugin manager's `opts` table.
+---
+--- This is separate from `vim.g.treemotion_configuration` so that plugin
+--- managers using the `opts = {...}` convention (which calls this function
+--- after `treemotion` has already loaded) still work as expected.
+---
+---@param opts treemotion.Configuration? Extra customizations for this plugin.
+---
+function M.setup(opts)
+    configuration.merge_data(opts)
+end
 
 --- Print the `names`.
 ---
