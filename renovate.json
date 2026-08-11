@@ -9,8 +9,8 @@
   "customManagers": [
     {
       "customType": "regex",
-      "description": "Bump tag-pinned pkgs.fetchFromGitHub sources in flake.nix",
-      "managerFilePatterns": ["/(^|/)flake\\.nix$/"],
+      "description": "Bump tag-pinned pkgs.fetchFromGitHub sources in flake.nix and nix/*.nix",
+      "managerFilePatterns": ["/(^|/)(flake\\.nix|nix/[^/]+\\.nix)$/"],
       "matchStrings": [
         "owner\\s*=\\s*\"(?<owner>[^\"]+)\";\\s*repo\\s*=\\s*\"(?<repo>[^\"]+)\";\\s*rev\\s*=\\s*\"(?<currentValue>v[^\"]+)\";"
       ],
@@ -20,8 +20,8 @@
     },
     {
       "customType": "regex",
-      "description": "Bump commit-pinned pkgs.fetchFromGitHub sources in flake.nix (no tagged releases)",
-      "managerFilePatterns": ["/(^|/)flake\\.nix$/"],
+      "description": "Bump commit-pinned pkgs.fetchFromGitHub sources in flake.nix and nix/*.nix (no tagged releases)",
+      "managerFilePatterns": ["/(^|/)(flake\\.nix|nix/[^/]+\\.nix)$/"],
       "matchStrings": [
         "owner\\s*=\\s*\"(?<owner>[^\"]+)\";\\s*repo\\s*=\\s*\"(?<repo>[^\"]+)\";\\s*rev\\s*=\\s*\"(?<currentDigest>[0-9a-f]{40})\";"
       ],
