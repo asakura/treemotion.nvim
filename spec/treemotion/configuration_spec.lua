@@ -169,6 +169,7 @@ describe("health.check", function()
                 goodnight_moon = { read = { phrase = 123 } },
                 hello_world = { say = { ["repeat"] = "aaa", style = 789 } },
             },
+            hints = "diagonal",
             logging = {
                 level = false,
                 use_console = "aaa",
@@ -182,6 +183,7 @@ describe("health.check", function()
             "commands.goodnight_moon.read.phrase: expected string, got number",
             "commands.hello_world.say.repeat: expected a number (value must be 1-or-more), got aaa",
             'commands.hello_world.say.style: expected "lowercase" or "uppercase", got 789',
+            'hints: expected "word_boundaries" or "motions" or "none", got diagonal',
             "logging.level: expected an enum. "
                 .. 'e.g. "trace" | "debug" | "info" | "warning" | "error" | "fatal", got false',
             "logging.use_console: expected a boolean, got aaa",
