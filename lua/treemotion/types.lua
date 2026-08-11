@@ -14,6 +14,15 @@
 ---@field logging treemotion.LoggingConfiguration?
 ---    Control how and which logs print to file / Neovim.
 
+---@class treemotion.ResolvedConfiguration : treemotion.Configuration
+---    `treemotion.Configuration` after the plugin's defaults have been merged
+---    in (see `configuration._DEFAULTS`). Unlike `treemotion.Configuration`,
+---    which may be a partial user override (e.g. `vim.g.treemotion_configuration`),
+---    every field here is guaranteed to be present.
+---@field logging treemotion.LoggingConfiguration
+---    Control how and which logs print to file / Neovim. Always present,
+---    though its own `use_console` / `use_file` fields may both be `false`.
+
 ---@alias treemotion.HintKind "word_boundaries" | "motions" | "none"
 
 ---@class treemotion.ConfigurationCommands
@@ -30,18 +39,11 @@
 
 ---@class treemotion.LoggingConfiguration
 ---    Control whether or not logging is printed to the console or to disk.
----@field level (
----    | "trace"
----    | "debug"
----    | "info"
----    | "warn" | "error"
----    | "fatal"
----    | vim.log.levels.DEBUG
----    | vim.log.levels.ERROR
----    | vim.log.levels.INFO
----    | vim.log.levels.TRACE
----    | vim.log.levels.WARN)?
----    Any messages above this level will be logged.
+---@field level ("trace" | "debug" | "info" | "warning" | "error" | "fatal")?
+---    Any messages above this level will be logged. Only these string values
+---    are accepted -- unlike Neovim's own `vim.log.levels.*`, `mega.logging`
+---    (which this field is passed into) does not handle numeric levels
+---    correctly, so they are intentionally not part of this type.
 ---@field use_console boolean?
 ---    Should print the output to neovim while running. Warning: This is very
 ---    spammy. You probably don't want to enable this unless you have to.
