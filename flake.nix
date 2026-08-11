@@ -151,6 +151,7 @@
           mdformat
           nixfmt
           miniserve
+          statix
         ];
 
         neovimRuntime = "${pkgs.neovim-unwrapped}/share/nvim/runtime";
