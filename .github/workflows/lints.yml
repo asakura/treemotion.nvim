@@ -1,0 +1,76 @@
+name: Lints
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    branches:
+    - main
+    paths: &paths
+      - 'lua/**'
+      - 'plugin/**'
+      - 'scripts/**'
+      - 'spec/**'
+      - 'flake.nix'
+      - 'flake.lock'
+      - '.luacov'
+      - '.luacheckrc'
+      - '.stylua.toml'
+      - 'README.md'
+      - 'markdown/**'
+      - '.github/workflows/lints.yml'
+  push:
+    branches:
+      - main
+    paths: *paths
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@main
+
+      - name: Cache Nix Store
+        uses: DeterminateSystems/magic-nix-cache-action@main
+
+      - name: Run llscheck
+        run: nix build .#checks.x86_64-linux.llscheck -L
+
+      - name: Run Luacheck
+        run: nix build .#checks.x86_64-linux.luacheck -L
+
+      - name: Run StyLua
+        run: nix build .#checks.x86_64-linux.stylua -L
+
+      - name: Run nixfmt
+        run: nix build .#checks.x86_64-linux.nixfmt -L
+
+      - name: Run mdformat
+        run: nix build .#checks.x86_64-linux.mdformat -L
+
+  coverage:
+    name: LuaCov
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@main
+
+      - name: Cache Nix Store
+        uses: DeterminateSystems/magic-nix-cache-action@main
+
+      - name: Run LuaCov
+        run: nix run .#coverage-html
+
+      - name: Enforce Minimum Coverage
+        run: nix run .#coverage-threshold
