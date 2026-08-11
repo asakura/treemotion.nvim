@@ -1,9 +1,9 @@
 --- The main file that implements `goodnight-moon count-sheep` outside of COMMAND mode.
 
-local configuration = require("plugin_template._core.configuration")
+local configuration = require("treemotion._core.configuration")
 local logging = require("mega.logging")
 
-local _LOGGER = logging.get_logger("plugin_template._commands.goodnight_moon.count_sheep")
+local _LOGGER = logging.get_logger("treemotion._commands.goodnight_moon.count_sheep")
 
 local M = {}
 
