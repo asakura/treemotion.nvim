@@ -213,7 +213,7 @@
         # real checkout (not a sandboxed copy), so writes such as `stylua`'s
         # auto-format land where the user expects them.
         mkApp =
-          name: script:
+          name: description: script:
           let
             app = pkgs.writeShellApplication {
               inherit name;
@@ -228,6 +228,7 @@
           {
             type = "app";
             program = "${app}/bin/${name}";
+            meta.description = description;
           };
 
         # `nix fmt`'s target: a single derivation whose default binary
@@ -290,28 +291,45 @@
         };
 
         apps = {
-          stylua = mkApp "stylua" "stylua lua plugin scripts spec";
-          nixfmt = mkApp "nixfmt" "nixfmt flake.nix";
-          mdformat = mkApp "mdformat" "mdformat README.md markdown/manual/docs/index.md";
-          luacheck = mkApp "luacheck" "luacheck lua plugin scripts spec";
-          llscheck = mkApp "llscheck" (llscheckScript ''"''${1:-.luarc.json}"'');
-          test = mkApp "test" "busted .";
+          stylua =
+            mkApp "stylua" "Auto-format lua/plugin/scripts/spec in place with stylua"
+              "stylua lua plugin scripts spec";
+          nixfmt = mkApp "nixfmt" "Auto-format flake.nix with nixfmt" "nixfmt flake.nix";
+          mdformat =
+            mkApp "mdformat" "Auto-format README.md and markdown/manual/docs/index.md with mdformat"
+              "mdformat README.md markdown/manual/docs/index.md";
+          luacheck =
+            mkApp "luacheck" "Lint lua/plugin/scripts/spec with luacheck"
+              "luacheck lua plugin scripts spec";
+          llscheck =
+            mkApp "llscheck" "Type-check against a .luarc.json (default: ./.luarc.json) with llscheck"
+              (llscheckScript ''"''${1:-.luarc.json}"'');
+          test = mkApp "test" "Run the busted test suite" "busted .";
 
-          api-documentation = mkApp "api-documentation" ''
-            nvim -u scripts/make_api_documentation/minimal_init.lua -l scripts/make_api_documentation/main.lua
-          '';
+          api-documentation =
+            mkApp "api-documentation"
+              "Regenerate doc/treemotion_api.txt + doc/treemotion_types.txt from LuaCATS docstrings"
+              ''
+                nvim -u scripts/make_api_documentation/minimal_init.lua -l scripts/make_api_documentation/main.lua
+              '';
 
-          coverage-html = mkApp "coverage-html" (
-            runCoverage
-            + ''
-              ${luaCoverageEnv}/bin/luacov --reporter multiple.html
-              luacov
-            ''
-          );
+          coverage-html =
+            mkApp "coverage-html" "Run busted under luacov and write an HTML coverage report to luacov_html/"
+              (
+                runCoverage
+                + ''
+                  ${luaCoverageEnv}/bin/luacov --reporter multiple.html
+                  luacov
+                ''
+              );
 
-          coverage-threshold = mkApp "coverage-threshold" checkCoverageThreshold;
+          coverage-threshold =
+            mkApp "coverage-threshold" "Check that luacov's total coverage meets the required minimum"
+              checkCoverageThreshold;
 
-          coverage-serve = mkApp "coverage-serve" "miniserve luacov_html --index index.html --port 8000";
+          coverage-serve =
+            mkApp "coverage-serve" "Serve luacov_html/ over HTTP with miniserve"
+              "miniserve luacov_html --index index.html --port 8000";
         };
 
         formatter = formatterApp;
