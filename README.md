@@ -25,7 +25,7 @@ eventual feature set.
 
 # Installation
 
-- [lazy.nvim](https://github.com/folke/lazy.nvim)
+## lazy.nvim
 
 ```lua
 {
@@ -33,6 +33,78 @@ eventual feature set.
     dependencies = { "ColinKennedy/mega.cmdparse", "ColinKennedy/mega.logging" },
     version = "v1.*",
 }
+```
+
+## Nix
+
+This flake exports `overlays.default`, which adds `treemotion.nvim` (plus its
+`mega.cmdparse`/`mega.logging` dependencies) to `pkgs.vimPlugins` as ordinary
+Neovim plugin derivations.
+
+Add it as a flake input and overlay it onto your own `nixpkgs`:
+
+```nix
+{
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    treemotion-nvim.url = "github:asakura/treemotion.nvim";
+  };
+
+  outputs =
+    { nixpkgs, treemotion-nvim, ... }:
+    let
+      pkgs = import nixpkgs {
+        system = "x86_64-linux";
+        overlays = [ treemotion-nvim.overlays.default ];
+      };
+    in
+    {
+      # `pkgs.vimPlugins.treemotion-nvim` is now available, e.g.:
+      #
+      # pkgs.neovim.override {
+      #   configure.packages.myPlugins.start = [ pkgs.vimPlugins.treemotion-nvim ];
+      # };
+    };
+}
+```
+
+Without adding a flake input (e.g. directly in a NixOS or home-manager
+`nixpkgs.overlays` list), `builtins.getFlake` fetches it the same way:
+
+```nix
+nixpkgs.overlays = [
+  (builtins.getFlake "github:asakura/treemotion.nvim").overlays.default
+];
+```
+
+### With lazyvim-nix
+
+[lazyvim-nix](https://github.com/pfassina/lazyvim-nix) drives lazy.nvim's
+`plugins.<key>` option with plain Lua-spec strings, so a plugin sourced from
+the Nix store (rather than fetched by lazy.nvim itself over the network)
+just needs a `dir = "..."` field pointing at the derivation, the same way
+lazyvim-nix's own bundled plugins are wired. Apply this flake's overlay to
+get `pkgs.vimPlugins.treemotion-nvim` (plus `mega-cmdparse`/`mega-logging`),
+then reference their store paths:
+
+```nix
+programs.lazyvim = {
+  enable = true;
+
+  plugins.treemotion = ''
+    return {
+      {
+        "asakura/treemotion.nvim",
+        dir = "${pkgs.vimPlugins.treemotion-nvim}",
+        dependencies = {
+          { "ColinKennedy/mega.cmdparse", dir = "${pkgs.vimPlugins.mega-cmdparse}" },
+          { "ColinKennedy/mega.logging", dir = "${pkgs.vimPlugins.mega-logging}" },
+        },
+        opts = {},
+      },
+    }
+  '';
+};
 ```
 
 # Configuration
