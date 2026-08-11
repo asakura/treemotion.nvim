@@ -17,6 +17,7 @@ treemotion.ConfigurationGoodnightMoonRead	treemotion_types.txt	/*treemotion.Conf
 treemotion.ConfigurationHelloWorld	treemotion_types.txt	/*treemotion.ConfigurationHelloWorld*
 treemotion.ConfigurationHelloWorldSay	treemotion_types.txt	/*treemotion.ConfigurationHelloWorldSay*
 treemotion.LoggingConfiguration	treemotion_types.txt	/*treemotion.LoggingConfiguration*
+treemotion.ResolvedConfiguration	treemotion_types.txt	/*treemotion.ResolvedConfiguration*
 treemotion.run_arbitrary_thing()	treemotion_api.txt	/*treemotion.run_arbitrary_thing()*
 treemotion.run_copy_logs()	treemotion_api.txt	/*treemotion.run_copy_logs()*
 treemotion.run_goodnight_moon_count_sheep()	treemotion_api.txt	/*treemotion.run_goodnight_moon_count_sheep()*
@@ -24,4 +25,5 @@ treemotion.run_goodnight_moon_read()	treemotion_api.txt	/*treemotion.run_goodnig
 treemotion.run_goodnight_moon_sleep()	treemotion_api.txt	/*treemotion.run_goodnight_moon_sleep()*
 treemotion.run_hello_world_say_phrase()	treemotion_api.txt	/*treemotion.run_hello_world_say_phrase()*
 treemotion.run_hello_world_say_word()	treemotion_api.txt	/*treemotion.run_hello_world_say_word()*
+treemotion.setup()	treemotion_api.txt	/*treemotion.setup()*
 treemotion.txt	treemotion.txt	/*treemotion.txt*
