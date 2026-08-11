@@ -129,7 +129,7 @@ This generates a `luacov.stats.out` file and a `luacov_html/` directory
 nix run .#coverage-serve
 ```
 
-Then open `http://0.0.0.0:8000` in a browser and navigate down into a `.lua`
+Then open `http://127.0.0.1:8000` in a browser and navigate down into a `.lua`
 file to see its line-by-line coverage.
 
 # Tracking Updates

@@ -329,7 +329,7 @@
 
           coverage-serve =
             mkApp "coverage-serve" "Serve luacov_html/ over HTTP with miniserve"
-              "miniserve luacov_html --index index.html --port 8000";
+              "miniserve luacov_html --index index.html --port 8000 --interfaces 127.0.0.1";
         };
 
         formatter = formatterApp;
