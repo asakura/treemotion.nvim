@@ -1,6 +1,7 @@
 --- Make sure `treemotion` will work as expected.
 
 local configuration_ = require("treemotion._core.configuration")
+local hints_constant = require("treemotion._core.hints")
 local logging_ = require("mega.logging")
 local say_constant = require("treemotion._commands.hello_world.say.constant")
 local tabler = require("treemotion._core.tabler")
@@ -126,6 +127,25 @@ local function _get_command_issues(data)
     return output
 end
 
+--- Check if `data.hints` is a valid hint kind.
+---
+---@param data treemotion.Configuration All of the user's fallback settings.
+---@return string[] # All found issues, if any.
+---
+local function _get_hints_issues(data)
+    local output = {}
+
+    _append_validated(output, "hints", function()
+        return data.hints
+    end, function(value)
+        local choices = vim.tbl_keys(hints_constant.Kind)
+
+        return vim.tbl_contains(choices, value)
+    end, '"word_boundaries" or "motions" or "none"')
+
+    return output
+end
+
 --- Check if logging configuration `data` has any issues.
 ---
 ---@param data treemotion.LoggingConfiguration The user's logger settings.
@@ -188,7 +208,9 @@ function M.get_issues(data)
     end
 
     local output = {}
+
     vim.list_extend(output, _get_command_issues(data))
+    vim.list_extend(output, _get_hints_issues(data))
 
     local logging = data.logging
 
