@@ -8,8 +8,13 @@
 ---    The user's customizations for this plugin.
 ---@field commands treemotion.ConfigurationCommands?
 ---    Customize the fallback behavior of all `:TreeMotion` commands.
+---@field hints treemotion.HintKind?
+---    Which motion hints are currently visible. Only one kind may be active
+---    at a time.
 ---@field logging treemotion.LoggingConfiguration?
 ---    Control how and which logs print to file / Neovim.
+
+---@alias treemotion.HintKind "word_boundaries" | "motions" | "none"
 
 ---@class treemotion.ConfigurationCommands
 ---    Customize the fallback behavior of all `:TreeMotion` commands.
