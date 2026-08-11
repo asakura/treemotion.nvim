@@ -71,7 +71,7 @@ jobs:
         luaVersion: "${{ matrix.luaVersion }}"
 
     - name: Install LuaRocks
-      uses: https://github.com/luarocks/gh-actions-luarocks@7
+      uses: luarocks/gh-actions-luarocks@v7
 
     - name: Cache LuaRocks
       uses: actions/cache@v4
