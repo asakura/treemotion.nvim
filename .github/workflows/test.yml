@@ -10,6 +10,8 @@ on:
       - 'plugin/**'
       - 'spec/**'
       - 'template.rockspec'
+      - 'flake.nix'
+      - 'flake.lock'
       - '.github/workflows/test.yml'
   push:
     branches:
@@ -100,6 +102,65 @@ jobs:
       run: |
         luarocks test treemotion.nvim-scm-1.rockspec --prepare
 
+    # `--prepare` only installs `test_dependencies` (busted itself). Without
+    # this, `treemotion._core.configuration` and friends can never be
+    # `require()`-d because `mega.cmdparse`/`mega.logging` (this rockspec's
+    # actual `dependencies`) are never installed anywhere on the Lua path.
+    - name: Install Runtime Dependencies
+      run: |
+        luarocks make --only-deps treemotion.nvim-scm-1.rockspec
+
+    # `treemotion.nvim` calls `vim.*` at require-time (e.g.
+    # `configuration.lua`'s `vim.g`, `mega.logging`'s own `vim.*` calls), so
+    # plain `lua`/`luajit` can never load it -- busted must run under `nvim -l`
+    # the same way `nix run .#test` does locally (see `flake.nix`'s
+    # `bustedConfig`). `busted` reads `.busted` from the working directory by
+    # default, so writing it here is enough; the `Test` step below needs no
+    # changes.
+    - name: Write Busted Config
+      shell: bash
+      run: |
+        lpath="lua/?.lua;lua/?/init.lua;spec/?.lua;$(luarocks path --lr-path)"
+        cat > .busted <<EOF
+        return {
+          _all = {
+            coverage = false,
+            lpath = "$lpath",
+            lua = "nvim -u NONE -U NONE -N -i NONE -l",
+          },
+          default = {
+            helper = "./spec/minimal_init.lua",
+            verbose = true,
+          },
+        }
+        EOF
+
     - name: Test
       run: |
         luarocks test --test-type busted
+
+  test-nix:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - label: "unstable"
+          nixpkgs: "github:NixOS/nixpkgs/nixos-unstable"
+        - label: "stable"
+          nixpkgs: "github:NixOS/nixpkgs/nixos-26.05"
+
+    runs-on: ubuntu-latest
+    name: "OS: NixOS - nixpkgs: ${{ matrix.label }}"
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v6
+
+    - name: Install Nix
+      uses: DeterminateSystems/nix-installer-action@v22
+
+    - name: Cache Nix Store
+      uses: DeterminateSystems/magic-nix-cache-action@v14
+
+    - name: Test
+      run: nix run .#test --override-input nixpkgs "${{ matrix.nixpkgs }}"
