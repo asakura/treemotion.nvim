@@ -12,8 +12,23 @@ operation of this Lua plugin.
 Fields ~
     {commands} |treemotion.ConfigurationCommands|?
        Customize the fallback behavior of all `:TreeMotion` commands.
+    {hints} |treemotion.HintKind|?
+       Which motion hints are currently visible. Only one kind may be active
+       at a time.
     {logging} |treemotion.LoggingConfiguration|?
        Control how and which logs print to file / Neovim.
+
+------------------------------------------------------------------------------
+*treemotion.ResolvedConfiguration*
+   `treemotion.Configuration` after the plugin's defaults have been merged
+   in (see `configuration._DEFAULTS`). Unlike `treemotion.Configuration`,
+   which may be a partial user override (e.g. `vim.g.treemotion_configuration`),
+   every field here is guaranteed to be present.
+
+Fields ~
+    {logging} |treemotion.LoggingConfiguration|
+       Control how and which logs print to file / Neovim. Always present,
+       though its own `use_console` / `use_file` fields may both be `false`.
 
 ------------------------------------------------------------------------------
 *treemotion.ConfigurationCommands*
@@ -38,18 +53,11 @@ Fields ~
    Control whether or not logging is printed to the console or to disk.
 
 Fields ~
-    {level} (
-       | "trace"
-       | "debug"
-       | "info"
-       | "warn" | "error"
-       | "fatal"
-       | vim.log.levels.DEBUG
-       | vim.log.levels.ERROR
-       | vim.log.levels.INFO
-       | vim.log.levels.TRACE
-       | vim.log.levels.WARN)?
-       Any messages above this level will be logged.
+    {level} ("trace" | "debug" | "info" | "warning" | "error" | "fatal")?
+       Any messages above this level will be logged. Only these string values
+       are accepted -- unlike Neovim's own `vim.log.levels.*`, `mega.logging`
+       (which this field is passed into) does not handle numeric levels
+       correctly, so they are intentionally not part of this type.
     {use_console} `(boolean)`?
        Should print the output to neovim while running. Warning: This is very
        spammy. You probably don't want to enable this unless you have to.
