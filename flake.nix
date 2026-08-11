@@ -150,6 +150,7 @@
           stylua
           mdformat
           nixfmt
+          miniserve
         ];
 
         neovimRuntime = "${pkgs.neovim-unwrapped}/share/nvim/runtime";
@@ -309,6 +310,8 @@
           );
 
           coverage-threshold = mkApp "coverage-threshold" checkCoverageThreshold;
+
+          coverage-serve = mkApp "coverage-serve" "miniserve luacov_html --index index.html --port 8000";
         };
 
         formatter = formatterApp;
