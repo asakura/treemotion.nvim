@@ -13,10 +13,33 @@
       flake-utils,
       ...
     }:
-    flake-utils.lib.eachDefaultSystem (
+    let
+      overlay =
+        _final: prev:
+        let
+          callPackage = prev.lib.callPackageWith (prev // packages);
+
+          packages = {
+            mega-logging = callPackage ./nix/mega-logging.nix { };
+            mega-cmdparse = callPackage ./nix/mega-cmdparse.nix { };
+            treemotion-nvim = callPackage ./nix/treemotion-nvim.nix { inherit self; };
+          };
+        in
+        {
+          vimPlugins = prev.vimPlugins // packages;
+        };
+    in
+    {
+      overlays.default = overlay;
+    }
+    // flake-utils.lib.eachDefaultSystem (
       system:
       let
-        pkgs = import nixpkgs { inherit system; };
+        pkgs = import nixpkgs {
+          inherit system;
+          overlays = [ overlay ];
+        };
+
         lua51 = pkgs.lua51Packages;
 
         toLuaAnnotationModule =
@@ -35,6 +58,7 @@
                 propagatedBuildInputs
                 ;
               dontBuild = true;
+
               installPhase = ''
                 mkdir -p $out
                 cp -r . $out/
@@ -104,32 +128,6 @@
           ];
         };
 
-        megaLogging = pkgs.vimUtils.buildVimPlugin {
-          pname = "mega.logging";
-          version = "1.1.6";
-
-          src = pkgs.fetchFromGitHub {
-            owner = "ColinKennedy";
-            repo = "mega.logging";
-            rev = "v1.1.6";
-            hash = "sha256-hV7uJyu0XszGLOvcRcDNDE9P6d8GTxBX+la1lQVxx2s=";
-          };
-        };
-
-        megaCmdparse = pkgs.vimUtils.buildVimPlugin {
-          pname = "mega.cmdparse";
-          version = "1.2.1";
-
-          src = pkgs.fetchFromGitHub {
-            owner = "ColinKennedy";
-            repo = "mega.cmdparse";
-            rev = "v1.2.1";
-            hash = "sha256-CwsAxuRnhrGqzmWfPEW0ZX4ohWZ7bNpCYbKYCpDLw60=";
-          };
-
-          dependencies = [ megaLogging ];
-        };
-
         luaCoverageEnv = pkgs.lua5_1.withPackages (ps: [
           ps.busted
           ps.luacov
@@ -166,8 +164,8 @@
                   "${luaTypesBustedModule}/library",
                   "${luaTypesLuassertModule}/library",
                   "${pkgs.vimPlugins.luvit-meta}/library",
-                  "${megaCmdparse}/lua",
-                  "${megaLogging}/lua",
+                  "${pkgs.vimPlugins.mega-cmdparse}/lua",
+                  "${pkgs.vimPlugins.mega-logging}/lua",
                   "${neovimRuntime}/lua"
               ]
           }
@@ -177,7 +175,7 @@
           return {
             _all = {
               coverage = false,
-              lpath = "lua/?.lua;lua/?/init.lua;spec/?.lua;${megaCmdparse}/lua/?.lua;${megaCmdparse}/lua/?/init.lua;${megaLogging}/lua/?.lua;${megaLogging}/lua/?/init.lua",
+              lpath = "lua/?.lua;lua/?/init.lua;spec/?.lua;${pkgs.vimPlugins.mega-cmdparse}/lua/?.lua;${pkgs.vimPlugins.mega-cmdparse}/lua/?/init.lua;${pkgs.vimPlugins.mega-logging}/lua/?.lua;${pkgs.vimPlugins.mega-logging}/lua/?/init.lua",
               lua = "nvim -u NONE -U NONE -N -i NONE -l",
             },
             default = {
@@ -290,6 +288,12 @@
           llscheck = mkCheck "llscheck" (llscheckScript ".luarc.json");
           test = mkCheck "test" "busted .";
           coverage = mkCheck "coverage" (runCoverage + checkCoverageThreshold);
+          treemotion-nvim = pkgs.vimPlugins.treemotion-nvim;
+        };
+
+        packages = {
+          default = pkgs.vimPlugins.treemotion-nvim;
+          treemotion-nvim = pkgs.vimPlugins.treemotion-nvim;
         };
 
         apps = {
