@@ -1,5 +1,6 @@
 --- All functions and data to help customize `treemotion` for this user.
 
+local hints_constant = require("treemotion._core.hints")
 local say_constant = require("treemotion._commands.hello_world.say.constant")
 
 local logging = require("mega.logging")
@@ -8,24 +9,19 @@ local _LOGGER = logging.get_logger("treemotion._core.configuration")
 
 local M = {}
 
--- NOTE: Don't remove this line. It makes the Lua module much easier to reload
 vim.g.loaded_treemotion = false
 
----@type treemotion.Configuration
+-- NOTE: `M.DATA` starts empty and is always filled out by
+-- `M.initialize_data_if_needed()` before any other function in this module
+-- reads it, so the "missing `logging`" warning below is a false positive.
+---@type treemotion.ResolvedConfiguration
+---@diagnostic disable-next-line: missing-fields
 M.DATA = {}
 
--- TODO: (you) If you use the mega.logging module for built-in logging, keep
--- the `logging` section. Otherwise delete it.
---
--- It's recommended to keep the `display` section in any case.
---
----@type treemotion.Configuration
+---@type treemotion.ResolvedConfiguration
 local _DEFAULTS = {
+    hints = hints_constant.Kind.none,
     logging = { level = "info", use_console = false, use_file = false },
-}
-
--- TODO: (you) Update these sections depending on your intended plugin features.
-local _EXTRA_DEFAULTS = {
     commands = {
         goodnight_moon = { read = { phrase = "A good book" } },
         hello_world = {
@@ -33,8 +29,6 @@ local _EXTRA_DEFAULTS = {
         },
     },
 }
-
-_DEFAULTS = vim.tbl_deep_extend("force", _DEFAULTS, _EXTRA_DEFAULTS)
 
 --- Setup `treemotion` for the first time, if needed.
 function M.initialize_data_if_needed()
@@ -46,7 +40,14 @@ function M.initialize_data_if_needed()
 
     vim.g.loaded_treemotion = true
 
-    local configuration = M.DATA.logging or {}
+    local configuration = M.DATA.logging
+
+    -- NOTE: `treemotion.LoggingConfiguration` and `mega.logging.SparseLoggerOptions`
+    -- are separately-declared classes with no inheritance relationship, so
+    -- lua-language-server won't treat this cast as valid on nominal-type
+    -- grounds alone, even though every field the two types share matches
+    -- exactly.
+    ---@diagnostic disable-next-line: cast-type-mismatch
     ---@cast configuration mega.logging.SparseLoggerOptions
     logging.set_configuration("treemotion", configuration)
 
@@ -56,12 +57,55 @@ end
 --- Merge `data` with the user's current configuration.
 ---
 ---@param data treemotion.Configuration? All extra customizations for this plugin.
----@return treemotion.Configuration # The configuration with 100% filled out values.
+---@return treemotion.ResolvedConfiguration # The configuration with 100% filled out values.
 ---
 function M.resolve_data(data)
     M.initialize_data_if_needed()
 
     return vim.tbl_deep_extend("force", M.DATA, data or {})
+end
+
+--- Merge `data` into the current configuration, in-place.
+---
+--- Unlike `M.resolve_data()`, this permanently updates `M.DATA` rather than
+--- returning a one-off merged copy. Use this to apply configuration after
+--- `M.initialize_data_if_needed()` has already run and latched (e.g. from a
+--- plugin manager's `opts` table, which is applied after `require()` has
+--- already triggered initialization).
+---
+---@param data treemotion.Configuration? Extra customizations to apply now.
+---
+function M.merge_data(data)
+    M.initialize_data_if_needed()
+
+    M.DATA = vim.tbl_deep_extend("force", M.DATA, data or {})
+end
+
+--- Turn `kind` on, replacing whichever hint kind (if any) was previously active.
+---
+---@param kind treemotion.HintKind Which hints to show. e.g. `"word_boundaries"`.
+---
+function M.set_hints(kind)
+    M.initialize_data_if_needed()
+
+    M.DATA.hints = kind
+end
+
+--- Turn `kind` on if it isn't already active, otherwise turn all hints off.
+---
+--- Because `M.DATA.hints` holds a single value, enabling `kind` always
+--- implicitly disables whichever other kind was previously active.
+---
+---@param kind treemotion.HintKind Which hints to toggle. e.g. `"word_boundaries"`.
+---
+function M.toggle_hints(kind)
+    M.initialize_data_if_needed()
+
+    if M.DATA.hints == kind then
+        M.DATA.hints = hints_constant.Kind.none
+    else
+        M.DATA.hints = kind
+    end
 end
 
 return M
