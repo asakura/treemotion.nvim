@@ -155,12 +155,12 @@ local function _get_logging_issues(data)
             return false
         end
 
-        if not vim.tbl_contains({ "trace", "debug", "info", "warn", "error", "fatal" }, value) then
+        if not vim.tbl_contains({ "trace", "debug", "info", "warning", "error", "fatal" }, value) then
             return false
         end
 
         return true
-    end, 'an enum. e.g. "trace" | "debug" | "info" | "warn" | "error" | "fatal"')
+    end, 'an enum. e.g. "trace" | "debug" | "info" | "warning" | "error" | "fatal"')
 
     local message = _get_boolean_issue("logging.use_console", data.use_console)
 
