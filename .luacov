@@ -1,5 +1,5 @@
 return {
-    include = {"lua"},
+    include = {"^lua/", "^plugin/", "^scripts/"},
     exclude = {
         ".luarocks/",
         "/tmp",
