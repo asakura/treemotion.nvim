@@ -5,47 +5,53 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
     branches:
     - main
+    paths: &paths
+      - 'lua/**'
+      - 'plugin/**'
+      - 'spec/**'
+      - 'template.rockspec'
+      - '.github/workflows/test.yml'
   push:
     branches:
       - main
+    paths: *paths
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
     strategy:
+      fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
-        neovim: [v0.11.0, v0.12.0, stable, nightly]
-        luaVersion: ["luajit-openresty"]
         include:
-        - os: "windows-latest"
-          toolchain: "msvc"
-          luaVersion: "5.1"
+        - os: "ubuntu-latest"
+          luaVersion: "luajit-openresty"
           neovim: "v0.11.0"
-        - os: "windows-latest"
-          toolchain: "msvc"
-          luaVersion: "5.1"
+        - os: "ubuntu-latest"
+          luaVersion: "luajit-openresty"
           neovim: "v0.12.0"
-        - os: "windows-latest"
-          toolchain: "msvc"
-          luaVersion: "5.1"
+        - os: "ubuntu-latest"
+          luaVersion: "luajit-openresty"
+          neovim: "stable"
+        - os: "ubuntu-latest"
+          luaVersion: "luajit-openresty"
+          neovim: "nightly"
+        - os: "macos-latest"
+          luaVersion: "luajit-openresty"
           neovim: "stable"
         - os: "windows-latest"
           toolchain: "msvc"
           luaVersion: "5.1"
-          neovim: "nightly"
+          neovim: "stable"
 
     runs-on: ${{ matrix.os }}
     name: "OS: ${{ matrix.os }} - Neovim: ${{ matrix.neovim }} - Lua: ${{ matrix.luaVersion }}"
 
     steps:
     - name: Checkout
-      uses: actions/checkout@master
-
-    - name: Install Neovim
-      uses: rhysd/action-setup-vim@v1
-      with:
-        neovim: true
-        version: ${{ matrix.neovim }}
+      uses: actions/checkout@v6
 
     - name: Setup MSVC
       # the 'luarocks/gh-actions-lua' step requires msvc to build PUC-Rio Lua
@@ -53,33 +59,46 @@ jobs:
       if: ${{ matrix.toolchain == 'msvc' }}
       uses: ilammy/msvc-dev-cmd@v1
 
+    - name: Install Neovim
+      uses: rhysd/action-setup-vim@v1
+      with:
+        neovim: true
+        version: ${{ matrix.neovim }}
+
     - name: Install Lua
       uses: luarocks/gh-actions-lua@v11
       with:
         luaVersion: "${{ matrix.luaVersion }}"
 
     - name: Install LuaRocks
-      # TODO: Replace with https://github.com/luarocks/gh-actions-luarocks after v6+
-      uses: ColinKennedy/gh-actions-luarocks@v1.0.0
+      uses: https://github.com/luarocks/gh-actions-luarocks@7
+
+    - name: Cache LuaRocks
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.luarocks
+          ~/.cache/luarocks
+        key: luarocks-${{ runner.os }}-${{ matrix.luaVersion }}-${{ hashFiles('template.rockspec') }}
+        restore-keys: |
+          luarocks-${{ runner.os }}-${{ matrix.luaVersion }}-
 
     - name: Print Versions
       run: |
         luarocks --version
 
-    # We need this hack until a better solution is available.
-    #
+    # XXX: We need this hack until a better solution is available.
     # Reference: https://github.com/nvim-neorocks/luarocks-tag-release/issues/435
-    #
     - name: Expand The Template Rockspec
       uses: ColinKennedy/luarocks-rockspec-expander@v1.0.1
       with:
         input: template.rockspec
-        output: nvim-best-practices-plugin-template-scm-1.rockspec
+        output: treemotion.nvim-scm-1.rockspec
         delete_input_after: true
 
     - name: Build Test Dependencies
       run: |
-        luarocks test nvim-best-practices-plugin-template-scm-1.rockspec --prepare
+        luarocks test treemotion.nvim-scm-1.rockspec --prepare
 
     - name: Test
       run: |
