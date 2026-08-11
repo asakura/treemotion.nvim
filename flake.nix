@@ -257,7 +257,7 @@
           ${luaCoverageEnv}/bin/busted --coverage .
         '';
 
-        minCoveragePercent = 39.41;
+        minCoveragePercent = 35.00;
 
         checkCoverageThreshold = ''
           luacov

@@ -123,7 +123,7 @@ nix run .#coverage-html
 ```
 
 This generates a `luacov.stats.out` file and a `luacov_html/` directory
-(`nix flake check`'s `coverage` check enforces a 39.41% minimum). View it with:
+(`nix flake check`'s `coverage` check enforces a 35.00% minimum). View it with:
 
 ```sh
 nix run .#coverage-serve
