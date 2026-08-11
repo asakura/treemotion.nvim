@@ -65,11 +65,39 @@ eventual feature set.
 
 (These are default values, for the current template scaffolding)
 
+`treemotion` exposes a `setup(opts)` function, so lazy.nvim’s `opts` table
+works as expected:
+
+>lua
+    {
+        "asakura/treemotion.nvim",
+        opts = {
+            hints = "none",
+            commands = {
+                goodnight_moon = { read = { phrase = "A good book" } },
+                hello_world = {
+                    say = { ["repeat"] = 1, style = "lowercase" },
+                },
+            },
+            logging = {
+                level = "info",
+                use_console = false,
+                use_file = false,
+            },
+        },
+    }
+<
+
+Equivalently, you can set `vim.g.treemotion_configuration` directly (useful
+outside of lazy.nvim, or if you need the values available before `treemotion`
+loads):
+
 >lua
     {
         "asakura/treemotion.nvim",
         config = function()
             vim.g.treemotion_configuration = {
+                hints = "none",
                 commands = {
                     goodnight_moon = { read = { phrase = "A good book" } },
                     hello_world = {

@@ -6,6 +6,20 @@ If a function's signature here changes in some incompatible way, this
 package must get a new **major** version.
 
 ------------------------------------------------------------------------------
+                                                            *treemotion.setup()*
+
+`setup`({opts})
+
+Configure `treemotion`, e.g. from a plugin manager's `opts` table.
+
+This is separate from `vim.g.treemotion_configuration` so that plugin
+managers using the `opts = {...}` convention (which calls this function
+after `treemotion` has already loaded) still work as expected.
+
+Parameters ~
+    {opts} |treemotion.Configuration|? Extra customizations for this plugin.
+
+------------------------------------------------------------------------------
                                               *treemotion.run_arbitrary_thing()*
 
 `run_arbitrary_thing`({names})
