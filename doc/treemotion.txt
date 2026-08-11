@@ -1,35 +1,27 @@
-*treemotion.txt*        For Neovim >= 0.8.0        Last change: 2026 August 10
+*treemotion.txt*        For Neovim >= 0.8.0        Last change: 2026 August 11
 
 ==============================================================================
 Table of Contents                               *treemotion-table-of-contents*
 
-1. A Neovim Plugin Template              |treemotion-a-neovim-plugin-template|
-2. Features                                              |treemotion-features|
-3. Using This Template                        |treemotion-using-this-template|
-4. Installation                                      |treemotion-installation|
-5. Configuration                                    |treemotion-configuration|
-6. Commands                                              |treemotion-commands|
-7. Tests                                                    |treemotion-tests|
-  - Initialization                           |treemotion-tests-initialization|
-  - Running                                         |treemotion-tests-running|
-8. Coverage                                              |treemotion-coverage|
-  - Setup                                          |treemotion-coverage-setup|
-  - Running                                      |treemotion-coverage-running|
-  - Viewing                                      |treemotion-coverage-viewing|
-9. Tracking Updates                              |treemotion-tracking-updates|
-10. Other Plugins                                   |treemotion-other-plugins|
-11. Links                                                   |treemotion-links|
+1. treemotion.nvim                                |treemotion-treemotion.nvim|
+2. Status                                                  |treemotion-status|
+3. Installation                                      |treemotion-installation|
+4. Configuration                                    |treemotion-configuration|
+5. Commands                                              |treemotion-commands|
+6. Development                                        |treemotion-development|
+7. Coverage                                              |treemotion-coverage|
+8. Tracking Updates                              |treemotion-tracking-updates|
 
 ==============================================================================
-1. A Neovim Plugin Template              *treemotion-a-neovim-plugin-template*
+1. treemotion.nvim                                *treemotion-treemotion.nvim*
 
-A template repository used to create Neovim plugins.
+Treesitter-driven `w`/`e`/`b`/`ge` motions, per filetype.
 
   --------------------------------------------------------------------------------
             
   --------- ----------------------------------------------------------------------
-  Build     [unittests] [documentation] [luacheck] [llscheck] [checkhealth]
-  Status    [stylua] [urlchecker] [mdformat]
+  Build     [test] [documentation] [lints] [checkhealth] [urlchecker] [commitlint]
+  Status    
 
   License   [License-MIT]
 
@@ -37,56 +29,25 @@ A template repository used to create Neovim plugins.
   --------------------------------------------------------------------------------
 
 ==============================================================================
-2. Features                                              *treemotion-features*
+2. Status                                                  *treemotion-status*
 
-- Follows nvim-best-practices <https://github.com/nvim-neorocks/nvim-best-practices>
-- Fast start-up (~1 ms)
-- Auto-release to luarocks <https://luarocks.org> & GitHub <https://github.com/asakura/treemotion.nvim/releases>
-- Automated user documentation (using panvimdoc <https://github.com/kdheepak/panvimdoc>)
-- Automated API documentation (using mini.doc <https://github.com/echasnovski/mini.doc>)
-- Automated HTML documentation + self-publishing using emmylua_doc_cli <https://github.com/CppCXY/emmylua-analyzer-rust/tree/main/crates/emmylua_doc_cli> & mkdocs-material <https://github.com/squidfunk/mkdocs-material>
-    - Yes, this repository has a website! Check it out at treemotion.nvim <https://colinkennedy.github.io/treemotion.nvim>!
-- Vimtags generation
-- Built-in Vim commands
-- A high quality command mode parser
-- Auto-completes your commands at any cursor position
-- No external dependencies <https://github.com/asakura/treemotion.nvim/wiki/External-Dependencies-Disclaimer>
-- LuaCATS <https://luals.github.io/wiki/annotations/>annotations and type-hints, everywhere
-- RSS feed support <https://github.com/asakura/treemotion.nvim/commits/main/doc/news.txt.atom>
-- Built-in logging to stdout / files
-- Unittests use the full power of native busted <https://github.com/lunarmodules/busted>
-    - Supports LuaCov <https://luarocks.org/modules/mpeterv/luacov> for coverage reports!
-- Automated testing matrix supports 12 Neovim/OS combinations
-    - neovim: `[v0.11.0, v0.12.0, stable, nightly]`
-    - os: `[ubuntu-latest, macos-latest, windows-latest]`
-- 100% Lua
-- Uses Semantic Versioning <https://semver.org>
-- Integrations
-    - `:checkhealth` <https://github.com/asakura/treemotion.nvim/actions/workflows/checkhealth.yml>
-- Github actions for:
-    - StyLua <https://github.com/JohnnyMorganz/StyLua> - Auto-formats Lua code
-    - llscheck <https://github.com/jeffzi/llscheck> - Checks for Lua type mismatches
-    - luacheck <https://github.com/mpeterv/luacheck> - Checks for Lua code issues
-    - luarocks <https://luarocks.org> auto-release (LUAROCKS_API_KEY secret <https://github.com/nvim-neorocks/sample-luarocks-plugin?tab=readme-ov-file#publishing-to-luarocks> configuration required)
-    - GitHub <https://github.com/asakura/treemotion.nvim/releases> auto-release (PERSONAL_ACCESS_TOKEN secret <https://github.com/nvim-neorocks/sample-luarocks-plugin?tab=readme-ov-file#installing-release-please-recommended> configuration required)
-    - mdformat <https://github.com/hukkin/mdformat> - Auto-formats project Markdown files
-    - mini.doc <https://github.com/echasnovski/mini.doc> - API documentation auto-generator
-    - panvimdoc <https://github.com/kdheepak/panvimdoc> - User documentation auto-generator
-    - emmylua_doc_cli <https://github.com/CppCXY/emmylua-analyzer-rust/tree/main/crates/emmylua_doc_cli> & mkdocs-material <https://github.com/squidfunk/mkdocs-material> - Generate HTML from Lua files automatically
-    - urlchecker <https://github.com/urlstechie/urlchecker-action> - Checks for broken URL links
-    - PR reviews - Reminds users to update `doc/news.txt`
+This plugin is not yet functional. It’s a fork of ColinKennedy’s "Best
+Practices" Neovim plugin template
+<https://github.com/nvim-neorocks/nvim-best-practices>, mid-rename from the
+template’s `plugin_template` scaffolding to `treemotion.nvim`.
+
+The `lua/treemotion/_commands/` tree (`hello_world`, `goodnight_moon`,
+`arbitrary_thing`, `copy_logs`) is still the template’s literal example
+scaffolding, not real treesitter-motion functionality. It’s kept around as a
+structural reference for how a command is wired end-to-end (`:TreeMotion`
+subcommand parser → `lua/treemotion/init.lua` API → runner) until it gets
+replaced with the real `w`/`e`/`b`/`ge` motions. The `Commands` and
+`Configuration` sections below describe that scaffolding, not the plugin’s
+eventual feature set.
 
 
 ==============================================================================
-3. Using This Template                        *treemotion-using-this-template*
-
-1. Follow the Wiki instructions <https://github.com/asakura/treemotion.nvim/wiki/Using-This-Template>
-2. Run `make download-dependencies` so all the Lua LSP features work as expected.
-3. Once you’re done, remove this section (the rest of this README.md file should be kept / customized to your needs)
-
-
-==============================================================================
-4. Installation                                      *treemotion-installation*
+3. Installation                                      *treemotion-installation*
 
 - lazy.nvim <https://github.com/folke/lazy.nvim>
 
@@ -94,18 +55,15 @@ A template repository used to create Neovim plugins.
     {
         "asakura/treemotion.nvim",
         dependencies = { "ColinKennedy/mega.cmdparse", "ColinKennedy/mega.logging" },
-        -- TODO: (you) - Make sure your first release matches v1.0.0 so it auto-releases!
         version = "v1.*",
     }
 <
 
 
 ==============================================================================
-5. Configuration                                    *treemotion-configuration*
+4. Configuration                                    *treemotion-configuration*
 
-(These are default values)
-
-- lazy.nvim <https://github.com/folke/lazy.nvim>
+(These are default values, for the current template scaffolding)
 
 >lua
     {
@@ -130,9 +88,10 @@ A template repository used to create Neovim plugins.
 
 
 ==============================================================================
-6. Commands                                              *treemotion-commands*
+5. Commands                                              *treemotion-commands*
 
-Here are some example commands:
+The `:TreeMotion` command tree currently only exposes the template’s example
+subcommands. See `plugin/treemotion.lua` for how they’re wired up.
 
 >vim
     " A typical subcommand
@@ -150,84 +109,64 @@ Here are some example commands:
 
 
 ==============================================================================
-7. Tests                                                    *treemotion-tests*
+6. Development                                        *treemotion-development*
 
-
-INITIALIZATION                               *treemotion-tests-initialization*
-
-Run this line once before calling any `busted` command
+Enter the dev shell (provides Neovim, `mega.cmdparse`, `mega.logging`, LuaCATS
+type stubs, and every lint/format/doc tool, all pinned by the flake):
 
 >sh
-    eval $(luarocks path --lua-version 5.1 --bin)
+    nix develop
 <
 
-
-RUNNING                                             *treemotion-tests-running*
-
-Run all tests
+Run every check in one shot (sandboxed, offline):
 
 >sh
-    # Using the package manager
-    luarocks test --test-type busted
-    # Or manually
-    busted .
-    # Or with Make
-    make test
+    nix flake check
 <
 
-Run test based on tags
+Or run checks individually:
 
 >sh
+    nix run .#test               # busted .
+    nix run .#stylua             # auto-formats lua/plugin/scripts/spec in place
+    nix run .#luacheck           # lints lua/plugin/scripts/spec
+    nix run .#llscheck           # type-checks against .luarc.json
+    nix run .#mdformat           # formats README.md + markdown/manual/docs/index.md
+    nix run .#coverage-html      # busted under luacov, writes luacov_html/
+    nix run .#api-documentation  # regenerates doc/treemotion_api.txt + doc/treemotion_types.txt
+<
+
+Run a single test file or tag (inside `nix develop`):
+
+>sh
+    busted spec/treemotion/treemotion_spec.lua
     busted . --tags=simple
 <
 
 
 ==============================================================================
-8. Coverage                                              *treemotion-coverage*
+7. Coverage                                              *treemotion-coverage*
 
-Making sure that your plugin is well tested is important. `treemotion.nvim` can
-generate a per-line breakdown of exactly where your code is lacking tests using
-LuaCov <https://luarocks.org/modules/mpeterv/luacov>.
-
-
-SETUP                                              *treemotion-coverage-setup*
-
-Make sure to install all dependencies for the unittests + coverage reporter if
-you have not installed them already.
+`treemotion.nvim` can generate a per-line breakdown of exactly where your code
+is lacking tests using LuaCov <https://luarocks.org/modules/mpeterv/luacov>.
 
 >sh
-    luarocks install busted --local
-    luarocks install luacov --local
-    luarocks install luacov-multiple --local
+    nix run .#coverage-html
 <
 
-
-RUNNING                                          *treemotion-coverage-running*
-
->sh
-    make coverage-html
-<
-
-This will generate a `luacov.stats.out` & `luacov_html/` directory.
-
-
-VIEWING                                          *treemotion-coverage-viewing*
+This generates a `luacov.stats.out` file and a `luacov_html/` directory (`nix
+flake check`’s `coverage` check enforces a 39.41% minimum). View it with:
 
 >sh
     (cd luacov_html && python -m http.server)
 <
 
-If it worked, you should see a message like `"Serving HTTP on 0.0.0.0 port 8000
-(http://0.0.0.0:8000) ..."` Open `http://0.0.0.0:8000` in a browser like
-Firefox <https://www.mozilla.org/en-US/firefox> and you should see a view like
-this:
-
-Just navigate down a few folders until you get to a .lua file and you’ll see
-a breakdown of your line coverage like this:
+Then open `http://0.0.0.0:8000` in a browser and navigate down into a `.lua`
+file to see its line-by-line coverage.
 
 
 ==============================================================================
-9. Tracking Updates                              *treemotion-tracking-updates*
+8. Tracking Updates                              *treemotion-tracking-updates*
 
 See doc/news.txt <doc/news.txt> for updates.
 
@@ -236,21 +175,6 @@ You can watch this plugin for changes by adding this URL to your RSS feed:
 >
     https://github.com/asakura/treemotion.nvim/commits/main/doc/news.txt.atom
 <
-
-
-==============================================================================
-10. Other Plugins                                   *treemotion-other-plugins*
-
-This template is full of various features. But if your plugin is only meant to
-be a simple plugin and you don’t want the bells and whistles that this
-template provides, consider instead using nvim-treemotion
-<https://github.com/ellisonleao/nvim-treemotion>
-
-==============================================================================
-11. Links                                                   *treemotion-links*
-
-1. *Image*: https://github.com/user-attachments/assets/e5b30df8-036a-4886-81b9-affbf5c9e32a
-2. *Image*: https://github.com/user-attachments/assets/c5420b16-4be7-4177-92c7-01af0b418816
 
 Generated by panvimdoc <https://github.com/kdheepak/panvimdoc>
 
