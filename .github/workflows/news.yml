@@ -7,6 +7,10 @@ on:
     branches:
     - main
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   check:
     name: Check news.txt
@@ -24,6 +28,7 @@ jobs:
             message=$(git log -n1 --pretty=format:%s $commit)
             type="$(echo "$message" | sed -E 's|([[:alpha:]]+)(\(.*\))?!?:.*|\1|')"
             breaking="$(echo "$message" | sed -E 's|[[:alpha:]]+(\(.*\))?!:.*|breaking-change|')"
+
             if [[ "$type" == "feat" ]] || [[ "$breaking" == "breaking-change" ]]; then
               ! git diff HEAD~${{ github.event.pull_request.commits }}..HEAD --quiet doc/news.txt ||
               {
