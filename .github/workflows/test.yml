@@ -162,5 +162,7 @@ jobs:
     - name: Cache Nix Store
       uses: DeterminateSystems/magic-nix-cache-action@v14
 
-    - name: Test
-      run: nix run .#test --override-input nixpkgs "${{ matrix.nixpkgs }}"
+    # Building the packaged plugin runs the busted suite as its
+    # `checkPhase`, so a successful build here is the test run.
+    - name: Build (runs tests)
+      run: nix build .#treemotion-nvim -L --override-input nixpkgs "${{ matrix.nixpkgs }}"
