@@ -1,0 +1,22 @@
+# Reference: https://github.com/crate-ci/committed/blob/master/docs/reference.md
+#
+# release-please (.github/workflows/release-github.yml, CHANGELOG.md) relies
+# on Conventional Commits to generate release notes, so this enforces that
+# format on incoming PR commits.
+style = "conventional"
+
+# This repo's history regularly runs past the crate default of 50.
+subject_length = 72
+
+allowed_types = [
+  "fix",
+  "feat",
+  "chore",
+  "docs",
+  "style",
+  "refactor",
+  "perf",
+  "test",
+  "build",
+  "ci",
+]
