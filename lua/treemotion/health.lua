@@ -1,8 +1,4 @@
 --- Make sure `treemotion` will work as expected.
----
---- At minimum, we validate that the user's configuration is correct. But other
---- checks can happen here if needed.
----
 
 local configuration_ = require("treemotion._core.configuration")
 local logging_ = require("mega.logging")
@@ -13,14 +9,16 @@ local _LOGGER = logging_.get_logger("treemotion.health")
 
 local M = {}
 
--- NOTE: This file is defer-loaded so it's okay to run this in the global scope
+-- This file is defer-loaded so it's okay to run this in the global scope
 configuration_.initialize_data_if_needed()
 
 --- Add issues to `array` if there are errors.
 ---
---- Todo:
----     Once Neovim 0.10 is dropped, use the new function signature
----     for vim.validate to make this function cleaner.
+--- TODO: `vim.validate()` still uses its old, deprecated table-spec call
+---       shape here (`vim.validate({[name] = {value, expected, message}})`)
+---       because Neovim 0.11 is the first version with the newer, flatter
+---       `vim.validate(name, value, validator, optional, message)` signature.
+---       Once Neovim 0.10 support is dropped, switch to that signature.
 ---
 ---@param array string[]
 ---    All of the cumulated errors, if any.
@@ -32,9 +30,9 @@ configuration_.initialize_data_if_needed()
 ---    If `value_creator()` does not match `expected`, this error message is
 ---    shown to the user.
 ---@param message (string | boolean)?
----    If it's a string, it's the error message when
----    `value_creator()` does not match `expected`. When it's
----    `true`, it means it's okay for `value_creator()` not to match `expected`.
+---    If it's a string, it's the error message when `value_creator()` does
+---    not match `expected`. When it's `true`, it means it's okay for
+---    `value_creator()` not to match `expected`.
 ---
 local function _append_validated(array, name, value_creator, expected, message)
     local success, value = pcall(value_creator)
@@ -46,11 +44,13 @@ local function _append_validated(array, name, value_creator, expected, message)
     end
 
     local validated
+
     success, validated = pcall(vim.validate, {
-        -- TODO: I think the Neovim type annotation is wrong. Once Neovim
-        -- 0.10 is dropped let's just change this over to the new
-        -- vim.validate signature.
-        --
+        -- TODO: `lua-language-server`'s type stubs only describe the newer
+        -- (0.11+) `vim.validate` signature, so this deprecated table-spec
+        -- call is flagged as a type mismatch even though it's valid at
+        -- runtime on Neovim 0.10. Remove this suppression once the
+        -- signature above is switched over.
         ---@diagnostic disable-next-line: assign-type-mismatch
         [name] = { value, expected, message },
     })
@@ -78,10 +78,13 @@ local function _get_boolean_issue(key, data)
 
                 return type(value) == "boolean"
             end,
-            -- TODO: I think the Neovim type annotation is wrong. Once Neovim
-            -- 0.10 is dropped let's just change this over to the new
-            -- vim.validate signature.
-            --
+            -- TODO: `lua-language-server`'s type stubs only describe the
+            -- newer (0.11+) `vim.validate` signature, so this deprecated
+            -- table-spec call is flagged as a type mismatch even though
+            -- it's valid at runtime on Neovim 0.10. Remove this
+            -- suppression once this call is switched to the newer
+            -- `vim.validate(name, value, validator, optional, message)`
+            -- signature.
             ---@diagnostic disable-next-line: assign-type-mismatch
             "a boolean",
         },
