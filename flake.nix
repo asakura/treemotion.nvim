@@ -160,6 +160,7 @@
               "diagnostics.libraryFiles": "Disable",
               "runtime.version": "LuaJIT",
               "workspace.checkThirdParty": "Disable",
+              "workspace.ignoreDir": [],
               "workspace.library": [
                   "${luaTypesBustedModule}/library",
                   "${luaTypesLuassertModule}/library",
