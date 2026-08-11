@@ -72,7 +72,7 @@ local function _get_boolean_issue(key, data)
             data,
             function(value)
                 if value == nil then
-                    -- NOTE: This value is optional so it's fine it if is not defined.
+                    -- This value is optional so it's fine it if is not defined.
                     return true
                 end
 
