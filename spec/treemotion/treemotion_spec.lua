@@ -9,7 +9,7 @@ local copy_logs_runner = require("treemotion._commands.copy_logs.runner")
 local logging = require("mega.logging")
 local treemotion = require("treemotion")
 
----@class treemotion.Configuration
+---@type treemotion.ResolvedConfiguration
 local _CONFIGURATION_DATA
 
 ---@type string[]
@@ -44,7 +44,8 @@ end
 --- Write a log file so we can query its later later.
 local function _make_fake_log(path)
     configuration.DATA.logging.output_path = path
-    local logging_configuration = configuration.DATA.logging or {}
+    local logging_configuration = configuration.DATA.logging
+    ---@diagnostic disable-next-line: cast-type-mismatch
     ---@cast logging_configuration mega.logging.SparseLoggerOptions
     logging.set_configuration("treemotion", logging_configuration)
 
