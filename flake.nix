@@ -304,8 +304,11 @@
             runCoverage
             + ''
               ${luaCoverageEnv}/bin/luacov --reporter multiple.html
+              luacov
             ''
           );
+
+          coverage-threshold = mkApp "coverage-threshold" checkCoverageThreshold;
         };
 
         formatter = formatterApp;
