@@ -22,9 +22,12 @@ end
 
 ---@return TSNode? # The smallest leaf-or-not node under the cursor, if the buffer has a parser.
 local function _current_node()
-    local parser = vim.treesitter.get_parser(vim.api.nvim_get_current_buf())
+    -- `get_parser()` returns `nil, message` when no parser can be created on
+    -- some Neovim versions, but `error()`s with the same message on others
+    -- (e.g. 0.11) -- `pcall` handles both the same way.
+    local success, parser = pcall(vim.treesitter.get_parser, vim.api.nvim_get_current_buf())
 
-    if not parser then
+    if not success or not parser then
         return nil
     end
 
