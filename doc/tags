@@ -5,6 +5,7 @@ treemotion-development	treemotion.txt	/*treemotion-development*
 treemotion-installation	treemotion.txt	/*treemotion-installation*
 treemotion-installation-lazy.nvim	treemotion.txt	/*treemotion-installation-lazy.nvim*
 treemotion-installation-nix	treemotion.txt	/*treemotion-installation-nix*
+treemotion-links	treemotion.txt	/*treemotion-links*
 treemotion-motions	treemotion.txt	/*treemotion-motions*
 treemotion-motions-lazy.nvim	treemotion.txt	/*treemotion-motions-lazy.nvim*
 treemotion-motions-plain-neovim	treemotion.txt	/*treemotion-motions-plain-neovim*
