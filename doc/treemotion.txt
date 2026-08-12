@@ -1,11 +1,15 @@
-*treemotion.txt*        For Neovim >= 0.8.0        Last change: 2026 August 11
+*treemotion.txt*        For Neovim >= 0.8.0        Last change: 2026 August 12
 
 ==============================================================================
 Table of Contents                               *treemotion-table-of-contents*
 
 1. treemotion.nvim                                |treemotion-treemotion.nvim|
-2. Status                                                  |treemotion-status|
-3. Installation                                      |treemotion-installation|
+2. Installation                                      |treemotion-installation|
+  - lazy.nvim                              |treemotion-installation-lazy.nvim|
+  - Nix                                          |treemotion-installation-nix|
+3. Motions                                                |treemotion-motions|
+  - Plain Neovim                             |treemotion-motions-plain-neovim|
+  - lazy.nvim                                   |treemotion-motions-lazy.nvim|
 4. Configuration                                    |treemotion-configuration|
 5. Commands                                              |treemotion-commands|
 6. Development                                        |treemotion-development|
@@ -15,7 +19,7 @@ Table of Contents                               *treemotion-table-of-contents*
 ==============================================================================
 1. treemotion.nvim                                *treemotion-treemotion.nvim*
 
-Treesitter-driven `w`/`e`/`b`/`ge` motions, per filetype.
+Treesitter-driven `w`/`e`/`b`/`ge`/`W`/`E`/`B`/`gE` motions, per filetype.
 
   --------------------------------------------------------------------------------
             
@@ -29,27 +33,10 @@ Treesitter-driven `w`/`e`/`b`/`ge` motions, per filetype.
   --------------------------------------------------------------------------------
 
 ==============================================================================
-2. Status                                                  *treemotion-status*
-
-This plugin is not yet functional. It’s a fork of ColinKennedy’s "Best
-Practices" Neovim plugin template
-<https://github.com/nvim-neorocks/nvim-best-practices>, mid-rename from the
-template’s `plugin_template` scaffolding to `treemotion.nvim`.
-
-The `lua/treemotion/_commands/` tree (`hello_world`, `goodnight_moon`,
-`arbitrary_thing`, `copy_logs`) is still the template’s literal example
-scaffolding, not real treesitter-motion functionality. It’s kept around as a
-structural reference for how a command is wired end-to-end (`:TreeMotion`
-subcommand parser → `lua/treemotion/init.lua` API → runner) until it gets
-replaced with the real `w`/`e`/`b`/`ge` motions. The `Commands` and
-`Configuration` sections below describe that scaffolding, not the plugin’s
-eventual feature set.
+2. Installation                                      *treemotion-installation*
 
 
-==============================================================================
-3. Installation                                      *treemotion-installation*
-
-- lazy.nvim <https://github.com/folke/lazy.nvim>
+LAZY.NVIM                                  *treemotion-installation-lazy.nvim*
 
 >lua
     {
@@ -58,6 +45,137 @@ eventual feature set.
         version = "v1.*",
     }
 <
+
+
+NIX                                              *treemotion-installation-nix*
+
+This flake exports `overlays.default`, which adds `treemotion.nvim` (plus its
+`mega.cmdparse`/`mega.logging` dependencies) to `pkgs.vimPlugins` as ordinary
+Neovim plugin derivations.
+
+Add it as a flake input and overlay it onto your own `nixpkgs`
+
+>nix
+    {
+      inputs = {
+        nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+        treemotion-nvim.url = "github:asakura/treemotion.nvim";
+      };
+    
+      outputs =
+        { nixpkgs, treemotion-nvim, ... }:
+        let
+          pkgs = import nixpkgs {
+            system = "x86_64-linux";
+            overlays = [ treemotion-nvim.overlays.default ];
+          };
+        in
+        {
+          # `pkgs.vimPlugins.treemotion-nvim` is now available, e.g.:
+          #
+          # pkgs.neovim.override {
+          #   configure.packages.myPlugins.start = [ pkgs.vimPlugins.treemotion-nvim ];
+          # };
+        };
+    }
+<
+
+Withoutadding a flake input (e.g. directly in a NixOS or home-manager
+`nixpkgs.overlays` list), `builtins.getFlake` fetches it the same way:
+
+>nix
+    nixpkgs.overlays = [
+      (builtins.getFlake "github:asakura/treemotion.nvim").overlays.default
+    ];
+<
+
+
+WITH LAZYVIM-NIX ~
+
+lazyvim-nix <https://github.com/pfassina/lazyvim-nix> drives lazy.nvim’s
+`plugins.<key>` option with plain Lua-spec strings, so a plugin sourced from
+the Nix store (rather than fetched by lazy.nvim itself over the network) just
+needs a `dir = "..."` field pointing at the derivation, the same way
+lazyvim-nix’s own bundled plugins are wired. Apply this flake’s overlay to
+get `pkgs.vimPlugins.treemotion-nvim` (plus `mega-cmdparse`/`mega-logging`),
+then reference their store paths:
+
+>nix
+    programs.lazyvim = {
+      enable = true;
+    
+      plugins.treemotion = ''
+        return {
+          {
+            "asakura/treemotion.nvim",
+            dir = "${pkgs.vimPlugins.treemotion-nvim}",
+            dependencies = {
+              { "ColinKennedy/mega.cmdparse", dir = "${pkgs.vimPlugins.mega-cmdparse}" },
+              { "ColinKennedy/mega.logging", dir = "${pkgs.vimPlugins.mega-logging}" },
+            },
+            opts = {},
+          },
+        }
+      '';
+    };
+<
+
+
+==============================================================================
+3. Motions                                                *treemotion-motions*
+
+`treemotion` moves the cursor over treesitter nodes instead of Vim’s
+character classes – no per-filetype configuration needed, since it walks
+whatever parser is already attached to the buffer.
+
+- `w` / `e` / `b` / `ge` move one treesitter leaf at a time (an identifier, a
+    number, or a single punctuation token like `.` or `,`).
+- `W` / `E` / `B` / `gE` move one contiguous _run_ of leaves at a time – a
+    run is a maximal sequence of leaves with no whitespace between them,
+    mirroring how Vim’s real `W` ignores punctuation inside a WORD while `w`
+    stops on it.
+
+Both families are exposed as `:TreeMotion motion {name} [--count=N]` and as
+`<Plug>` mappings, `<Plug>(TreeMotionw)` through `<Plug>(TreeMotiongE)`,
+case-sensitive to match Vim’s own `w` vs `W`. Neither is bound to a key by
+default, so pick your own:
+
+
+PLAIN NEOVIM                                 *treemotion-motions-plain-neovim*
+
+>lua
+    for _, name in ipairs({ "w", "e", "b", "ge", "W", "E", "B", "gE" }) do
+        vim.keymap.set({ "n", "x", "o" }, name, string.format("<Plug>(TreeMotion%s)", name))
+    end
+<
+
+
+LAZY.NVIM                                       *treemotion-motions-lazy.nvim*
+
+>lua
+    {
+        "asakura/treemotion.nvim",
+        dependencies = { "ColinKennedy/mega.cmdparse", "ColinKennedy/mega.logging" },
+        keys = {
+            { "w", "<Plug>(TreeMotionw)", mode = { "n", "x", "o" }, desc = "Next treesitter leaf" },
+            { "e", "<Plug>(TreeMotione)", mode = { "n", "x", "o" }, desc = "End of treesitter leaf" },
+            { "b", "<Plug>(TreeMotionb)", mode = { "n", "x", "o" }, desc = "Previous treesitter leaf" },
+            { "ge", "<Plug>(TreeMotionge)", mode = { "n", "x", "o" }, desc = "End of previous treesitter leaf" },
+            { "W", "<Plug>(TreeMotionW)", mode = { "n", "x", "o" }, desc = "Next treesitter WORD" },
+            { "E", "<Plug>(TreeMotionE)", mode = { "n", "x", "o" }, desc = "End of treesitter WORD" },
+            { "B", "<Plug>(TreeMotionB)", mode = { "n", "x", "o" }, desc = "Previous treesitter WORD" },
+            { "gE", "<Plug>(TreeMotiongE)", mode = { "n", "x", "o" }, desc = "End of previous treesitter WORD" },
+        },
+    }
+<
+
+Binding through `keys` (rather than `opts`/`config`) lets lazy.nvim lazy-load
+`treemotion.nvim` the first time one of these mappings is pressed, replaying
+the key once the `<Plug>` mapping is actually defined.
+
+Counts work as usual (e.g. `3w`, `2W`) – the `<Plug>` mappings read
+`v:count1`. `n`/`x`/`o` modes mean these also compose with operators for free
+(`dw`, `cW`, …) without a custom `'operatorfunc'`.
 
 
 ==============================================================================
@@ -118,10 +236,15 @@ loads):
 ==============================================================================
 5. Commands                                              *treemotion-commands*
 
-The `:TreeMotion` command tree currently only exposes the template’s example
-subcommands. See `plugin/treemotion.lua` for how they’re wired up.
+The `:TreeMotion` command tree exposes the real `motion` subcommand (see
+`Motions` above) alongside the template’s placeholder example subcommands
+(see `Status`). See `plugin/treemotion.lua` for how they’re all wired up.
 
 >vim
+    " The real functionality
+    :TreeMotion motion w
+    :TreeMotion motion W --count=3
+    
     " A typical subcommand
     :TreeMotion hello-world say phrase "Hello, World!" " How are you?"
     :TreeMotion hello-world say phrase "Hello, World!" --repeat=2 --style=lowercase
@@ -162,6 +285,7 @@ Or run checks individually:
     nix run .#mdformat           # formats README.md + markdown/manual/docs/index.md
     nix run .#coverage-html      # busted under luacov, writes luacov_html/
     nix run .#api-documentation  # regenerates doc/treemotion_api.txt + doc/treemotion_types.txt
+    nix run .#user-documentation # regenerates doc/treemotion.txt + doc/tags from README.md via panvimdoc
 <
 
 Run a single test file or tag (inside `nix develop`):
