@@ -31,6 +31,27 @@
 ---    The default values when a user calls `:TreeMotion goodnight-moon`.
 ---@field hello_world treemotion.ConfigurationHelloWorld?
 ---    The default values when a user calls `:TreeMotion hello-world`.
+---@field motion treemotion.ConfigurationMotion?
+---    Customize the `w`/`e`/`b`/`ge` sub-word splitting behavior.
+
+---@class treemotion.ConfigurationMotion
+---    Customize the `w`/`e`/`b`/`ge` sub-word splitting behavior.
+---@field subword treemotion.ConfigurationMotionSubword?
+---    Which naming conventions `w`/`e`/`b`/`ge` additionally split identifiers
+---    on, on top of whole treesitter leaves. All default to `true` and may be
+---    combined freely. `W`/`E`/`B`/`gE` are unaffected -- they ignore case
+---    the same way real Vim's `W` ignores punctuation.
+
+---@class treemotion.ConfigurationMotionSubword
+---    Which naming conventions `w`/`e`/`b`/`ge` additionally split identifiers on.
+---@field camel_case boolean?
+---    Split lowercase-leading identifiers at case transitions, e.g. `fooBar` -> `foo`, `Bar`.
+---@field pascal_case boolean?
+---    Split uppercase-leading identifiers at case transitions, e.g. `FooBar` -> `Foo`, `Bar`.
+---@field kebab_case boolean?
+---    Split on `-`, e.g. `foo-bar` -> `foo`, `bar`. The `-` itself is skipped, not landed on.
+---@field snake_case boolean?
+---    Split on `_`, e.g. `foo_bar` -> `foo`, `bar`. The `_` itself is skipped, not landed on.
 
 ---@class treemotion.ConfigurationGoodnightMoon
 ---    The default values when a user calls `:TreeMotion goodnight-moon`.
