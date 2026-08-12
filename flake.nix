@@ -104,6 +104,13 @@
           };
         };
 
+        panvimdocSrc = pkgs.fetchFromGitHub {
+          owner = "kdheepak";
+          repo = "panvimdoc";
+          rev = "v4.0.1";
+          hash = "sha256-HmEBPkNELHC7Xy0v730sQWZyPPwFdIBUcELzNtrWwzQ=";
+        };
+
         luacovMultiple = lua51.buildLuarocksPackage {
           pname = "luacov-multiple";
           version = "0.6-1";
@@ -150,6 +157,7 @@
           nixfmt
           miniserve
           statix
+          pandoc
         ];
 
         neovimRuntime = "${pkgs.neovim-unwrapped}/share/nvim/runtime";
@@ -317,6 +325,19 @@
               "Regenerate doc/treemotion_api.txt + doc/treemotion_types.txt from LuaCATS docstrings"
               ''
                 nvim -u scripts/make_api_documentation/minimal_init.lua -l scripts/make_api_documentation/main.lua
+              '';
+
+          user-documentation =
+            mkApp "user-documentation"
+              "Regenerate doc/treemotion.txt from README.md with panvimdoc, then rebuild doc/tags"
+              ''
+                bash ${panvimdocSrc}/panvimdoc.sh \
+                  --project-name treemotion \
+                  --input-file README.md \
+                  --vim-version "Neovim >= 0.8.0" \
+                  --demojify true \
+                  --treesitter true
+                nvim --headless -c 'helptags doc' -c 'quit'
               '';
 
           coverage-html =
