@@ -2,29 +2,11 @@
 
 Treesitter-driven `w`/`e`/`b`/`ge`/`W`/`E`/`B`/`gE` motions, per filetype.
 
-| <!-- -->     | <!-- -->                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| <!-- --> | <!-- --> |
 | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Build Status | [![test](https://img.shields.io/github/actions/workflow/status/asakura/treemotion.nvim/test.yml?branch=main&style=for-the-badge&label=Test)](https://github.com/asakura/treemotion.nvim/actions/workflows/test.yml) [![documentation](https://img.shields.io/github/actions/workflow/status/asakura/treemotion.nvim/documentation.yml?branch=main&style=for-the-badge&label=Documentation)](https://github.com/asakura/treemotion.nvim/actions/workflows/documentation.yml) [![lints](https://img.shields.io/github/actions/workflow/status/asakura/treemotion.nvim/lints.yml?branch=main&style=for-the-badge&label=Lints)](https://github.com/asakura/treemotion.nvim/actions/workflows/lints.yml) [![checkhealth](https://img.shields.io/github/actions/workflow/status/asakura/treemotion.nvim/checkhealth.yml?branch=main&style=for-the-badge&label=checkhealth)](https://github.com/asakura/treemotion.nvim/actions/workflows/checkhealth.yml) [![urlchecker](https://img.shields.io/github/actions/workflow/status/asakura/treemotion.nvim/urlchecker.yml?branch=main&style=for-the-badge&label=URLChecker)](https://github.com/asakura/treemotion.nvim/actions/workflows/urlchecker.yml) [![commitlint](https://img.shields.io/github/actions/workflow/status/asakura/treemotion.nvim/commitlint.yml?branch=main&style=for-the-badge&label=Commitlint)](https://github.com/asakura/treemotion.nvim/actions/workflows/commitlint.yml) |
-| License      | [![License-MIT](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge)](https://github.com/asakura/treemotion.nvim/blob/main/LICENSE)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| Social       | [![RSS](https://img.shields.io/badge/rss-F88900?style=for-the-badge&logo=rss&logoColor=white)](https://github.com/asakura/treemotion.nvim/commits/main/doc/news.txt.atom)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-
-# Motions
-
-`treemotion` moves the cursor over treesitter nodes instead of Vim's
-character classes -- no per-filetype configuration needed, since it walks
-whatever parser is already attached to the buffer.
-
-- `w` / `e` / `b` / `ge` move one treesitter leaf at a time (an identifier, a
-  number, or a single punctuation token like `.` or `,`).
-- `W` / `E` / `B` / `gE` move one contiguous _run_ of leaves at a time -- a
-  run is a maximal sequence of leaves with no whitespace between them,
-  mirroring how Vim's real `W` ignores punctuation inside a WORD while `w`
-  stops on it.
-
-Both families are exposed as `:TreeMotion motion {name} [--count=N]` and as
-`<Plug>` mappings, `<Plug>(TreeMotionw)` through `<Plug>(TreeMotiongE)`,
-case-sensitive to match Vim's own `w` vs `W`. Neither is bound to a key by
-default, so pick your own:
+| License | [![License-MIT](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge)](https://github.com/asakura/treemotion.nvim/blob/main/LICENSE) |
+| Social | [![RSS](https://img.shields.io/badge/rss-F88900?style=for-the-badge&logo=rss&logoColor=white)](https://github.com/asakura/treemotion.nvim/commits/main/doc/news.txt.atom) |
 
 # Installation
 
@@ -109,6 +91,24 @@ programs.lazyvim = {
   '';
 };
 ```
+
+# Motions
+
+`treemotion` moves the cursor over treesitter nodes instead of Vim's
+character classes -- no per-filetype configuration needed, since it walks
+whatever parser is already attached to the buffer.
+
+- `w` / `e` / `b` / `ge` move one treesitter leaf at a time (an identifier, a
+  number, or a single punctuation token like `.` or `,`).
+- `W` / `E` / `B` / `gE` move one contiguous _run_ of leaves at a time -- a
+  run is a maximal sequence of leaves with no whitespace between them,
+  mirroring how Vim's real `W` ignores punctuation inside a WORD while `w`
+  stops on it.
+
+Both families are exposed as `:TreeMotion motion {name} [--count=N]` and as
+`<Plug>` mappings, `<Plug>(TreeMotionw)` through `<Plug>(TreeMotiongE)`,
+case-sensitive to match Vim's own `w` vs `W`. Neither is bound to a key by
+default, so pick your own:
 
 ## Plain Neovim
 
