@@ -117,10 +117,16 @@ jobs:
     # `bustedConfig`). `busted` reads `.busted` from the working directory by
     # default, so writing it here is enough; the `Test` step below needs no
     # changes.
+    #
+    # On Windows, `luarocks path --lr-path` returns backslash-separated
+    # paths (e.g. `C:\Users\...\?.lua`); embedded verbatim into the Lua
+    # string literal below, those backslashes are parsed as escape
+    # sequences and `.busted` fails to load. Forward slashes work fine as
+    # path separators on Windows too, so normalize before embedding.
     - name: Write Busted Config
       shell: bash
       run: |
-        lpath="lua/?.lua;lua/?/init.lua;spec/?.lua;$(luarocks path --lr-path)"
+        lpath="lua/?.lua;lua/?/init.lua;spec/?.lua;$(luarocks path --lr-path | tr '\\' '/')"
         cat > .busted <<EOF
         return {
           _all = {
