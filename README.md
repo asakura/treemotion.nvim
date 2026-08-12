@@ -102,11 +102,19 @@ character classes -- no per-filetype configuration needed, since it walks
 whatever parser is already attached to the buffer.
 
 - `w` / `e` / `b` / `ge` move one treesitter leaf at a time (an identifier, a
-  number, or a single punctuation token like `.` or `,`).
+  number, or a single punctuation token like `.` or `,`) -- and, within a
+  leaf, one naming-convention sub-word at a time, e.g. `fooBar-bazQux` is
+  four stops: `foo`, `Bar`, `baz`, `Qux`. Comments (or any other span a
+  language's treesitter query tags `@spell`) are treated as prose instead:
+  they first split into individual words on whitespace, the way real Vim's
+  `w` does in a text file, before naming-convention splitting applies to
+  each word. See `commands.motion.subword.code` / `.prose` under
+  `Configuration` to control this per context.
 - `W` / `E` / `B` / `gE` move one contiguous _run_ of leaves at a time -- a
   run is a maximal sequence of leaves with no whitespace between them,
   mirroring how Vim's real `W` ignores punctuation inside a WORD while `w`
-  stops on it.
+  stops on it. These ignore sub-words entirely, the same way real `W`
+  ignores punctuation.
 
 Both families are exposed as `:TreeMotion motion {name} [--count=N]` and as
 `<Plug>` mappings, `<Plug>(TreeMotionw)` through `<Plug>(TreeMotiongE)`,
@@ -164,6 +172,28 @@ works as expected:
             goodnight_moon = { read = { phrase = "A good book" } },
             hello_world = {
                 say = { ["repeat"] = 1, style = "lowercase" },
+            },
+            motion = {
+                subword = {
+                    -- Identifiers, string content, and similar: `-`/`_` divide
+                    -- but are never landed on themselves.
+                    code = {
+                        camel_case = true,
+                        pascal_case = true,
+                        kebab_case = "skip",
+                        snake_case = "skip",
+                    },
+                    -- Comments, or any other `@spell`-tagged span: mirrors real
+                    -- Vim's own `iskeyword` in a text file, where `-` is
+                    -- punctuation (its own stop) but `_` is a keyword character
+                    -- (doesn't split at all).
+                    prose = {
+                        camel_case = true,
+                        pascal_case = true,
+                        kebab_case = "stop",
+                        snake_case = "none",
+                    },
+                },
             },
         },
         logging = {

@@ -21,6 +21,9 @@ treemotion.ConfigurationGoodnightMoon	treemotion_types.txt	/*treemotion.Configur
 treemotion.ConfigurationGoodnightMoonRead	treemotion_types.txt	/*treemotion.ConfigurationGoodnightMoonRead*
 treemotion.ConfigurationHelloWorld	treemotion_types.txt	/*treemotion.ConfigurationHelloWorld*
 treemotion.ConfigurationHelloWorldSay	treemotion_types.txt	/*treemotion.ConfigurationHelloWorldSay*
+treemotion.ConfigurationMotion	treemotion_types.txt	/*treemotion.ConfigurationMotion*
+treemotion.ConfigurationMotionSubword	treemotion_types.txt	/*treemotion.ConfigurationMotionSubword*
+treemotion.ConfigurationMotionSubwordRules	treemotion_types.txt	/*treemotion.ConfigurationMotionSubwordRules*
 treemotion.LoggingConfiguration	treemotion_types.txt	/*treemotion.LoggingConfiguration*
 treemotion.ResolvedConfiguration	treemotion_types.txt	/*treemotion.ResolvedConfiguration*
 treemotion.run_arbitrary_thing()	treemotion_api.txt	/*treemotion.run_arbitrary_thing()*

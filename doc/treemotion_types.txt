@@ -39,6 +39,56 @@ Fields ~
        The default values when a user calls `:TreeMotion goodnight-moon`.
     {hello_world} |treemotion.ConfigurationHelloWorld|?
        The default values when a user calls `:TreeMotion hello-world`.
+    {motion} |treemotion.ConfigurationMotion|?
+       Customize the `w`/`e`/`b`/`ge` sub-word splitting behavior.
+
+------------------------------------------------------------------------------
+*treemotion.ConfigurationMotion*
+   Customize the `w`/`e`/`b`/`ge` sub-word splitting behavior.
+
+Fields ~
+    {subword} |treemotion.ConfigurationMotionSubword|?
+       Which naming conventions `w`/`e`/`b`/`ge` additionally split leaves on.
+       `W`/`E`/`B`/`gE` are unaffected -- they ignore case entirely, the same
+       way real Vim's `W` ignores punctuation.
+
+------------------------------------------------------------------------------
+*treemotion.ConfigurationMotionSubword*
+   Sub-word splitting rules, configured separately for "code" leaves
+   (identifiers, string content, ...) and "prose" leaves (comments, or
+   any other span a treesitter `@spell` query marks as natural-language
+   text). Splitting a prose leaf first divides it into individual words
+   (on whitespace/punctuation, like real Vim's `w` in a text file) before
+   either ruleset ever runs; code leaves skip straight to these rules.
+
+Fields ~
+    {code} |treemotion.ConfigurationMotionSubwordRules|?
+       Splitting rules for leaves that aren't tagged `@spell`.
+    {prose} |treemotion.ConfigurationMotionSubwordRules|?
+       Splitting rules for leaves (or, after the word split above, individual
+       words within a leaf) that are tagged `@spell`.
+
+------------------------------------------------------------------------------
+*treemotion.ConfigurationMotionSubwordRules*
+   Which naming conventions additionally split a leaf (or prose word) on.
+
+Fields ~
+    {camel_case} `(boolean)`?
+       Split lowercase-leading identifiers at case transitions, e.g. `fooBar` -> `foo`, `Bar`.
+    {pascal_case} `(boolean)`?
+       Split uppercase-leading identifiers at case transitions, e.g. `FooBar` -> `Foo`, `Bar`.
+    {keb|a|b_c||a|s|e} ("n|on|e" | "skip" | "stop"
+   |How| `keb|a|b_c||a|s|e`/`sn|a|ke_c||a|s|e` |tre||a|t|| |a| `-`/`_` delim|it|er ||on|ce| found:
+   `"n|on|e"` |le|a|ves| |it| |embedded|, ||no|t| |a| |spl|it|| |point| ||a|t| ||a|ll|; `"skip"` ||spl|it||s|
+   |on| |it| |but| |drops| |the| delim|it|er |ch|a|r|a|cter| |||it|s|elf|, |so| |no| |un|it|| |ever| |l||a|nd|s|
+   |on| |it|; `"stop"` ||spl|it||s| |on| |it| *||a|nd|* |keeps| |the| delim|it|er ||a|s| ||it|s| |own| ||un|it||.|)?
+       How to handle `-`, e.g. `foo-bar` -> `foo`, `bar` (`"skip"`) or `foo`, `-`, `bar` (`"stop"`).
+    {sn|a|ke_c||a|s|e} ("n|on|e" | "skip" | "stop"
+   |How| `keb|a|b_c||a|s|e`/`sn|a|ke_c||a|s|e` |tre||a|t|| |a| `-`/`_` delim|it|er ||on|ce| found:
+   `"n|on|e"` |le|a|ves| |it| |embedded|, ||no|t| |a| |spl|it|| |point| ||a|t| ||a|ll|; `"skip"` ||spl|it||s|
+   |on| |it| |but| |drops| |the| delim|it|er |ch|a|r|a|cter| |||it|s|elf|, |so| |no| |un|it|| |ever| |l||a|nd|s|
+   |on| |it|; `"stop"` ||spl|it||s| |on| |it| *||a|nd|* |keeps| |the| delim|it|er ||a|s| ||it|s| |own| ||un|it||.|)?
+       How to handle `_`, e.g. `foo_bar` -> `foo`, `bar` (`"skip"`) or `foo`, `_`, `bar` (`"stop"`).
 
 ------------------------------------------------------------------------------
 *treemotion.ConfigurationGoodnightMoon*
