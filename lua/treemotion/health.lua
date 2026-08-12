@@ -221,6 +221,31 @@ function M.get_issues(data)
     return output
 end
 
+--- Check whether this Neovim version can run `motion` commands at full fidelity.
+---
+--- `vim.treesitter.get_node()`'s `include_anonymous` option -- which lets
+--- `w`/`e`/`b`/`ge`/`W`/`E`/`B`/`gE` stop on punctuation leaves (`.`, `(`,
+--- `,`, ...) and not just named nodes -- only exists on Neovim 0.11+. On
+--- older Neovim it's silently ignored rather than erroring, so the motions
+--- still "work", just coarser than intended -- worth surfacing here since
+--- nothing else would tell the user why punctuation gets skipped.
+local function _check_motion()
+    vim.health.start("Motion")
+
+    if vim.fn.has("nvim-0.11") == 1 then
+        vim.health.ok(
+            "Neovim supports `vim.treesitter.get_node({ include_anonymous = true })`, "
+                .. "so `w`/`e`/`b`/`ge`/`W`/`E`/`B`/`gE` stop on punctuation leaves too."
+        )
+    else
+        vim.health.warn(
+            "Neovim is older than 0.11, so `vim.treesitter.get_node()` doesn't support "
+                .. "`include_anonymous`. `w`/`e`/`b`/`ge`/`W`/`E`/`B`/`gE` will silently skip over "
+                .. "punctuation leaves (e.g. `.`, `(`, `,`) on this version."
+        )
+    end
+end
+
 --- Make sure `data` will work for `treemotion`.
 ---
 ---@param data treemotion.Configuration? All extra customizations for this plugin.
@@ -239,6 +264,8 @@ function M.check(data)
     for _, issue in ipairs(issues) do
         vim.health.error(issue)
     end
+
+    _check_motion()
 end
 
 return M
