@@ -8,6 +8,7 @@ local configuration = require("treemotion._core.configuration")
 local arbitrary_thing_runner = require("treemotion._commands.arbitrary_thing.runner")
 local copy_logs_runner = require("treemotion._commands.copy_logs.runner")
 local count_sheep = require("treemotion._commands.goodnight_moon.count_sheep")
+local motion_runner = require("treemotion._commands.motion.runner")
 local read = require("treemotion._commands.goodnight_moon.read")
 local say_runner = require("treemotion._commands.hello_world.say.runner")
 local sleep = require("treemotion._commands.goodnight_moon.sleep")
@@ -70,6 +71,70 @@ end
 ---
 function M.run_hello_world_say_word(word, repeat_, style)
     say_runner.run_say_word(word, repeat_, style)
+end
+
+--- Move the cursor like `w`: to the start of the next treesitter leaf.
+---
+---@param count number? A 1-or-more value. How many leaves to move over.
+---
+function M.run_motion_w(count)
+    motion_runner.run_w(count)
+end
+
+--- Move the cursor like `ge`: to the end of the previous treesitter leaf.
+---
+---@param count number? A 1-or-more value. How many leaves to move over.
+---
+function M.run_motion_ge(count)
+    motion_runner.run_ge(count)
+end
+
+--- Move the cursor like `e`: to the end of the current or next treesitter leaf.
+---
+---@param count number? A 1-or-more value. How many leaves to move over.
+---
+function M.run_motion_e(count)
+    motion_runner.run_e(count)
+end
+
+--- Move the cursor like `b`: to the start of the current or previous treesitter leaf.
+---
+---@param count number? A 1-or-more value. How many leaves to move over.
+---
+function M.run_motion_b(count)
+    motion_runner.run_b(count)
+end
+
+--- Move the cursor like `W`: to the start of the next run of contiguous treesitter leaves.
+---
+---@param count number? A 1-or-more value. How many runs to move over.
+---
+function M.run_motion_W(count)
+    motion_runner.run_W(count)
+end
+
+--- Move the cursor like `gE`: to the end of the previous run of contiguous treesitter leaves.
+---
+---@param count number? A 1-or-more value. How many runs to move over.
+---
+function M.run_motion_gE(count)
+    motion_runner.run_gE(count)
+end
+
+--- Move the cursor like `E`: to the end of the current or next run of contiguous treesitter leaves.
+---
+---@param count number? A 1-or-more value. How many runs to move over.
+---
+function M.run_motion_E(count)
+    motion_runner.run_E(count)
+end
+
+--- Move the cursor like `B`: to the start of the current or previous run of contiguous treesitter leaves.
+---
+---@param count number? A 1-or-more value. How many runs to move over.
+---
+function M.run_motion_B(count)
+    motion_runner.run_B(count)
 end
 
 --- Count a sheep for each `count`.
