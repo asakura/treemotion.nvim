@@ -294,13 +294,14 @@ describe("help API", function()
 
             assert.same({
                 [[
-Usage: TreeMotion {arbitrary-thing,copy-logs,goodnight-moon,hello-world} [--help]
+Usage: TreeMotion {arbitrary-thing,copy-logs,goodnight-moon,hello-world,motion} [--help]
 
 Commands:
     arbitrary-thing    Prepare to sleep or sleep.
     copy-logs    Get debug logs for TreeMotion.
     goodnight-moon    Prepare to sleep or sleep.
     hello-world    Print hello to the user.
+    motion    Move the cursor by treesitter node.
 
 Options:
     --help -h    Show this help message and exit.
