@@ -1,5 +1,5 @@
 {
-  description = "treemotion.nvim: Treesitter-driven w/e/b/ge motions, per filetype";
+  description = "treemotion.nvim: Treesitter-driven w/e/b/ge/W/E/B/gE motions, per filetype";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
