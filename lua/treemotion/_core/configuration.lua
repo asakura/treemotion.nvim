@@ -1,6 +1,7 @@
 --- All functions and data to help customize `treemotion` for this user.
 
 local hints_constant = require("treemotion._core.hints")
+local motion_constant = require("treemotion._commands.motion.constant")
 local say_constant = require("treemotion._commands.hello_world.say.constant")
 
 local logging = require("mega.logging")
@@ -29,10 +30,18 @@ local _DEFAULTS = {
         },
         motion = {
             subword = {
-                camel_case = true,
-                pascal_case = true,
-                kebab_case = true,
-                snake_case = true,
+                code = {
+                    camel_case = true,
+                    pascal_case = true,
+                    kebab_case = motion_constant.DelimiterMode.skip,
+                    snake_case = motion_constant.DelimiterMode.skip,
+                },
+                prose = {
+                    camel_case = true,
+                    pascal_case = true,
+                    kebab_case = motion_constant.DelimiterMode.stop,
+                    snake_case = motion_constant.DelimiterMode.none,
+                },
             },
         },
     },
