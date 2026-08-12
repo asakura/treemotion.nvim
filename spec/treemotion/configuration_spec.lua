@@ -78,6 +78,21 @@ describe("default", function()
             },
         })
     end)
+
+    it("works with every #commands.motion.subword.kebab_case/snake_case mode, for both code and prose", function()
+        for _, mode in ipairs({ "none", "skip", "stop" }) do
+            _assert_good({
+                commands = {
+                    motion = {
+                        subword = {
+                            code = { kebab_case = mode, snake_case = mode },
+                            prose = { kebab_case = mode, snake_case = mode },
+                        },
+                    },
+                },
+            })
+        end
+    end)
 end)
 
 ---@diagnostic disable: assign-type-mismatch
@@ -118,33 +133,39 @@ describe("bad configuration - commands", function()
         )
     end)
 
-    it("happens with a bad type for #commands.motion.subword.camel_case", function()
-        _assert_bad(
-            { commands = { motion = { subword = { camel_case = "aaa" } } } },
-            { "commands.motion.subword.camel_case: expected a boolean, got aaa" }
-        )
-    end)
+    for _, context in ipairs({ "code", "prose" }) do
+        it(string.format("happens with a bad type for #commands.motion.subword.%s.camel_case", context), function()
+            _assert_bad(
+                { commands = { motion = { subword = { [context] = { camel_case = "aaa" } } } } },
+                { string.format("commands.motion.subword.%s.camel_case: expected a boolean, got aaa", context) }
+            )
+        end)
 
-    it("happens with a bad type for #commands.motion.subword.pascal_case", function()
-        _assert_bad(
-            { commands = { motion = { subword = { pascal_case = "aaa" } } } },
-            { "commands.motion.subword.pascal_case: expected a boolean, got aaa" }
-        )
-    end)
+        it(string.format("happens with a bad type for #commands.motion.subword.%s.pascal_case", context), function()
+            _assert_bad(
+                { commands = { motion = { subword = { [context] = { pascal_case = "aaa" } } } } },
+                { string.format("commands.motion.subword.%s.pascal_case: expected a boolean, got aaa", context) }
+            )
+        end)
 
-    it("happens with a bad type for #commands.motion.subword.kebab_case", function()
-        _assert_bad(
-            { commands = { motion = { subword = { kebab_case = "aaa" } } } },
-            { "commands.motion.subword.kebab_case: expected a boolean, got aaa" }
-        )
-    end)
+        it(string.format("happens with a bad value for #commands.motion.subword.%s.kebab_case", context), function()
+            _assert_bad({ commands = { motion = { subword = { [context] = { kebab_case = "aaa" } } } } }, {
+                string.format(
+                    'commands.motion.subword.%s.kebab_case: expected "none" or "skip" or "stop", got aaa',
+                    context
+                ),
+            })
+        end)
 
-    it("happens with a bad type for #commands.motion.subword.snake_case", function()
-        _assert_bad(
-            { commands = { motion = { subword = { snake_case = "aaa" } } } },
-            { "commands.motion.subword.snake_case: expected a boolean, got aaa" }
-        )
-    end)
+        it(string.format("happens with a bad value for #commands.motion.subword.%s.snake_case", context), function()
+            _assert_bad({ commands = { motion = { subword = { [context] = { snake_case = "aaa" } } } } }, {
+                string.format(
+                    'commands.motion.subword.%s.snake_case: expected "none" or "skip" or "stop", got aaa',
+                    context
+                ),
+            })
+        end)
+    end
 end)
 ---@diagnostic enable: assign-type-mismatch
 ---@diagnostic enable: missing-fields
