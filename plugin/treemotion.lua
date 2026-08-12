@@ -10,6 +10,7 @@ local _SUBCOMMANDS = function()
     local copy_logs = require("treemotion._commands.copy_logs.parser")
     local goodnight_moon = require("treemotion._commands.goodnight_moon.parser")
     local hello_world = require("treemotion._commands.hello_world.parser")
+    local motion = require("treemotion._commands.motion.parser")
 
     local parser = cmdparse.ParameterParser.new({ name = _PREFIX, help = "The root of all commands." })
     local subparsers = parser:add_subparsers({ "commands", help = "All runnable commands." })
@@ -18,6 +19,7 @@ local _SUBCOMMANDS = function()
     subparsers:add_parser(copy_logs.make_parser())
     subparsers:add_parser(goodnight_moon.make_parser())
     subparsers:add_parser(hello_world.make_parser())
+    subparsers:add_parser(motion.make_parser())
 
     return parser
 end
@@ -32,3 +34,14 @@ vim.keymap.set("n", "<Plug>(TreeMotionSayHi)", function()
 
     treemotion.run_hello_world_say_word("Hi!")
 end, { desc = "Say hi to the user." })
+
+for _, name in ipairs({ "w", "e", "b", "ge", "W", "E", "B", "gE" }) do
+    vim.keymap.set({ "n", "x", "o" }, string.format("<Plug>(TreeMotion%s)", name), function()
+        local configuration = require("treemotion._core.configuration")
+        local treemotion = require("treemotion")
+
+        configuration.initialize_data_if_needed()
+
+        treemotion["run_motion_" .. name](vim.v.count1)
+    end, { desc = string.format('Move like Vim\'s "%s", by treesitter node.', name) })
+end
