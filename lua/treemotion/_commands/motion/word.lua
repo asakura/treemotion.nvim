@@ -89,9 +89,10 @@ end
 --- Everything gets recomputed from scratch here, unlike `next_unit`/
 --- `previous_unit`, since there's no previous `treemotion.WordUnit` to step from yet.
 ---
----@return treemotion.WordUnit? # The sub-word unit under the cursor, if the buffer has a parser.
-function M.current_unit()
-    local node = leaf.current_leaf()
+---@param forward boolean Forwarded to `leaf.current_leaf()`: which nearby leaf to prefer off a leaf (e.g. blank line).
+---@return treemotion.WordUnit? # The unit under (or nearest) the cursor, if a parser and a leaf exist that way.
+function M.current_unit(forward)
+    local node = leaf.current_leaf(forward)
 
     if not node then
         return nil

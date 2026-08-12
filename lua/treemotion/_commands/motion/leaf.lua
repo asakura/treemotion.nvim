@@ -19,10 +19,75 @@
 
 local M = {}
 
---- Find the leaf directly under the cursor.
+--- Find the two leaves bracketing a gap no leaf covers (e.g. a blank line).
 ---
----@return TSNode? # The smallest leaf-or-not node under the cursor, if the buffer has a parser.
-function M.current_leaf()
+--- `get_node()` finds the *smallest* node whose range contains the cursor,
+--- which lands here instead of on a leaf whenever the cursor sits somewhere
+--- no leaf's range reaches -- a blank line being the common case, since
+--- treesitter grammars have no node for "nothing." When that happens, none
+--- of `gap_parent`'s own children contain the cursor either (otherwise
+--- `get_node()` would have descended into that child instead), so the
+--- cursor falls in the gap between two specific children -- or before the
+--- first, or after the last. This walks those direct children once to find
+--- which gap that is, then descends into whichever side `forward` asks for.
+---
+---@param gap_parent TSNode The non-leaf node `get_node()` returned.
+---@param row integer 0-indexed cursor row.
+---@param column integer 0-indexed cursor column.
+---@param forward boolean Look for the next leaf after the gap, else the previous one.
+---@return TSNode? # The nearest real leaf in the requested direction, if any.
+---
+local function _nearest_leaf_in_gap(gap_parent, row, column, forward)
+    ---@type TSNode?, TSNode?
+    local before, after
+
+    for index = 0, gap_parent:child_count() - 1 do
+        local child = assert(gap_parent:child(index))
+        local start_row, start_column = child:start()
+
+        if start_row > row or (start_row == row and start_column > column) then
+            after = child
+
+            break
+        end
+
+        before = child
+    end
+
+    if forward then
+        if after then
+            return M.first_leaf(after)
+        end
+
+        -- The gap is after `gap_parent`'s last child (e.g. a blank line at
+        -- the end of a block) -- the next leaf, if any, lives outside
+        -- `gap_parent` entirely.
+        return M.next_leaf(gap_parent)
+    end
+
+    if before then
+        return M.last_leaf(before)
+    end
+
+    -- Mirror image: the gap is before `gap_parent`'s first child.
+    return M.previous_leaf(gap_parent)
+end
+
+--- Find the leaf directly under the cursor, or nearest it.
+---
+--- `get_node()` can return a node with children instead of a real leaf --
+--- whenever the cursor sits in a gap no leaf covers, most commonly a blank
+--- line (treesitter grammars have no node for blank lines at all). Rather
+--- than handing that ancestor to callers that expect an actual leaf (which
+--- would silently strand `w`/`W`-family motions there, since a node with no
+--- previous/next sibling of its own looks indistinguishable from the start
+--- or end of the whole document), `_nearest_leaf_in_gap` finds the real
+--- leaf immediately before or after the gap instead.
+---
+---@param forward boolean Off a leaf, prefer the nearest leaf after the cursor over the nearest one before it.
+---@return TSNode? # The leaf under (or nearest) the cursor, if a parser and a leaf exist that way.
+---
+function M.current_leaf(forward)
     -- `get_parser()` returns `nil, message` when no parser can be created on
     -- some Neovim versions, but `error()`s with the same message on others
     -- (e.g. 0.11) -- `pcall` handles both the same way.
@@ -40,7 +105,15 @@ function M.current_leaf()
     -- returns *named* nodes, so a cursor sitting on punctuation (which is
     -- unnamed in most grammars, see this module's docstring) would resolve
     -- to its named parent instead of the punctuation leaf itself.
-    return vim.treesitter.get_node({ include_anonymous = true })
+    local node = vim.treesitter.get_node({ include_anonymous = true })
+
+    if not node or node:child_count() == 0 then
+        return node
+    end
+
+    local row, column = M.cursor_position()
+
+    return _nearest_leaf_in_gap(node, row, column, forward)
 end
 
 --- Read the cursor's position, converted to `TSNode`'s 0-indexed row convention.

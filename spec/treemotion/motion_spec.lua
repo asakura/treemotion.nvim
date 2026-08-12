@@ -331,6 +331,99 @@ describe("motion API - subword unit fallback", function()
     end)
 end)
 
+--- A blank line has no treesitter node of its own, so `get_node()` at
+--- `(1, 0)` doesn't land on a leaf -- it lands on the whole-buffer `chunk`
+--- (the smallest node whose range still covers the blank line), which has
+--- children and no useful next/previous sibling of its own. Without
+--- specifically handling that, every motion run from a blank line does
+--- nothing at all, since the traversal has nowhere to climb to. Leaf
+--- columns, both lines: `local`=0, `a`/`b`=6, `=`=8, `1`/`2`=10.
+local function _initialize_blank_line_buffer()
+    _BUFFER = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_lines(_BUFFER, 0, -1, false, { "local a = 1", "", "local b = 2" })
+    vim.api.nvim_set_current_buf(_BUFFER)
+    vim.treesitter.start(_BUFFER, "lua")
+end
+
+---@param row integer 0-indexed row.
+---@param column integer 0-indexed column.
+local function _set_cursor_at(row, column)
+    vim.api.nvim_win_set_cursor(0, { row + 1, column })
+end
+
+---@return integer, integer # The cursor's current 0-indexed row and column.
+local function _get_cursor()
+    local cursor = vim.api.nvim_win_get_cursor(0)
+
+    return cursor[1] - 1, cursor[2]
+end
+
+describe("motion API - blank line gaps", function()
+    before_each(_initialize_blank_line_buffer)
+    after_each(_remove_buffer)
+
+    it("#w advances past a blank line to the very next leaf, without overshooting past it", function()
+        _set_cursor_at(1, 0)
+        treemotion.run_motion_w()
+
+        local row, column = _get_cursor()
+        assert.same({ 2, 0 }, { row, column }) -- `local`, not `a` (an un-guarded unconditional step would overshoot)
+    end)
+
+    it("#W does the same at the run level", function()
+        _set_cursor_at(1, 0)
+        treemotion.run_motion_W()
+
+        local row, column = _get_cursor()
+        assert.same({ 2, 0 }, { row, column })
+    end)
+
+    it("#e advances past a blank line to the end of the nearest next leaf", function()
+        _set_cursor_at(1, 0)
+        treemotion.run_motion_e()
+
+        local row, column = _get_cursor()
+        assert.same({ 2, 4 }, { row, column }) -- the end of `local`
+    end)
+
+    it("#b retreats past a blank line to the start of the nearest previous leaf", function()
+        _set_cursor_at(1, 0)
+        treemotion.run_motion_b()
+
+        local row, column = _get_cursor()
+        assert.same({ 0, 10 }, { row, column }) -- the start of `1`
+    end)
+
+    it(
+        "#ge retreats past a blank line to the end of the nearest previous leaf, without overshooting past it",
+        function()
+            _set_cursor_at(1, 0)
+            treemotion.run_motion_ge()
+
+            local row, column = _get_cursor()
+            assert.same({ 0, 10 }, { row, column }) -- `1`, not `=` (an un-guarded unconditional step would overshoot)
+        end
+    )
+
+    it("#w does nothing, without erroring, on a blank line with no leaf after it", function()
+        vim.api.nvim_buf_set_lines(assert(_BUFFER), 0, -1, false, { "local a = 1", "" })
+        _set_cursor_at(1, 0)
+        treemotion.run_motion_w()
+
+        local row, column = _get_cursor()
+        assert.same({ 1, 0 }, { row, column })
+    end)
+
+    it("#b does nothing, without erroring, on a blank line with no leaf before it", function()
+        vim.api.nvim_buf_set_lines(assert(_BUFFER), 0, -1, false, { "", "local a = 1" })
+        _set_cursor_at(0, 0)
+        treemotion.run_motion_b()
+
+        local row, column = _get_cursor()
+        assert.same({ 0, 0 }, { row, column })
+    end)
+end)
+
 describe("motion API - subword configuration", function()
     before_each(_initialize_subword_buffer)
 

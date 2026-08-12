@@ -83,13 +83,44 @@ local function _is_cursor_at_end(node)
     return cursor_row == row and cursor_column == column
 end
 
+--- Check if the cursor sits anywhere within `node`'s range.
+---
+--- `w`/`ge` (and their `W`/`gE` counterparts) use this to tell a *real*
+--- current unit -- the cursor genuinely sitting inside it -- apart from one
+--- `leaf.current_leaf()`/`word.current_unit()` had to substitute because the
+--- cursor was in a gap no unit covers (e.g. a blank line): in that case
+--- `node` is already the nearest unit in the direction they're moving, so
+--- unconditionally stepping to the *next*/*previous* one from there would
+--- overshoot by one. See `_move_forward_to_start`/`_move_backward_to_end`.
+---
+---@param node TSNode|treemotion.WordUnit
+---@return boolean # `true` if the cursor is inside `node`'s range, `false` for a gap `node` substitutes for.
+local function _is_cursor_inside(node)
+    local start_row, start_column = node:start()
+    local end_row, end_column = node:end_()
+    local cursor_row, cursor_column = leaf.cursor_position()
+
+    if cursor_row < start_row or (cursor_row == start_row and cursor_column < start_column) then
+        return false
+    end
+
+    if cursor_row > end_row or (cursor_row == end_row and cursor_column >= end_column) then
+        return false
+    end
+
+    return true
+end
+
 --- Generic `w`/`W`-shape move: unconditionally advance to the start of the next unit.
 ---
 --- Only `M.run_W` calls this -- `w` has its own sub-word-aware
 --- `_move_word_forward_to_start` below. To find the next run: expand the
 --- current leaf out to the *end* of its own run (so leaves already known to
 --- belong to it are skipped over), take the leaf right after that, then
---- expand forward from there to the *start* of the next run.
+--- expand forward from there to the *start* of the next run. If the cursor
+--- isn't actually inside `node` (see `_is_cursor_inside`), `node` was
+--- already substituted for a gap -- i.e. it's already the next run's start
+--- -- so land there directly instead of stepping past it.
 ---
 ---@param count integer How many runs to move over.
 ---@param run_end fun(node: TSNode): TSNode Expand a leaf to the end of its run.
@@ -97,19 +128,23 @@ end
 ---
 local function _move_forward_to_start(count, run_end, run_start)
     for _ = 1, count do
-        local node = leaf.current_leaf()
+        local node = leaf.current_leaf(true)
 
         if not node then
             return
         end
 
-        local next_ = leaf.next_leaf(run_end(node))
+        if not _is_cursor_inside(node) then
+            _set_cursor_to_start(run_start(node))
+        else
+            local next_ = leaf.next_leaf(run_end(node))
 
-        if not next_ then
-            return
+            if not next_ then
+                return
+            end
+
+            _set_cursor_to_start(run_start(next_))
         end
-
-        _set_cursor_to_start(run_start(next_))
     end
 end
 
@@ -119,7 +154,7 @@ end
 --- `_move_word_backward_to_end` below. Mirror image of
 --- `_move_forward_to_start`: expand backward to the start of the current
 --- run, step to the leaf before that, then expand backward from there to
---- the end of the previous run.
+--- the end of the previous run. Same gap substitution rule applies, mirrored.
 ---
 ---@param count integer How many runs to move over.
 ---@param run_start fun(node: TSNode): TSNode Expand a leaf to the start of its run.
@@ -127,19 +162,23 @@ end
 ---
 local function _move_backward_to_end(count, run_start, run_end)
     for _ = 1, count do
-        local node = leaf.current_leaf()
+        local node = leaf.current_leaf(false)
 
         if not node then
             return
         end
 
-        local previous = leaf.previous_leaf(run_start(node))
+        if not _is_cursor_inside(node) then
+            _set_cursor_to_end(run_end(node))
+        else
+            local previous = leaf.previous_leaf(run_start(node))
 
-        if not previous then
-            return
+            if not previous then
+                return
+            end
+
+            _set_cursor_to_end(run_end(previous))
         end
-
-        _set_cursor_to_end(run_end(previous))
     end
 end
 
@@ -156,7 +195,7 @@ end
 ---
 local function _move_forward_to_end(count, run_end)
     for _ = 1, count do
-        local node = leaf.current_leaf()
+        local node = leaf.current_leaf(true)
 
         if not node then
             return
@@ -189,7 +228,7 @@ end
 ---
 local function _move_backward_to_start(count, run_start)
     for _ = 1, count do
-        local node = leaf.current_leaf()
+        local node = leaf.current_leaf(false)
 
         if not node then
             return
@@ -215,49 +254,59 @@ end
 ---
 --- Same shape as `_move_forward_to_start`, but stepping through
 --- `_commands.motion.word` units instead of whole leaves/runs, so a single
---- leaf like `fooBar` counts as more than one stop.
+--- leaf like `fooBar` counts as more than one stop. Same gap substitution
+--- rule too -- see `_is_cursor_inside`.
 ---
 ---@param count integer How many units to move over.
 ---
 local function _move_word_forward_to_start(count)
     for _ = 1, count do
-        local unit = word.current_unit()
+        local unit = word.current_unit(true)
 
         if not unit then
             return
         end
 
-        local next_ = word.next_unit(unit)
+        if not _is_cursor_inside(unit) then
+            _set_cursor_to_start(unit)
+        else
+            local next_ = word.next_unit(unit)
 
-        if not next_ then
-            return
+            if not next_ then
+                return
+            end
+
+            _set_cursor_to_start(next_)
         end
-
-        _set_cursor_to_start(next_)
     end
 end
 
 --- `ge`-shape move: unconditionally retreat to the end of the previous sub-word unit.
 ---
---- Same shape as `_move_backward_to_end`, but over `_commands.motion.word` units.
+--- Same shape as `_move_backward_to_end`, but over `_commands.motion.word`
+--- units. Same gap substitution rule too -- see `_is_cursor_inside`.
 ---
 ---@param count integer How many units to move over.
 ---
 local function _move_word_backward_to_end(count)
     for _ = 1, count do
-        local unit = word.current_unit()
+        local unit = word.current_unit(false)
 
         if not unit then
             return
         end
 
-        local previous = word.previous_unit(unit)
+        if not _is_cursor_inside(unit) then
+            _set_cursor_to_end(unit)
+        else
+            local previous = word.previous_unit(unit)
 
-        if not previous then
-            return
+            if not previous then
+                return
+            end
+
+            _set_cursor_to_end(previous)
         end
-
-        _set_cursor_to_end(previous)
     end
 end
 
@@ -269,7 +318,7 @@ end
 ---
 local function _move_word_forward_to_end(count)
     for _ = 1, count do
-        local unit = word.current_unit()
+        local unit = word.current_unit(true)
 
         if not unit then
             return
@@ -295,7 +344,7 @@ end
 ---
 local function _move_word_backward_to_start(count)
     for _ = 1, count do
-        local unit = word.current_unit()
+        local unit = word.current_unit(false)
 
         if not unit then
             return
