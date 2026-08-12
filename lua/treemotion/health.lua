@@ -3,6 +3,7 @@
 local configuration_ = require("treemotion._core.configuration")
 local hints_constant = require("treemotion._core.hints")
 local logging_ = require("mega.logging")
+local motion_constant = require("treemotion._commands.motion.constant")
 local say_constant = require("treemotion._commands.hello_world.say.constant")
 local tabler = require("treemotion._core.tabler")
 
@@ -98,6 +99,45 @@ local function _get_boolean_issue(key, data)
     return message
 end
 
+--- Check if `data` is one of `choices` under `key`.
+---
+---@param key string The configuration value that we are checking.
+---@param data any The object to validate.
+---@param choices string[] Every value `data` is allowed to be.
+---@param expected string Human-readable description of `choices`, shown when `data` doesn't match.
+---@return string? # The found error message, if any.
+---
+local function _get_enum_issue(key, data, choices, expected)
+    local success, message = pcall(vim.validate, {
+        [key] = {
+            data,
+            function(value)
+                if value == nil then
+                    -- This value is optional so it's fine it if is not defined.
+                    return true
+                end
+
+                return vim.tbl_contains(choices, value)
+            end,
+            -- TODO: `lua-language-server`'s type stubs only describe the
+            -- newer (0.11+) `vim.validate` signature, so this deprecated
+            -- table-spec call is flagged as a type mismatch even though
+            -- it's valid at runtime on Neovim 0.10. Remove this
+            -- suppression once this call is switched to the newer
+            -- `vim.validate(name, value, validator, optional, message)`
+            -- signature.
+            ---@diagnostic disable-next-line: assign-type-mismatch
+            expected,
+        },
+    })
+
+    if success then
+        return nil
+    end
+
+    return message
+end
+
 --- Check all "commands" values for issues.
 ---
 ---@param data treemotion.Configuration All of the user's fallback settings.
@@ -124,14 +164,29 @@ local function _get_command_issues(data)
         return vim.tbl_contains(choices, value)
     end, '"lowercase" or "uppercase"')
 
-    for _, field in ipairs({ "camel_case", "pascal_case", "kebab_case", "snake_case" }) do
-        local message = _get_boolean_issue(
-            "commands.motion.subword." .. field,
-            tabler.get_value(data, { "commands", "motion", "subword", field })
-        )
+    for _, context in ipairs({ "code", "prose" }) do
+        for _, field in ipairs({ "camel_case", "pascal_case" }) do
+            local message = _get_boolean_issue(
+                "commands.motion.subword." .. context .. "." .. field,
+                tabler.get_value(data, { "commands", "motion", "subword", context, field })
+            )
 
-        if message ~= nil then
-            table.insert(output, message)
+            if message ~= nil then
+                table.insert(output, message)
+            end
+        end
+
+        for _, field in ipairs({ "kebab_case", "snake_case" }) do
+            local message = _get_enum_issue(
+                "commands.motion.subword." .. context .. "." .. field,
+                tabler.get_value(data, { "commands", "motion", "subword", context, field }),
+                vim.tbl_keys(motion_constant.DelimiterMode),
+                '"none" or "skip" or "stop"'
+            )
+
+            if message ~= nil then
+                table.insert(output, message)
+            end
         end
     end
 
