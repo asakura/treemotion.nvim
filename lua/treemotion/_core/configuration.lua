@@ -27,6 +27,14 @@ local _DEFAULTS = {
         hello_world = {
             say = { ["repeat"] = 1, style = say_constant.Keyword.style.lowercase },
         },
+        motion = {
+            subword = {
+                camel_case = true,
+                pascal_case = true,
+                kebab_case = true,
+                snake_case = true,
+            },
+        },
     },
 }
 
