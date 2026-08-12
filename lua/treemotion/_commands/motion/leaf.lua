@@ -8,10 +8,60 @@
 --- (whitespace/newline) between them -- the coarser unit `WORD` motions move
 --- between, mirroring how Vim's real `w` is bounded by character-class changes
 --- while `W` is bounded only by blanks.
+---
+--- A `TSNode` only exposes tree-shaped navigation (`:parent()`, `:child(i)`,
+--- `:next_sibling()`, `:prev_sibling()`) -- nothing gives you "the next leaf
+--- in the document" directly. `next_leaf`/`previous_leaf` build that on top
+--- by climbing to a parent when a node has no next/previous sibling, then
+--- descending back down into the first/last leaf of whatever sibling turns
+--- up; `run_start`/`run_end` are then just that walk repeated while
+--- `is_contiguous` holds, giving `W`/`E`/`B`/`gE` their run boundaries.
 
 local M = {}
 
+--- Find the leaf directly under the cursor.
+---
+---@return TSNode? # The smallest leaf-or-not node under the cursor, if the buffer has a parser.
+function M.current_leaf()
+    -- `get_parser()` returns `nil, message` when no parser can be created on
+    -- some Neovim versions, but `error()`s with the same message on others
+    -- (e.g. 0.11) -- `pcall` handles both the same way.
+    local success, parser = pcall(vim.treesitter.get_parser, vim.api.nvim_get_current_buf())
+
+    if not success or not parser then
+        return nil
+    end
+
+    -- `get_node()` can return a stale/invalid node against an unparsed
+    -- tree, so make sure the tree covering the cursor is up to date first.
+    parser:parse()
+
+    -- `include_anonymous` matters here: without it, `get_node()` only
+    -- returns *named* nodes, so a cursor sitting on punctuation (which is
+    -- unnamed in most grammars, see this module's docstring) would resolve
+    -- to its named parent instead of the punctuation leaf itself.
+    return vim.treesitter.get_node({ include_anonymous = true })
+end
+
+--- Read the cursor's position, converted to `TSNode`'s 0-indexed row convention.
+---
+--- `nvim_win_get_cursor` returns a 1-indexed row (matching `:` command-line
+--- line numbers), but every `TSNode:start()`/`:end_()` row is 0-indexed --
+--- this is the single place that conversion happens, so callers can compare
+--- cursor positions against node positions directly.
+---
+---@return integer, integer # The cursor's 0-indexed row and column.
+function M.cursor_position()
+    local cursor = vim.api.nvim_win_get_cursor(0)
+
+    return cursor[1] - 1, cursor[2]
+end
+
 --- Descend to the first leaf inside `node` (including `node` itself).
+---
+--- Repeatedly takes the 0th child until there isn't one -- a node with no
+--- children is, by definition, a leaf (see this module's docstring). This is
+--- the base case `next_leaf` lands on after climbing to a next sibling.
 ---
 ---@param node TSNode Any node to search from.
 ---@return TSNode # The first leaf, in document order.
@@ -28,6 +78,10 @@ end
 
 --- Descend to the last leaf inside `node` (including `node` itself).
 ---
+--- Mirror image of `first_leaf`: repeatedly takes the last child until
+--- there isn't one. This is the base case `previous_leaf` lands on after
+--- climbing to a previous sibling.
+---
 ---@param node TSNode Any node to search from.
 ---@return TSNode # The last leaf, in document order.
 ---
@@ -42,6 +96,14 @@ function M.last_leaf(node)
 end
 
 --- Find the leaf directly after `node`, in document order.
+---
+--- `TSNode` has no "next node in the document" operation, only tree
+--- navigation -- so this climbs from `node` toward the root, checking each
+--- ancestor (starting with `node` itself) for a next sibling. The first one
+--- found is where the next leaf lives; `first_leaf` descends into it to
+--- find the actual leaf, rather than stopping at that sibling subtree's
+--- root. Reaching the root with no sibling anywhere along the way means
+--- `node` was the last leaf in the whole tree.
 ---
 ---@param node TSNode A leaf (or any node) to start searching from.
 ---@return TSNode? # The next leaf, if `node` isn't the last leaf in the tree.
@@ -65,6 +127,9 @@ end
 
 --- Find the leaf directly before `node`, in document order.
 ---
+--- Mirror image of `next_leaf`: climbs toward the root looking for a
+--- previous sibling, then `last_leaf` descends into it.
+---
 ---@param node TSNode A leaf (or any node) to start searching from.
 ---@return TSNode? # The previous leaf, if `node` isn't the first leaf in the tree.
 ---
@@ -87,6 +152,12 @@ end
 
 --- Check if `first` ends exactly where `second` starts.
 ---
+--- The one primitive `run_start`/`run_end` build their whole-run walk on:
+--- comparing raw coordinates, not tree structure, since two leaves can sit
+--- in entirely different branches of the tree (e.g. the last token of one
+--- nested expression, and the first token of the next) while still being
+--- immediately adjacent in the document.
+---
 ---@param first TSNode The earlier of the two leaves.
 ---@param second TSNode The later of the two leaves.
 ---@return boolean # `true` if there's no whitespace/newline between them.
@@ -99,6 +170,10 @@ function M.is_contiguous(first, second)
 end
 
 --- Find the last leaf in the contiguous run that `node` belongs to.
+---
+--- Walks `next_leaf` forward one step at a time, stopping as soon as
+--- `is_contiguous` fails (a gap) or there's no next leaf at all -- giving
+--- `W`/`E`'s notion of a "WORD" boundary.
 ---
 ---@param node TSNode Any leaf.
 ---@return TSNode # `node` itself, or a later leaf if the run continues.
@@ -118,6 +193,9 @@ function M.run_end(node)
 end
 
 --- Find the first leaf in the contiguous run that `node` belongs to.
+---
+--- Mirror image of `run_end`, walking `previous_leaf` backward instead --
+--- gives `B`/`gE`'s notion of a "WORD" boundary.
 ---
 ---@param node TSNode Any leaf.
 ---@return TSNode # `node` itself, or an earlier leaf if the run continues.
