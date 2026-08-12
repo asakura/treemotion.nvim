@@ -104,13 +104,6 @@
           };
         };
 
-        panvimdocSrc = pkgs.fetchFromGitHub {
-          owner = "kdheepak";
-          repo = "panvimdoc";
-          rev = "v4.0.1";
-          hash = "sha256-HmEBPkNELHC7Xy0v730sQWZyPPwFdIBUcELzNtrWwzQ=";
-        };
-
         luacovMultiple = lua51.buildLuarocksPackage {
           pname = "luacov-multiple";
           version = "0.6-1";
@@ -157,7 +150,7 @@
           nixfmt
           miniserve
           statix
-          pandoc
+          panvimdoc
         ];
 
         neovimRuntime = "${pkgs.neovim-unwrapped}/share/nvim/runtime";
@@ -331,7 +324,11 @@
             mkApp "user-documentation"
               "Regenerate doc/treemotion.txt from README.md with panvimdoc, then rebuild doc/tags"
               ''
-                bash ${panvimdocSrc}/panvimdoc.sh \
+                # `panvimdoc.sh` hard-codes its `scripts/` dir to `/scripts` whenever
+                # `GITHUB_ACTIONS=true` is set -- that check comes before `--scripts-dir`
+                # is even considered, so unsetting the variable for this one command is
+                # the only way to skip it.
+                env -u GITHUB_ACTIONS panvimdoc \
                   --project-name treemotion \
                   --input-file README.md \
                   --vim-version "Neovim >= 0.8.0" \
