@@ -124,6 +124,17 @@ local function _get_command_issues(data)
         return vim.tbl_contains(choices, value)
     end, '"lowercase" or "uppercase"')
 
+    for _, field in ipairs({ "camel_case", "pascal_case", "kebab_case", "snake_case" }) do
+        local message = _get_boolean_issue(
+            "commands.motion.subword." .. field,
+            tabler.get_value(data, { "commands", "motion", "subword", field })
+        )
+
+        if message ~= nil then
+            table.insert(output, message)
+        end
+    end
+
     return output
 end
 
