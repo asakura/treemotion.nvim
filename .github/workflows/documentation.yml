@@ -72,16 +72,7 @@ jobs:
         run: nix run .#api-documentation
 
       - name: Create User Documentation
-        uses: kdheepak/panvimdoc@v4.0.1
-        with:
-          vimdoc: treemotion
-          version: "Neovim >= 0.8.0"
-          demojify: true
-          treesitter: true
-
-      - name: Generate Tags
-        run: |
-          nix run nixpkgs#neovim -- -c 'helptags doc' -c 'quit'
+        run: nix run .#user-documentation
 
       - name: Push Changes
         uses: stefanzweifel/git-auto-commit-action@v7
