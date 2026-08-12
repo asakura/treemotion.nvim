@@ -117,6 +117,34 @@ describe("bad configuration - commands", function()
             { 'commands.hello_world.say.style: expected "lowercase" or "uppercase", got bad_value' }
         )
     end)
+
+    it("happens with a bad type for #commands.motion.subword.camel_case", function()
+        _assert_bad(
+            { commands = { motion = { subword = { camel_case = "aaa" } } } },
+            { "commands.motion.subword.camel_case: expected a boolean, got aaa" }
+        )
+    end)
+
+    it("happens with a bad type for #commands.motion.subword.pascal_case", function()
+        _assert_bad(
+            { commands = { motion = { subword = { pascal_case = "aaa" } } } },
+            { "commands.motion.subword.pascal_case: expected a boolean, got aaa" }
+        )
+    end)
+
+    it("happens with a bad type for #commands.motion.subword.kebab_case", function()
+        _assert_bad(
+            { commands = { motion = { subword = { kebab_case = "aaa" } } } },
+            { "commands.motion.subword.kebab_case: expected a boolean, got aaa" }
+        )
+    end)
+
+    it("happens with a bad type for #commands.motion.subword.snake_case", function()
+        _assert_bad(
+            { commands = { motion = { subword = { snake_case = "aaa" } } } },
+            { "commands.motion.subword.snake_case: expected a boolean, got aaa" }
+        )
+    end)
 end)
 ---@diagnostic enable: assign-type-mismatch
 ---@diagnostic enable: missing-fields
