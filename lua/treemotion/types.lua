@@ -37,21 +37,39 @@
 ---@class treemotion.ConfigurationMotion
 ---    Customize the `w`/`e`/`b`/`ge` sub-word splitting behavior.
 ---@field subword treemotion.ConfigurationMotionSubword?
----    Which naming conventions `w`/`e`/`b`/`ge` additionally split identifiers
----    on, on top of whole treesitter leaves. All default to `true` and may be
----    combined freely. `W`/`E`/`B`/`gE` are unaffected -- they ignore case
----    the same way real Vim's `W` ignores punctuation.
+---    Which naming conventions `w`/`e`/`b`/`ge` additionally split leaves on.
+---    `W`/`E`/`B`/`gE` are unaffected -- they ignore case entirely, the same
+---    way real Vim's `W` ignores punctuation.
 
 ---@class treemotion.ConfigurationMotionSubword
----    Which naming conventions `w`/`e`/`b`/`ge` additionally split identifiers on.
+---    Sub-word splitting rules, configured separately for "code" leaves
+---    (identifiers, string content, ...) and "prose" leaves (comments, or
+---    any other span a treesitter `@spell` query marks as natural-language
+---    text). Splitting a prose leaf first divides it into individual words
+---    (on whitespace/punctuation, like real Vim's `w` in a text file) before
+---    either ruleset ever runs; code leaves skip straight to these rules.
+---@field code treemotion.ConfigurationMotionSubwordRules?
+---    Splitting rules for leaves that aren't tagged `@spell`.
+---@field prose treemotion.ConfigurationMotionSubwordRules?
+---    Splitting rules for leaves (or, after the word split above, individual
+---    words within a leaf) that are tagged `@spell`.
+
+---@alias treemotion.SubwordDelimiterMode "none" | "skip" | "stop"
+---    How `kebab_case`/`snake_case` treat a `-`/`_` delimiter once found:
+---    `"none"` leaves it embedded, not a split point at all; `"skip"` splits
+---    on it but drops the delimiter character itself, so no unit ever lands
+---    on it; `"stop"` splits on it *and* keeps the delimiter as its own unit.
+
+---@class treemotion.ConfigurationMotionSubwordRules
+---    Which naming conventions additionally split a leaf (or prose word) on.
 ---@field camel_case boolean?
 ---    Split lowercase-leading identifiers at case transitions, e.g. `fooBar` -> `foo`, `Bar`.
 ---@field pascal_case boolean?
 ---    Split uppercase-leading identifiers at case transitions, e.g. `FooBar` -> `Foo`, `Bar`.
----@field kebab_case boolean?
----    Split on `-`, e.g. `foo-bar` -> `foo`, `bar`. The `-` itself is skipped, not landed on.
----@field snake_case boolean?
----    Split on `_`, e.g. `foo_bar` -> `foo`, `bar`. The `_` itself is skipped, not landed on.
+---@field kebab_case treemotion.SubwordDelimiterMode?
+---    How to handle `-`, e.g. `foo-bar` -> `foo`, `bar` (`"skip"`) or `foo`, `-`, `bar` (`"stop"`).
+---@field snake_case treemotion.SubwordDelimiterMode?
+---    How to handle `_`, e.g. `foo_bar` -> `foo`, `bar` (`"skip"`) or `foo`, `_`, `bar` (`"stop"`).
 
 ---@class treemotion.ConfigurationGoodnightMoon
 ---    The default values when a user calls `:TreeMotion goodnight-moon`.
