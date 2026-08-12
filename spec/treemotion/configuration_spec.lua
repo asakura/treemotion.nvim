@@ -163,6 +163,24 @@ describe("health.check", function()
         assert.same({}, mock_vim.get_vim_health_errors())
     end)
 
+    it("reports whether this Neovim can run `motion` at full fidelity", function()
+        health.check({})
+
+        local oks = mock_vim.get_vim_health_oks()
+        local warnings = mock_vim.get_vim_health_warnings()
+
+        if vim.fn.has("nvim-0.11") == 1 then
+            assert.same(0, #warnings)
+            assert.is_true(vim.tbl_contains(oks, function(message)
+                return message:find("include_anonymous", 1, true) ~= nil
+            end, { predicate = true }))
+        else
+            assert.is_true(vim.tbl_contains(warnings, function(message)
+                return message:find("include_anonymous", 1, true) ~= nil
+            end, { predicate = true }))
+        end
+    end)
+
     it("shows all issues at once", function()
         health.check({
             commands = {
