@@ -164,6 +164,33 @@ local function _get_command_issues(data)
         return vim.tbl_contains(choices, value)
     end, '"lowercase" or "uppercase"')
 
+    _append_validated(output, "commands.motion.subword.comment_markers", function()
+        return tabler.get_value(data, { "commands", "motion", "subword", "comment_markers" })
+    end, function(value)
+        if value == nil then
+            -- This value is optional so it's fine if it is not defined.
+            return true
+        end
+
+        if type(value) ~= "table" then
+            return false
+        end
+
+        for language, characters in pairs(value) do
+            if type(language) ~= "string" or type(characters) ~= "table" then
+                return false
+            end
+
+            for _, character in ipairs(characters) do
+                if type(character) ~= "string" then
+                    return false
+                end
+            end
+        end
+
+        return true
+    end, "a table<string, string[]> (treesitter language name -> comment-marker characters)")
+
     for _, context in ipairs({ "code", "prose" }) do
         for _, field in ipairs({ "camel_case", "pascal_case" }) do
             local message = _get_boolean_issue(
@@ -312,6 +339,57 @@ local function _check_motion()
     end
 end
 
+--- Warn (never error) if a `commands.motion.subword.comment_markers` key
+--- the *user* configured names a treesitter language with no installed
+--- parser.
+---
+--- This only looks at the user's own raw override, not the fully-resolved
+--- configuration -- the shipped defaults (`c`, `cpp`, `rust`, `python`,
+--- ..., see `configuration.lua`'s `_DEFAULTS`) intentionally cover
+--- languages most users won't have every parser for (that's the point of
+--- being pre-configured ahead of installing e.g. Python's or Rust's parser
+--- later), so warning about *those* on every `:checkhealth` run would be
+--- noise, not signal. A language the user typed themselves, though, is
+--- worth a warning if it can't be found -- most likely a typo, or a parser
+--- that still needs installing.
+---
+---@param raw treemotion.Configuration The user's own configuration, unresolved.
+---
+local function _check_comment_markers(raw)
+    local markers = tabler.get_value(raw, { "commands", "motion", "subword", "comment_markers" })
+
+    if type(markers) ~= "table" or vim.tbl_isempty(markers) then
+        return
+    end
+
+    local languages = vim.tbl_keys(markers)
+    table.sort(languages)
+
+    local missing = {}
+
+    for _, language in ipairs(languages) do
+        if type(language) == "string" and not vim.treesitter.language.add(language) then
+            table.insert(missing, language)
+        end
+    end
+
+    if vim.tbl_isempty(missing) then
+        return
+    end
+
+    vim.health.start("Comment markers")
+
+    for _, language in ipairs(missing) do
+        vim.health.warn(
+            string.format(
+                'No treesitter parser named "%s" is installed, so `comment_markers.%s` has no effect until one is.',
+                language,
+                language
+            )
+        )
+    end
+end
+
 --- Make sure `data` will work for `treemotion`.
 ---
 ---@param data treemotion.Configuration? All extra customizations for this plugin.
@@ -332,6 +410,7 @@ function M.check(data)
     end
 
     _check_motion()
+    _check_comment_markers(data or vim.g.treemotion_configuration or {})
 end
 
 return M
