@@ -165,7 +165,7 @@ e.g. ``foo bar``, or an empty pair with nothing between them) is left as
 ordinary prose text, backticks included, with no behavior change.
 
 This is on by default; set `commands.motion.subword.backtick_identifiers =
-false` (see `Configuration` below) to turn it off.
+false`.
 
 
 COMMENT-MARKER CHARACTERS
