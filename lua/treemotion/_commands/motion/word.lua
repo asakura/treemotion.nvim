@@ -82,23 +82,62 @@ local function _index_at(units, row, column)
     return #units
 end
 
+--- Walk from `node` in `step`'s direction until finding a leaf `subword.split()`
+--- actually produces units for.
+---
+--- A leaf entirely consumed by `_commands.motion.subword`'s
+--- `_leading_continuation_length` (e.g. tree-sitter-rust's lone `/`
+--- `outer_doc_comment_marker` leaf inside a `///` doc comment) splits into
+--- zero units -- it has no content of its own, just the tail of the
+--- previous leaf's punctuation run -- so it should never be a landing spot.
+--- `node` itself is checked first, so passing a leaf straight from
+--- `leaf.current_leaf()` (which may or may not already be empty) works the
+--- same as passing one already stepped past a known-empty leaf.
+---
+---@param node TSNode? Where to start looking.
+---@param step fun(node: TSNode): TSNode? `leaf.next_leaf` or `leaf.previous_leaf`, matching the caller's direction.
+---@return TSNode?, treemotion.SubwordUnit[]? # The first leaf with real
+---    units, and its units -- both `nil` if none remain.
+local function _first_nonempty_split(node, step)
+    while node do
+        local units = subword.split(node)
+
+        if #units > 0 then
+            return node, units
+        end
+
+        node = step(node)
+    end
+
+    return nil, nil
+end
+
 --- Find the sub-word unit under the cursor.
 ---
 --- Finds the leaf under the cursor (`leaf.current_leaf()`), splits it
---- (`subword.split()`), then picks out the right slice with `_index_at`.
---- Everything gets recomputed from scratch here, unlike `next_unit`/
---- `previous_unit`, since there's no previous `treemotion.WordUnit` to step from yet.
+--- (`subword.split()`, skipping past any empty leaf via
+--- `_first_nonempty_split`), then picks out the right slice with
+--- `_index_at`. Everything gets recomputed from scratch here, unlike
+--- `next_unit`/`previous_unit`, since there's no previous
+--- `treemotion.WordUnit` to step from yet.
 ---
----@param forward boolean Forwarded to `leaf.current_leaf()`: which nearby leaf to prefer off a leaf (e.g. blank line).
+---@param forward boolean Forwarded to `leaf.current_leaf()`: which nearby
+---    leaf to prefer off a leaf (e.g. blank line); also which direction to
+---    skip empty leaves in.
 ---@return treemotion.WordUnit? # The unit under (or nearest) the cursor, if a parser and a leaf exist that way.
 function M.current_unit(forward)
-    local node = leaf.current_leaf(forward)
+    local node, units =
+        _first_nonempty_split(leaf.current_leaf(forward), forward and leaf.next_leaf or leaf.previous_leaf)
 
     if not node then
         return nil
     end
 
-    local units = subword.split(node)
+    -- `units` is only `nil` when `node` is (see `_first_nonempty_split`),
+    -- but the type checker can't correlate two separate return values --
+    -- `assert` narrows it back to non-optional for `_new_unit`/`_index_at`.
+    units = assert(units)
+
     local row, column = leaf.cursor_position()
 
     return _new_unit(node, units, _index_at(units, row, column))
@@ -109,7 +148,8 @@ end
 --- If `unit`'s leaf still has slices left, this is just an `_index` bump --
 --- no treesitter or splitting work at all. Only once `unit` is the last
 --- slice of its leaf does this reach for `leaf.next_leaf` and re-split the
---- leaf it finds, landing on that leaf's *first* slice.
+--- leaf it finds (skipping any empty ones, see `_first_nonempty_split`),
+--- landing on that leaf's *first* slice.
 ---
 ---@param unit treemotion.WordUnit
 ---@return treemotion.WordUnit? # The next sub-word unit, if `unit` isn't the last in the tree.
@@ -118,20 +158,20 @@ function M.next_unit(unit)
         return _new_unit(unit._leaf, unit._units, unit._index + 1)
     end
 
-    local next_leaf = leaf.next_leaf(unit._leaf)
+    local node, units = _first_nonempty_split(leaf.next_leaf(unit._leaf), leaf.next_leaf)
 
-    if not next_leaf then
+    if not node then
         return nil
     end
 
-    return _new_unit(next_leaf, subword.split(next_leaf), 1)
+    return _new_unit(node, assert(units), 1)
 end
 
 --- Find the sub-word unit directly before `unit`, in document order.
 ---
 --- Mirror image of `next_unit`: decrements `_index` while slices remain,
---- otherwise reaches for `leaf.previous_leaf`, re-splits it, and lands on
---- that leaf's *last* slice.
+--- otherwise reaches for `leaf.previous_leaf`, re-splits it (skipping any
+--- empty ones), and lands on that leaf's *last* slice.
 ---
 ---@param unit treemotion.WordUnit
 ---@return treemotion.WordUnit? # The previous sub-word unit, if `unit` isn't the first in the tree.
@@ -140,15 +180,15 @@ function M.previous_unit(unit)
         return _new_unit(unit._leaf, unit._units, unit._index - 1)
     end
 
-    local previous_leaf = leaf.previous_leaf(unit._leaf)
+    local node, units = _first_nonempty_split(leaf.previous_leaf(unit._leaf), leaf.previous_leaf)
 
-    if not previous_leaf then
+    if not node then
         return nil
     end
 
-    local units = subword.split(previous_leaf)
+    units = assert(units)
 
-    return _new_unit(previous_leaf, units, #units)
+    return _new_unit(node, units, #units)
 end
 
 return M

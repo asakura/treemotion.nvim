@@ -322,6 +322,74 @@ local function _split_delimiters(text, kebab_case, snake_case)
     return chunks
 end
 
+--- How many of `text`'s leading characters continue a punctuation run that
+--- started in the character immediately before `node`, on the same line.
+---
+--- Tokenization is a grammar concern, not a textual one, and this isn't a
+--- Lua-only quirk -- e.g. tree-sitter-lua's comment opener is a fixed
+--- 2-character `--` literal no matter how many dashes actually follow, so a
+--- `---` doc comment's third dash ends up as `comment_content`'s leading
+--- character instead of staying part of the same `-` run as its two
+--- siblings in the `--` leaf; tree-sitter-rust does the exact same thing
+--- one level deeper for `///` outer doc comments, which parse as a `//`
+--- leaf, then a *lone* `/` leaf (`outer_doc_comment_marker`), then the
+--- `doc_comment` text -- confirmed against the real grammar, not just
+--- Lua's. Left alone, that stray leading character would read as a fresh
+--- 1-character word/chunk of its own once `M.split` runs on the sibling
+--- leaf it landed in -- a landing stop real Vim's `w` would never produce,
+--- since a run of same-class punctuation is always one word regardless of
+--- how a particular grammar happened to tokenize it. `M.split` strips this
+--- many characters off `text` before splitting, so the run's only landing
+--- stop stays wherever it started -- in the previous leaf.
+---
+--- Not restricted to `-`/`_` (the two characters `kebab_case`/`snake_case`
+--- know about) -- any non-blank, non-alphanumeric character qualifies,
+--- since the same fixed-width-literal-token tokenization can split any
+--- punctuation-based comment/doc-comment marker (`#`, `/`, `%`, ...) the
+--- same way. Alphanumeric characters are deliberately excluded: an
+--- identifier or number split across a leaf boundary is a different,
+--- riskier kind of grammar quirk (e.g. a number literal's mantissa and
+--- exponent as separate leaves) where blindly merging could swallow a
+--- genuinely distinct token instead of a stray delimiter fragment.
+---
+--- Can return `#text` itself -- tree-sitter-rust's lone `/` leaf (the
+--- `outer_doc_comment_marker` mentioned above) is *entirely* consumed this
+--- way, not just a prefix of it. `M.split` handles that by producing no
+--- units at all for `node` rather than falling back to its full span --
+--- see `M.split`'s docstring.
+---
+---@param node TSNode The leaf `text` came from.
+---@param text string `node`'s full text (see `M.split`).
+---@return integer # 0 if `text`'s start doesn't continue a punctuation run.
+---
+local function _leading_continuation_length(node, text)
+    local char = text:sub(1, 1)
+
+    if char == "" or char:match("%s") or char:match("%w") then
+        return 0
+    end
+
+    local start_row, start_col = node:start()
+
+    if start_col == 0 then
+        return 0
+    end
+
+    local before = vim.api.nvim_buf_get_text(0, start_row, start_col - 1, start_row, start_col, {})[1]
+
+    if before ~= char then
+        return 0
+    end
+
+    local length = 0
+
+    while length < #text and text:sub(length + 1, length + 1) == char do
+        length = length + 1
+    end
+
+    return length
+end
+
 --- Split `node`'s text into sub-word units, per the user's `subword` configuration.
 ---
 --- Composes up to three passes: for prose (`@spell`-tagged) leaves only,
@@ -333,8 +401,21 @@ end
 --- `word.offset` from the outer pass, `delimited.offset`/chunk length from
 --- the inner ones -- compose into each unit's absolute buffer column.
 ---
+--- Before any of that, `_leading_continuation_length` strips off (and
+--- shifts past) any leading characters that are really the tail of the
+--- previous leaf's delimiter run -- see its docstring. When that
+--- continuation consumes `node` in its entirety (tree-sitter-rust's lone
+--- `/` `outer_doc_comment_marker` leaf, for `///` doc comments), `node` has
+--- no content of its own left to become a unit, so this returns an empty
+--- list instead of the usual whole-leaf fallback -- `_commands.motion.word`
+--- treats that as "no stop here", skipping straight to the next/previous
+--- leaf, the same way it already skips punctuation runs collapsed into a
+--- single stop elsewhere.
+---
 ---@param node TSNode Any leaf (see `_commands.motion.leaf`).
----@return treemotion.SubwordUnit[] # Always non-empty -- `node`'s full span if nothing splits it.
+---@return treemotion.SubwordUnit[] # Empty only when `node` is entirely a
+---    punctuation-run continuation of the leaf before it; otherwise
+---    `node`'s full span if nothing else splits it.
 ---
 function M.split(node)
     local start_row, start_col = node:start()
@@ -346,14 +427,27 @@ function M.split(node)
         return { _new_unit(start_row, start_col, end_row, end_col) }
     end
 
+    local text = vim.treesitter.get_node_text(node, 0)
+    local continuation = _leading_continuation_length(node, text)
+
+    if continuation > 0 and continuation == #text then
+        return {}
+    end
+
+    local text_start_col = start_col
+
+    if continuation > 0 then
+        text = text:sub(continuation + 1)
+        text_start_col = start_col + continuation
+    end
+
     local is_prose = _is_prose(node)
     local camel_case, pascal_case, kebab_case, snake_case = _options(is_prose)
-    local text = vim.treesitter.get_node_text(node, 0)
     local words = is_prose and _split_prose_words(text) or { { text = text, offset = 1 } }
     local units = {}
 
     for _, word in ipairs(words) do
-        local word_column = start_col + word.offset - 1
+        local word_column = text_start_col + word.offset - 1
 
         for _, delimited in ipairs(_split_delimiters(word.text, kebab_case, snake_case)) do
             local column = word_column + delimited.offset - 1

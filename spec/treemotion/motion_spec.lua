@@ -293,6 +293,37 @@ describe("motion API - subword (prose) motions", function()
         treemotion.run_motion_w()
         assert.same(10, _get_cursor_column()) -- `------` -> `hi`, in one press
     end)
+
+    it("#w doesn't stop on a delimiter run split across a leaf boundary", function()
+        -- `---` parses as the `--` leaf (0-2) plus `comment_content` = `"-
+        -- lua"` (2-...) -- tree-sitter-lua's comment opener is a fixed
+        -- 2-character `--` literal no matter how many dashes follow, so the
+        -- third dash ends up as `comment_content`'s leading character
+        -- instead of staying part of the same `-` run as its two siblings.
+        -- Without `_leading_continuation_length`'s fix, that stray dash
+        -- would read as its own 1-character stop; real Vim's `w` would
+        -- never produce that, since a run of same-class punctuation is one
+        -- word no matter how a grammar happened to tokenize it.
+        vim.api.nvim_buf_set_lines(assert(_BUFFER), 0, -1, false, { "--- lua comment" })
+
+        _set_cursor(0)
+        treemotion.run_motion_w()
+        assert.same(4, _get_cursor_column()) -- `---` -> straight to `lua`, not the stray 3rd `-`
+
+        treemotion.run_motion_w()
+        assert.same(8, _get_cursor_column()) -- `lua` -> `comment`
+    end)
+
+    it("#b doesn't stop on a delimiter run split across a leaf boundary, mirrored", function()
+        vim.api.nvim_buf_set_lines(assert(_BUFFER), 0, -1, false, { "--- lua comment" })
+
+        _set_cursor(8) -- the start of `comment`
+        treemotion.run_motion_b()
+        assert.same(4, _get_cursor_column()) -- `comment` -> `lua`
+
+        treemotion.run_motion_b()
+        assert.same(0, _get_cursor_column()) -- `lua` -> straight to `---`(start), not the stray 3rd `-`
+    end)
 end)
 
 describe("motion API - subword unit fallback", function()
