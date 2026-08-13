@@ -365,10 +365,15 @@ end
 --- it's a bare punctuation run, the same kind of thing `#`/`/`/`%` already
 --- always are (`_char_class` isolates them into their own word before this
 --- function even runs, since they're never grouped as `"word"` class). So
---- for a text like that, `comment_marker_case` governs *every* delimiter in
---- it, `-`/`_` included, instead of `kebab_case`/`snake_case` -- letting
---- "skip past comment markers" and "split kebab-case identifiers" be tuned
---- independently even though both happen to use `-`.
+--- for a text like that, `comment_marker_case` takes over for `-`/`_`
+--- too, exactly like it already does for `#`/`/`/`%` -- but only if the
+--- current language's `comment_markers` actually lists `-`/`_` (see
+--- `_DEFAULTS`' `lua = { "-" }`, for Lua's `--`); a language that doesn't
+--- list them there leaves `kebab_case`/`snake_case` in charge even for a
+--- bare run, the same "no entry means no effect" rule every other marker
+--- character already follows -- there's deliberately no special, always-on
+--- carve-out for `-`/`_` the way `comment_markers`' other characters don't
+--- get one either.
 ---
 ---@param text string A word to split (a whole leaf's text, for code; one `_split_prose_words` word, for prose).
 ---@param kebab_case treemotion.SubwordDelimiterMode How to treat `-` next to real identifier content.
@@ -381,7 +386,13 @@ end
 ---
 local function _split_delimiters(text, kebab_case, snake_case, comment_marker_case, comment_marker_characters)
     if not text:find("%w") then
-        kebab_case, snake_case = comment_marker_case, comment_marker_case
+        if comment_marker_characters["-"] then
+            kebab_case = comment_marker_case
+        end
+
+        if comment_marker_characters["_"] then
+            snake_case = comment_marker_case
+        end
     end
 
     local chunks = {}

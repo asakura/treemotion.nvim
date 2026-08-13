@@ -19,9 +19,11 @@ NEW FEATURES                                     *treemotion-new-features*
   at all and whether the delimiter itself becomes its own stop).
   Comment-opener punctuation is configured per treesitter language via
   `commands.motion.subword.comment_markers` (defaults include Python/Bash
-  `#`, C/Rust `/`, LaTeX `%`, Vim `"`, treesitter query `;` -- a language
-  with no entry has none at all, so `comment_marker_case` is a no-op there
-  until configured). `:checkhealth treemotion` warns if a language *you*
+  `#`, C/Rust `/`, LaTeX `%`, Vim `"`, treesitter query `;`, Lua `-` -- a
+  language with no entry has none at all, so `comment_marker_case` is a
+  no-op there until configured; `-`/`_` follow this same per-language rule
+  as every other marker character, so a bare run of either falls back to
+  `kebab_case`/`snake_case` in any language that hasn't listed it). `:checkhealth treemotion` warns if a language *you*
   added to `comment_markers` has no treesitter parser installed, but stays
   silent about the shipped defaults, since most setups won't have every one
   of those installed. `W`/`E`/`B`/`gE` are unaffected.

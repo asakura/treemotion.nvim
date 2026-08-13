@@ -41,6 +41,7 @@ local _DEFAULTS = {
                     tex = { "%" },
                     vim = { '"' },
                     query = { ";" },
+                    lua = { "-" },
                 },
                 code = {
                     camel_case = true,

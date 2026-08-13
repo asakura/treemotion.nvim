@@ -255,11 +255,15 @@ describe("motion API - subword unit fallback", function()
     end)
     after_each(_remove_buffer)
 
-    it("treats a leaf that's entirely a dropped delimiter (`_`) as one whole unit, not zero units", function()
+    it("skips a leaf that's entirely a dropped delimiter (`_`) rather than landing on it", function()
         -- `local` (0-5), `_` (6), `=` (8), `1` (10). `_` alone, with the
         -- default `code.snake_case = "skip"`, has nothing left after
-        -- `_split_delimiters` drops it -- exercising `M.split`'s
-        -- `#units == 0` fallback.
+        -- `_split_delimiters` drops it -- Lua's default `comment_markers`
+        -- only lists `-` (see `_DEFAULTS`), not `_`, so this bare run stays
+        -- under `snake_case` instead of falling to `comment_marker_case`.
+        -- `M.split` doesn't fall back to a whole-leaf unit for an
+        -- entirely-dropped `"skip"` run (only a leaf with no words at all
+        -- does, see `M.split`'s docstring), so `_` is never a landing stop.
         vim.api.nvim_buf_set_lines(assert(_BUFFER), 0, -1, false, { "local _ = 1" })
 
         _set_cursor(6) -- the start of `_`
@@ -268,7 +272,7 @@ describe("motion API - subword unit fallback", function()
 
         _set_cursor(8) -- the start of `=`
         treemotion.run_motion_b()
-        assert.same(6, _get_cursor_column()) -- back to the start of `_`'s fallback unit, precisely
+        assert.same(0, _get_cursor_column()) -- straight past `_` to `local`, never landing on `_`
     end)
 
     it("treats an all-blank prose leaf as one whole unit spanning its full range", function()
@@ -396,9 +400,8 @@ describe("motion API - subword configuration", function()
         end
     end)
 
-    -- `#` isn't Lua's own comment-marker character (only `-` is, and that
-    -- goes through `kebab_case`'s bare-run rule, not this table at all --
-    -- see `comment_markers`' docstring in `types.lua`), so these three
+    -- `#` isn't part of Lua's own `comment_markers` default (only `-` is,
+    -- for `--` -- see `configuration.lua`'s `_DEFAULTS`), so these three
     -- tests explicitly register it for `"lua"` first, the same way a real
     -- user would add a custom marker character for a language this plugin
     -- doesn't already recognize one for.
@@ -508,18 +511,33 @@ describe("motion API - subword configuration", function()
             -- `--` run entirely, while `kebab_case` (still the default
             -- `"stop"`) keeps splitting `hello-world`'s embedded `-` as its
             -- own stop -- the two settings tune independently even though
-            -- both apply to `-`.
-            treemotion.setup({ commands = { motion = { subword = { prose = { comment_marker_case = "skip" } } } } })
-            vim.api.nvim_buf_set_lines(assert(_BUFFER), 0, -1, false, { "-- hello-world" })
+            -- both apply to `-`. `-` has to be registered in
+            -- `comment_markers.lua` (this describe block's `after_each`
+            -- resets it to `{}`) for `comment_marker_case` to govern `--`
+            -- at all. The cursor starts on the line *before* `--`, so `w`
+            -- actually approaches it from outside -- landing straight on
+            -- `hello` proves `--` itself was skipped, not just that the
+            -- first `w` moved past wherever the cursor happened to start.
+            treemotion.setup({
+                commands = {
+                    motion = {
+                        subword = {
+                            comment_markers = { lua = { "-" } },
+                            prose = { comment_marker_case = "skip" },
+                        },
+                    },
+                },
+            })
+            vim.api.nvim_buf_set_lines(assert(_BUFFER), 0, -1, false, { "x", "-- hello-world" })
 
-            _set_cursor(0)
+            _set_cursor_at(0, 0)
 
-            -- `--` is never a stop; `hello`, `-`, `world` (kebab_case="stop").
-            local expected = { 3, 8, 9, 9 }
+            -- `--` is never a stop; straight to `hello`, then `-`, `world` (kebab_case="stop").
+            local expected = { { 1, 3 }, { 1, 8 }, { 1, 9 }, { 1, 9 } }
 
-            for _, column in ipairs(expected) do
+            for _, position in ipairs(expected) do
                 treemotion.run_motion_w()
-                assert.same(column, _get_cursor_column())
+                assert.same(position, { _get_cursor() })
             end
         end
     )
@@ -533,8 +551,21 @@ describe("motion API - subword configuration", function()
             -- naive "no units -> fall back to the whole leaf" rule would
             -- silently turn `"skip"` back into a stop for it on *every*
             -- line, not just coincidentally not-noticing it on the first
-            -- one the cursor already started on.
-            treemotion.setup({ commands = { motion = { subword = { prose = { comment_marker_case = "skip" } } } } })
+            -- one the cursor already started on. This describe block's
+            -- `after_each` resets `comment_markers.lua` to `{}`, so `-`
+            -- has to be registered again here for `comment_marker_case` to
+            -- govern the bare `--` run at all (see `_DEFAULTS`' own
+            -- `lua = { "-" }`, which this mirrors).
+            treemotion.setup({
+                commands = {
+                    motion = {
+                        subword = {
+                            comment_markers = { lua = { "-" } },
+                            prose = { comment_marker_case = "skip" },
+                        },
+                    },
+                },
+            })
             vim.api.nvim_buf_set_lines(assert(_BUFFER), 0, -1, false, { "-- foo", "-- bar" })
 
             _set_cursor_at(0, 3) -- the start of `foo`

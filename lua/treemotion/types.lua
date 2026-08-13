@@ -61,11 +61,14 @@
 ---    treatment in the languages it's actually configured for here, never
 ---    globally. Unset entries fall back to `_DEFAULTS`' per-language list;
 ---    a language with no entry at all has no comment-marker characters, so
----    `comment_marker_case` is a no-op there until configured. `-`/`_` are
----    never part of this list -- a bare `-`/`_` run (Lua's `--`, a `-----`
----    separator) already falls to `comment_marker_case` unconditionally,
----    language-agnostically, via `kebab_case`/`snake_case`'s own bare-run
----    rule (see `comment_marker_case`'s docstring below).
+---    `comment_marker_case` is a no-op there until configured. `-`/`_` are no
+---    exception to any of this -- despite also being `kebab_case`/`snake_case`'s
+---    delimiters, a bare `-`/`_` run (a language's own comment opener, a
+---    `-----` separator) only falls under `comment_marker_case` when the
+---    language's own entry here lists that character; a language with no
+---    `-`/`_` entry leaves a bare run of either under `kebab_case`/`snake_case`
+---    instead, same as every other character (see `comment_marker_case`'s
+---    docstring below).
 ---@field code treemotion.ConfigurationMotionSubwordRules?
 ---    Splitting rules for leaves that aren't tagged `@spell`.
 ---@field prose treemotion.ConfigurationMotionSubwordRules?
@@ -87,25 +90,31 @@
 ---@field kebab_case treemotion.SubwordDelimiterMode?
 ---    How to handle `-` next to real identifier content, e.g. `foo-bar` ->
 ---    `foo`, `bar` (`"skip"`) or `foo`, `-`, `bar` (`"stop"`). Only applies
----    when `-` sits beside a letter/digit; a run that's *only* `-` (Lua's
----    `--`, a `-----` separator) is a bare punctuation marker instead, so
----    `comment_marker_case` governs it -- see that field.
+---    when `-` sits beside a letter/digit; a run that's *only* `-` (a
+---    language's own comment opener, a `-----` separator) is a bare
+---    punctuation marker instead, so `comment_marker_case` governs it *if*
+---    the current language's `comment_markers` lists `-` -- otherwise this
+---    setting keeps governing even a bare run, since there's nothing else
+---    configured to hand it off to. See `comment_marker_case`.
 ---@field snake_case treemotion.SubwordDelimiterMode?
 ---    How to handle `_` next to real identifier content, e.g. `foo_bar` ->
 ---    `foo`, `bar` (`"skip"`) or `foo`, `_`, `bar` (`"stop"`). Same
 ---    real-identifier-content caveat as `kebab_case`: a run that's only `_`
----    falls to `comment_marker_case` instead.
+---    falls to `comment_marker_case` only if the current language's
+---    `comment_markers` lists `_`; no language does by default.
 ---@field comment_marker_case treemotion.SubwordDelimiterMode?
 ---    How to handle a run of the current language's comment-marker
 ---    punctuation (see `comment_markers`), e.g. `/// text` -> `text`
 ---    (`"skip"`, jumps straight past a Rust-style `///` marker) or `///`,
----    `text` (`"stop"`, the marker is its own stop first). Also governs
----    `-`/`_` whenever the whole run has no identifier content beside it
----    (Lua's `--` comment opener, a `-----` separator, a `///` doc-comment
----    marker) -- `kebab_case`/`snake_case` only take over once `-`/`_` sits
----    next to a real letter/digit, like `hello-world`. This one setting
----    still applies uniformly across languages; only *which characters*
----    count as a marker in the first place is per-language, via `comment_markers`.
+---    `text` (`"stop"`, the marker is its own stop first). Also governs a
+---    bare `-`/`_` run with no identifier content beside it (Lua's `--`
+---    comment opener, a `-----` separator, a `///` doc-comment marker) --
+---    but, like every other marker character, only in languages whose
+---    `comment_markers` entry actually lists `-`/`_`; `kebab_case`/`snake_case`
+---    keep governing a bare run in every other language, the same as they
+---    already do next to real identifier content. This one setting still
+---    applies uniformly across languages; only *which characters* count as a
+---    marker in the first place is per-language, via `comment_markers`.
 
 ---@class treemotion.ConfigurationGoodnightMoon
 ---    The default values when a user calls `:TreeMotion goodnight-moon`.

@@ -110,13 +110,15 @@ whatever parser is already attached to the buffer.
   `w` does in a text file, before naming-convention splitting applies to
   each word. A run of that language's comment-opener punctuation (Python/Bash
   `#`, C/Rust `/` -- e.g. Rust's `///` -- LaTeX `%`, Vim `"`, a treesitter
-  query file's `;`, or a bare `-`/`_` run with no identifier beside it, like
-  Lua's `--` or a `-----` separator) is one stop by default, same as a
-  `-`/`_` inside an identifier; set `comment_marker_case = "skip"` to jump
-  straight past it to the next real word instead, independently of
-  `kebab_case`/`snake_case` (which only apply once `-`/`_` sits next to a
-  real letter or digit, e.g. `hello-world`). Which characters count as
-  comment-marker punctuation is configured per treesitter language, via
+  query file's `;`, or Lua's `-` -- e.g. its `--` opener or a `-----`
+  separator) is one stop by default, same as a `-`/`_` inside an identifier;
+  set `comment_marker_case = "skip"` to jump straight past it to the next
+  real word instead, independently of `kebab_case`/`snake_case` (which
+  govern `-`/`_` next to a real letter or digit, e.g. `hello-world`, and
+  keep governing even a bare `-`/`_` run in any language that hasn't listed
+  that character below). Which characters count as comment-marker
+  punctuation -- `-`/`_` included, exactly like every other character -- is
+  configured per treesitter language, via
   `commands.motion.subword.comment_markers` -- a language with no entry has
   no comment-marker characters at all, so `comment_marker_case` is a no-op
   there until you add one (see `Configuration` below); this is deliberate,
@@ -209,6 +211,7 @@ works as expected:
                         tex = { "%" },
                         vim = { '"' },
                         query = { ";" },
+                        lua = { "-" },
                     },
                     -- Identifiers, string content, and similar: `-`/`_` divide
                     -- but are never landed on themselves.
