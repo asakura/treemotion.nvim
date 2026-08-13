@@ -14,6 +14,35 @@
 --- why (tree-sitter-rust's plain `//`/`/* */` comments are the motivating,
 --- confirmed-against-the-real-grammar case).
 ---
+--- Nodes aren't always all in the same `TSTree`, either: `:help
+--- treesitter-language-injections` lets one grammar mark part of its own
+--- source (a Nix `''...''` string preceded by a `# bash` comment, a Lua
+--- string passed to `vim.cmd()`, a fenced code block in Markdown, ...) to be
+--- re-parsed as a *different* language, in its own `LanguageTree`/`TSTree`.
+--- `TSNode:parent()` never crosses that boundary -- an injected tree's root
+--- always reports a `nil` parent, even though there's real host-language
+--- content both before and after it in the buffer. `_owning_ltree`/
+--- `_injection_at`/`_piece_at` below are what let `first_leaf`/`last_leaf`/
+--- `next_leaf`/`previous_leaf` cross it anyway: descending *into* injected
+--- content when a would-be leaf turns out to be exactly what an injection
+--- query captured, and climbing back *out* to the host node's own neighbors
+--- once that content runs out.
+---
+--- One more wrinkle: an injection query can mark `injection.combined`,
+--- stitching several separate, non-adjacent stretches of source into one
+--- logical injected document (e.g. one Nix indented string split into
+--- several pieces around its `${...}` interpolations) -- and, confirmed
+--- against this very file's own `flake.nix`, a coarsely-written query can
+--- combine several genuinely *unrelated* strings into the very same
+--- `LanguageTree` this way. Plain `TSNode:next_sibling()` inside a combined
+--- tree can jump straight from one piece to a completely different one,
+--- silently skipping over any host-language text in between -- so every
+--- step taken inside an injected tree is bounds-checked against the
+--- specific stitched sub-range (`_piece_at`'s "piece") the walk started in,
+--- not just "still inside the same `LanguageTree`". Landing outside that
+--- range means the piece is exhausted, which is what triggers the climb
+--- back into host content instead of accepting wherever the tree jumped to.
+---
 --- A `TSNode` only exposes tree-shaped navigation (`:parent()`, `:child(i)`,
 --- `:next_sibling()`, `:prev_sibling()`) -- nothing gives you "the next leaf
 --- in the document" directly. `next_leaf`/`previous_leaf` build that on top
@@ -115,6 +144,146 @@ local function _is_leaf(node)
     return node:child_count() == 0 or _has_uncovered_text(node)
 end
 
+--- The root treesitter parser for the current buffer, if any.
+---
+--- `_owning_ltree` needs this to ask "which `LanguageTree` actually produced
+--- this node" -- there's no way to go from a bare `TSNode` back to its
+--- owning `LanguageTree` directly, only from the buffer's root parser via
+--- `LanguageTree:language_for_range()`.
+---
+---@return vim.treesitter.LanguageTree?
+local function _root_parser()
+    local success, parser = pcall(vim.treesitter.get_parser, vim.api.nvim_get_current_buf())
+
+    if not success or not parser then
+        return nil
+    end
+
+    return parser
+end
+
+--- `TSTree` -> owning `LanguageTree`, populated lazily by `_owning_ltree`.
+---
+--- `run_start`/`run_end` call `next_leaf`/`previous_leaf` once per leaf in a
+--- run, and each of those calls `_owning_ltree` -- without this cache, a
+--- long run in a heavily-injected buffer would re-walk the *entire*
+--- injection hierarchy from the root once per leaf (O(run_length x
+--- injection_count) instead of O(run_length)), even though which
+--- `LanguageTree` owns a given `TSTree` never changes once that `TSTree`
+--- exists.
+---
+--- Weak-keyed so entries for a `TSTree` that treesitter has since discarded
+--- (an edit reparsed that region into a brand new `TSTree` object, or the
+--- buffer itself is gone) are garbage-collected away instead of pinning
+--- stale trees in memory forever; a stale entry can never be *wrong*, since
+--- `TSTree` identity is never reused for a different owner, only unreachable.
+local _tree_to_ltree = setmetatable({}, { __mode = "k" })
+
+--- The `LanguageTree` that actually produced `node` -- the buffer's root
+--- tree, or (if `node` sits inside injected content) the injected tree that
+--- owns it.
+---
+--- Deliberately searches by `TSTree` identity (`node:tree()`), *not*
+--- position (`LanguageTree:language_for_range()`, which this used to call):
+--- `language_for_range()` picks whichever language is deepest at a given
+--- point, which is ambiguous in exactly the case that matters most here --
+--- a host node standing in for a whole piece of injected content (a Nix
+--- `string_fragment`, say) shares its own start position with the injected
+--- tree's first token, and `language_for_range()` reports the *injected*
+--- language for that point even when asked about the host node itself
+--- (confirmed against `flake.nix`'s own `# bash` strings). Comparing
+--- `TSTree`s directly has no such ambiguity: a `TSNode` always belongs to
+--- exactly one `TSTree`, however many other trees happen to touch the same
+--- buffer coordinates -- `LanguageTree:trees()`/`:children()` is what makes
+--- that tree, in turn, findable back to the specific `LanguageTree` that
+--- parsed it.
+---
+--- On a cache miss, `search` populates `_tree_to_ltree` for *every* `TSTree`
+--- it walks past, not just `target` -- so the first lookup after a reparse
+--- pays for one full walk, and every other `TSTree` that walk touched
+--- (typically every tree in the buffer) is then a cache hit too.
+---
+---@param node TSNode
+---@return vim.treesitter.LanguageTree?
+local function _owning_ltree(node)
+    local target = node:tree()
+    local cached = _tree_to_ltree[target]
+
+    if cached then
+        return cached
+    end
+
+    local root = _root_parser()
+
+    if not root then
+        return nil
+    end
+
+    ---@param ltree vim.treesitter.LanguageTree
+    local function search(ltree)
+        for _, tree in ipairs(ltree:trees()) do
+            _tree_to_ltree[tree] = ltree
+        end
+
+        for _, child in pairs(ltree:children()) do
+            search(child)
+        end
+    end
+
+    search(root)
+
+    return _tree_to_ltree[target]
+end
+
+--- The specific stitched sub-range of `ltree`'s `included_regions()` that
+--- contains `row`/`column` -- one atomic run of injected source text, e.g.
+--- one line of a Nix indented string between two `${...}` interpolations.
+---
+--- Node ranges inside an injected tree always report their *true* position
+--- in the host buffer (that's how the stitching in `:help
+--- treesitter-language-injections` works even for a combined tree spanning
+--- several disjoint pieces), so comparing raw coordinates against each piece
+--- here is enough to tell them apart -- the same way `is_contiguous` already
+--- compares raw coordinates to tell leaves apart from runs.
+---
+---@param ltree vim.treesitter.LanguageTree
+---@param row integer
+---@param column integer
+---@return integer[]? # `{start_row, start_column, start_byte, end_row, end_column, end_byte}`, or
+---    `nil` if `row`/`column` isn't covered by `ltree` at all.
+local function _piece_at(ltree, row, column)
+    for _, regions in ipairs(ltree:included_regions()) do
+        for _, region in ipairs(regions) do
+            local after_start = row > region[1] or (row == region[1] and column >= region[2])
+            local before_end = row < region[4] or (row == region[4] and column < region[5])
+
+            if after_start and before_end then
+                return region
+            end
+        end
+    end
+
+    return nil
+end
+
+--- Whether `node`'s start position falls inside `piece` (a `_piece_at` result).
+---
+--- What `next_leaf`/`previous_leaf`/`_nearest_leaf_in_gap` use to tell
+--- "still inside the piece the walk started in" apart from "a combined
+--- tree's sibling walk (or gap scan) jumped to a completely different,
+--- unrelated piece" -- see this module's docstring.
+---
+---@param node TSNode
+---@param piece integer[]
+---@return boolean
+local function _within_piece(node, piece)
+    local row, column = node:start()
+    local after_start = row > piece[1] or (row == piece[1] and column >= piece[2])
+    local before_end = row < piece[4] or (row == piece[4] and column < piece[5])
+
+    return after_start and before_end
+end
+
 --- Find the two leaves bracketing a gap no leaf covers (e.g. a blank line).
 ---
 --- `get_node()` finds the *smallest* node whose range contains the cursor,
@@ -127,6 +296,30 @@ end
 --- first, or after the last. This walks those direct children once to find
 --- which gap that is, then descends into whichever side `forward` asks for.
 ---
+--- If `gap_parent` sits inside an injected tree, the piece (`_piece_at`)
+--- that `row`/`column` -- the gap being resolved -- falls inside, else `nil`.
+---
+--- `_nearest_leaf_in_gap`'s own child scan below can find a real "before"/
+--- "after" child that nonetheless belongs to a *different* piece than the
+--- gap itself (a combined tree's children are sorted by true document
+--- position across every piece it owns, not just the one nearest `row`/
+--- `column`) -- this is what lets it reject that child instead of accepting
+--- unrelated, possibly far-away content. See this module's docstring.
+---
+---@param gap_parent TSNode
+---@param row integer
+---@param column integer
+---@return integer[]?
+local function _gap_piece(gap_parent, row, column)
+    local ltree = _owning_ltree(gap_parent)
+
+    if not ltree or not ltree:parent() then
+        return nil
+    end
+
+    return _piece_at(ltree, row, column)
+end
+
 ---@param gap_parent TSNode The non-leaf node `get_node()` returned.
 ---@param row integer 0-indexed cursor row.
 ---@param column integer 0-indexed cursor column.
@@ -150,23 +343,176 @@ local function _nearest_leaf_in_gap(gap_parent, row, column, forward)
         before = child
     end
 
+    local piece = _gap_piece(gap_parent, row, column)
+
     if forward then
-        if after then
+        if after and (not piece or _within_piece(after, piece)) then
             return M.first_leaf(after)
         end
 
         -- The gap is after `gap_parent`'s last child (e.g. a blank line at
-        -- the end of a block) -- the next leaf, if any, lives outside
-        -- `gap_parent` entirely.
+        -- the end of a block), or `after` belongs to a piece other than
+        -- `gap_parent`'s own -- either way the next leaf, if any, lives
+        -- outside `gap_parent`'s own content entirely.
         return M.next_leaf(gap_parent)
     end
 
-    if before then
+    if before and (not piece or _within_piece(before, piece)) then
         return M.last_leaf(before)
     end
 
-    -- Mirror image: the gap is before `gap_parent`'s first child.
+    -- Mirror image: the gap is before `gap_parent`'s first child, or
+    -- `before` belongs to a different piece.
     return M.previous_leaf(gap_parent)
+end
+
+--- Injected "languages" that exist purely to highlight fragments inside an
+--- already-meaningful host node (a comment body, a printf-style format
+--- string), not to represent that node's content as a different program in
+--- its own right.
+---
+--- The exact-range check in `_injection_at` below (only a piece covering a
+--- node's *entire* span counts) was meant to filter these out on the theory
+--- that a marker-only injection's pieces are always small -- true of
+--- Neovim's own minimal bundled `queries/c/injections.scm`, but not of the
+--- real nvim-treesitter query set virtually every actual user of this
+--- plugin has installed: its `queries/c/injections.scm` (and the equivalent
+--- for most other languages) injects `((comment) @injection.content (#set!
+--- injection.language "comment"))`, whose piece covers a comment's *entire*
+--- span exactly, same as a genuine injection would. Confirmed by running
+--- this plugin's own test suite with that query active: a C block comment
+--- stops being one `w`/`b` stop and gets split word-by-word instead,
+--- exactly the "whole embedded block treated as one opaque leaf" bug this
+--- module exists to prevent, inverted -- text that should stay one leaf
+--- getting split apart instead. `printf`/`doxygen`/`re2c` are the same
+--- shape (format-string highlighting, Doxygen tag highlighting, regex
+--- syntax inside a comment) and are excluded for the same reason. This is a
+--- denylist by name, not a structural test, because nothing in the query
+--- itself marks "this injection is for highlighting only" -- it's
+--- indistinguishable, at the `included_regions()` level, from a genuine
+--- whole-node injection like Lua's `vim.cmd()` strings or a Markdown fence.
+local _ANNOTATION_ONLY_LANGUAGES = {
+    comment = true,
+    doxygen = true,
+    printf = true,
+    re2c = true,
+}
+
+--- If `node`'s entire range is exactly what an injection query captured as
+--- `@injection.content` (see `:help treesitter-language-injections`) --
+--- i.e. `node` is the host-grammar node standing in for a whole piece of
+--- injected content -- the tree that content should be parsed as, and which
+--- piece it is.
+---
+--- The exact-range match is deliberate, not just "does some injection touch
+--- `node` at all": a query can use injection for something far narrower
+--- than "this whole node is actually a different language" -- see
+--- `_ANNOTATION_ONLY_LANGUAGES`'s docstring for why the exact-range check
+--- alone isn't enough to filter those out, and why this also checks the
+--- injected language's name against that list.
+---
+---@param node TSNode
+---@return vim.treesitter.LanguageTree? child_ltree
+---@return integer[]? piece
+local function _injection_at(node)
+    local ltree = _owning_ltree(node)
+
+    if not ltree then
+        return nil
+    end
+
+    local row1, column1, row2, column2 = node:range()
+
+    for _, child in pairs(ltree:children()) do
+        if not _ANNOTATION_ONLY_LANGUAGES[child:lang()] then
+            for _, regions in ipairs(child:included_regions()) do
+                for _, region in ipairs(regions) do
+                    if region[1] == row1 and region[2] == column1 and region[4] == row2 and region[5] == column2 then
+                        return child, region
+                    end
+                end
+            end
+        end
+    end
+
+    return nil
+end
+
+--- The leaf at (or nearest to) `row`/`column` within `ltree`.
+---
+--- Mirrors `M.current_leaf`'s own node-or-gap resolution, but for an
+--- arbitrary tree/position instead of the live cursor -- used both by
+--- `M.current_leaf` itself (once it's confirmed the cursor sits inside a
+--- real injection) and to enter a piece of injected content at its exact
+--- start/end boundary (see `_first_leaf_in_piece`/`_last_leaf_in_piece`),
+--- where there's no real cursor position to read `get_node()` off of.
+---
+--- Includes the same settle-upward-past-uncovered-text-parent step
+--- `M.current_leaf` does (see its docstring), for the same reason: an
+--- injected tree can have exactly the same partial-coverage shape a host
+--- tree can (confirmed against Neovim's own bundled `markdown`, which
+--- injects `inline` content into a separate `markdown_inline` tree whose
+--- `emphasis` node has two `emphasis_delimiter` children with real,
+--- uncovered `text` between them -- the identical shape `_has_uncovered_text`
+--- was originally written against, just one injection boundary deeper).
+--- Skipping this step would resolve a position sitting exactly on such a
+--- child straight to that child, defeating the whole-node,
+--- `subword`-splits-it-into-words handling `_is_leaf`/`_has_uncovered_text`
+--- exist to provide in the first place.
+---
+--- Also checks `_injection_at` on the node it resolves, recursing into
+--- `_leaf_at` again if it finds one -- an injection can itself contain
+--- another injection (confirmed against a Markdown fence tagged as `lua`
+--- whose Lua content has its own `vim.cmd([[...]])` -> Vimscript injection,
+--- three `LanguageTree`s deep). Without this, resolving a position inside
+--- the innermost language would stop one level short, at the host-grammar
+--- node the *outer* injection captured -- exactly the "whole embedded block
+--- treated as one opaque leaf" bug this module exists to fix, just
+--- recurring one injection boundary deeper. The recursive call is
+--- bounds-checked against the deeper piece the same way every other
+--- injection crossing in this module is (see the module docstring on
+--- `injection.combined`); if it fails, this falls back to treating `node`
+--- itself as the leaf, same as if no further injection had been found.
+---
+---@param ltree vim.treesitter.LanguageTree
+---@param row integer
+---@param column integer
+---@param forward boolean Passed straight to `_nearest_leaf_in_gap`.
+---@return TSNode?
+local function _leaf_at(ltree, row, column, forward)
+    local node = ltree:node_for_range({ row, column, row, column }, { ignore_injections = true })
+
+    if not node then
+        return nil
+    end
+
+    while true do
+        local parent = node:parent()
+
+        if not parent or not _has_uncovered_text(parent) then
+            break
+        end
+
+        node = parent
+    end
+
+    local child_ltree, piece = _injection_at(node)
+
+    if child_ltree then
+        -- See `M.current_leaf`'s identical `assert` for why this is safe.
+        piece = assert(piece)
+        local entry = _leaf_at(child_ltree, row, column, forward)
+
+        if entry and _within_piece(entry, piece) then
+            return entry
+        end
+    end
+
+    if _is_leaf(node) then
+        return node
+    end
+
+    return _nearest_leaf_in_gap(node, row, column, forward)
 end
 
 --- Find the leaf directly under the cursor, or nearest it.
@@ -189,6 +535,23 @@ end
 --- and looking for its first leaf). Settling first keeps both directions
 --- agreeing on the same leaf for the same span, however the cursor got there.
 ---
+--- Deliberately resolves with `get_node()`'s default `ignore_injections =
+--- true` (host grammar only), then hands off to `_injection_at` explicitly,
+--- rather than just passing `ignore_injections = false` and trusting
+--- whatever `get_node()` resolves into on its own -- a grammar can use
+--- `:help treesitter-language-injections` for things that have nothing to
+--- do with "real" embedded source, e.g. a real-world C query (see
+--- `_ANNOTATION_ONLY_LANGUAGES`) injects comment bodies into a tiny
+--- marker-only pseudo-language for highlighting (confirmed against `int x;
+--- /* foo\nbar */`, where `ignore_injections = false` alone resolves the
+--- cursor to a single `/` token deep inside that pseudo-language instead of
+--- the intended, already-correct whole-`comment` leaf). `_injection_at`'s
+--- exact-range match plus its `_ANNOTATION_ONLY_LANGUAGES` name check is
+--- what tells that apart from a genuine injection like Nix's `# bash`
+--- strings: the exact-range match alone isn't enough, since a marker-only
+--- injection can (and, in the real `"comment"` case, does) cover a whole
+--- host leaf too.
+---
 ---@param forward boolean Off a leaf, prefer the nearest leaf after the cursor over the nearest one before it.
 ---@return TSNode? # The leaf under (or nearest) the cursor, if a parser and a leaf exist that way.
 ---
@@ -204,7 +567,27 @@ function M.current_leaf(forward)
 
     -- `get_node()` can return a stale/invalid node against an unparsed
     -- tree, so make sure the tree covering the cursor is up to date first.
-    parser:parse()
+    -- `true` (not the default `false`/`nil`) is what actually parses
+    -- injected regions too, not just the root tree -- without it,
+    -- `_injection_at` below would never find anything, since no injected
+    -- tree would exist yet to search.
+    --
+    -- Tried narrowing this to just the cursor's own range instead of a full
+    -- `true` parse (`:help LanguageTree:parse()` calls `true` "Can be
+    -- slow!"), but reverted it: confirmed two independent problems doing
+    -- so. First, `LanguageTree:parse()`'s own intersects-{range} check,
+    -- unlike `node_for_range()`'s, misses a zero-width range sitting
+    -- exactly on an injected region's start boundary, silently leaving that
+    -- region unparsed (reproduced against a cursor on the very first column
+    -- of an injected fence). Second, and more fundamentally, `next_leaf`/
+    -- `previous_leaf` never call `parse()` themselves -- `run_start`/
+    -- `run_end` can walk them into a completely different injected tree
+    -- elsewhere in the buffer than the one the cursor started in, and that
+    -- tree would never get parsed at all if this call only covered the
+    -- cursor's own narrow range. A full parse here is what lets every leaf
+    -- a walk might later reach already have real content, however far from
+    -- the cursor that leaf turns out to be.
+    parser:parse(true)
 
     -- `include_anonymous` matters here: without it, `get_node()` only
     -- returns *named* nodes, so a cursor sitting on punctuation (which is
@@ -226,11 +609,25 @@ function M.current_leaf(forward)
         node = parent
     end
 
+    local row, column = M.cursor_position()
+    local child_ltree, piece = _injection_at(node)
+
+    if child_ltree then
+        -- `_injection_at` only ever returns `child_ltree` and `piece`
+        -- together (both `nil`, or both set) -- `assert` narrows `piece`
+        -- back to non-optional for `_within_piece`, the same way `piece`'s
+        -- own `?` return type can't express that pairing on its own.
+        piece = assert(piece)
+        local entry = _leaf_at(child_ltree, row, column, forward)
+
+        if entry and _within_piece(entry, piece) then
+            return entry
+        end
+    end
+
     if _is_leaf(node) then
         return node
     end
-
-    local row, column = M.cursor_position()
 
     return _nearest_leaf_in_gap(node, row, column, forward)
 end
@@ -249,6 +646,46 @@ function M.cursor_position()
     return cursor[1] - 1, cursor[2]
 end
 
+--- The first real leaf inside `piece` (a single stitched sub-range of an
+--- injected tree, from `_injection_at`), or `nil` if `piece` has no real
+--- content of its own (e.g. a blank line inside the embedded script).
+---
+--- `_leaf_at`'s own gap fallback can, in principle, walk straight out of
+--- `piece` entirely -- a combined tree's root has no parent of its own, so
+--- `_nearest_leaf_in_gap` would otherwise keep searching into whatever
+--- unrelated piece happens to be next (see this module's docstring on
+--- `injection.combined`) -- `_within_piece` is what catches that and turns
+--- it back into "nothing here", rather than returning content from
+--- somewhere else in the buffer.
+---
+---@param ltree vim.treesitter.LanguageTree
+---@param piece integer[]
+---@return TSNode?
+local function _first_leaf_in_piece(ltree, piece)
+    local leaf = _leaf_at(ltree, piece[1], piece[2], true)
+
+    if leaf and _within_piece(leaf, piece) then
+        return leaf
+    end
+
+    return nil
+end
+
+--- Mirror image of `_first_leaf_in_piece`: the last real leaf inside `piece`.
+---
+---@param ltree vim.treesitter.LanguageTree
+---@param piece integer[]
+---@return TSNode?
+local function _last_leaf_in_piece(ltree, piece)
+    local leaf = _leaf_at(ltree, piece[4], piece[5], false)
+
+    if leaf and _within_piece(leaf, piece) then
+        return leaf
+    end
+
+    return nil
+end
+
 --- Descend to the first leaf inside `node` (including `node` itself).
 ---
 --- Repeatedly takes the 0th child until `_is_leaf` says to stop -- a node
@@ -258,10 +695,28 @@ end
 --- leave the rest of `node`'s own text unreachable. This is the base case
 --- `next_leaf` lands on after climbing to a next sibling.
 ---
+--- Checked first, though: whether `node` is exactly an injection query's
+--- captured content (`_injection_at`), in which case the real first leaf
+--- lives in the injected tree, not `node`'s own (host-grammar) children --
+--- see this module's docstring on `treesitter-language-injections`. A
+--- `nil` piece result (e.g. a blank embedded script) falls through to the
+--- normal host-grammar descent below, same as `node` having no injection at all.
+---
 ---@param node TSNode Any node to search from.
 ---@return TSNode # The first leaf, in document order.
 ---
 function M.first_leaf(node)
+    local child_ltree, piece = _injection_at(node)
+
+    if child_ltree then
+        -- See `M.current_leaf`'s identical `assert` for why this is safe.
+        local entry = _first_leaf_in_piece(child_ltree, assert(piece))
+
+        if entry then
+            return entry
+        end
+    end
+
     if _is_leaf(node) then
         return node
     end
@@ -273,12 +728,24 @@ end
 ---
 --- Mirror image of `first_leaf`: repeatedly takes the last child until
 --- `_is_leaf` says to stop. This is the base case `previous_leaf` lands on
---- after climbing to a previous sibling.
+--- after climbing to a previous sibling. Also mirrors `first_leaf`'s
+--- injection check -- see its docstring.
 ---
 ---@param node TSNode Any node to search from.
 ---@return TSNode # The last leaf, in document order.
 ---
 function M.last_leaf(node)
+    local child_ltree, piece = _injection_at(node)
+
+    if child_ltree then
+        -- See `M.current_leaf`'s identical `assert` for why this is safe.
+        local entry = _last_leaf_in_piece(child_ltree, assert(piece))
+
+        if entry then
+            return entry
+        end
+    end
+
     if _is_leaf(node) then
         return node
     end
@@ -286,20 +753,29 @@ function M.last_leaf(node)
     return M.last_leaf(assert(node:child(node:child_count() - 1)))
 end
 
---- Find the leaf directly after `node`, in document order.
+--- The host-grammar node an injection query captured to produce `piece` --
+--- the same node `_injection_at` finds by descending from the host side,
+--- reachable here from inside the injected tree instead, once `piece` runs
+--- out of content of its own (see `M.next_leaf`/`M.previous_leaf`).
 ---
---- `TSNode` has no "next node in the document" operation, only tree
---- navigation -- so this climbs from `node` toward the root, checking each
---- ancestor (starting with `node` itself) for a next sibling. The first one
---- found is where the next leaf lives; `first_leaf` descends into it to
---- find the actual leaf, rather than stopping at that sibling subtree's
---- root. Reaching the root with no sibling anywhere along the way means
---- `node` was the last leaf in the whole tree.
+---@param host_ltree vim.treesitter.LanguageTree
+---@param piece integer[]
+---@return TSNode?
+local function _host_node_for_piece(host_ltree, piece)
+    return host_ltree:node_for_range({ piece[1], piece[2], piece[4], piece[5] }, { ignore_injections = true })
+end
+
+--- The plain "climb to a next sibling, descend into it" walk, with no
+--- awareness of tree/injection boundaries at all -- what `next_leaf` used to
+--- be in full, before injection support. Still correct on its own for a
+--- node outside any injection, and for one inside a *non-combined*
+--- injection (a single, self-contained piece); `M.next_leaf` adds the
+--- piece-boundary check on top, for the combined case (see this module's
+--- docstring).
 ---
----@param node TSNode A leaf (or any node) to start searching from.
----@return TSNode? # The next leaf, if `node` isn't the last leaf in the tree.
----
-function M.next_leaf(node)
+---@param node TSNode
+---@return TSNode?
+local function _climb_next(node)
     ---@type TSNode?
     local current = node
 
@@ -316,15 +792,11 @@ function M.next_leaf(node)
     return nil
 end
 
---- Find the leaf directly before `node`, in document order.
+--- Mirror image of `_climb_next`, used by `M.previous_leaf`.
 ---
---- Mirror image of `next_leaf`: climbs toward the root looking for a
---- previous sibling, then `last_leaf` descends into it.
----
----@param node TSNode A leaf (or any node) to start searching from.
----@return TSNode? # The previous leaf, if `node` isn't the first leaf in the tree.
----
-function M.previous_leaf(node)
+---@param node TSNode
+---@return TSNode?
+local function _climb_previous(node)
     ---@type TSNode?
     local current = node
 
@@ -339,6 +811,110 @@ function M.previous_leaf(node)
     end
 
     return nil
+end
+
+--- Find the leaf directly after `node`, in document order.
+---
+--- `TSNode` has no "next node in the document" operation, only tree
+--- navigation -- so `_climb_next` climbs from `node` toward the root,
+--- checking each ancestor (starting with `node` itself) for a next sibling.
+--- The first one found is where the next leaf lives; `first_leaf` descends
+--- into it to find the actual leaf, rather than stopping at that sibling
+--- subtree's root. Reaching the root with no sibling anywhere along the way
+--- means `node` was the last leaf in *its own* tree.
+---
+--- That last part matters once injections are involved: "the last leaf in
+--- its own tree" isn't necessarily "the last leaf in the buffer" -- `node`
+--- might be inside injected content with real host-language text still
+--- ahead of it. So when `node` sits inside a piece of injected content
+--- (`_owning_ltree`/`_piece_at`), `_climb_next`'s result additionally has to
+--- fall *inside that same piece* (`_within_piece`) to be trusted -- climbing
+--- within a `injection.combined` tree can otherwise land on a completely
+--- unrelated piece instead (see this module's docstring). Whenever the climb
+--- doesn't produce a same-piece result, this falls back to the host-grammar
+--- node the injection query captured (`_host_node_for_piece`) and asks
+--- *its* next leaf instead -- the mirror image of `first_leaf`'s descent
+--- into a fresh piece.
+---
+---@param node TSNode A leaf (or any node) to start searching from.
+---@return TSNode? # The next leaf, if `node` isn't the last leaf in the buffer.
+---
+function M.next_leaf(node)
+    local climbed = _climb_next(node)
+    local ltree = _owning_ltree(node)
+
+    if not ltree then
+        return climbed
+    end
+
+    local host_ltree = ltree:parent()
+
+    if not host_ltree then
+        return climbed
+    end
+
+    local piece = _piece_at(ltree, node:start())
+
+    if not piece then
+        return climbed
+    end
+
+    if climbed and _within_piece(climbed, piece) then
+        return climbed
+    end
+
+    local host_node = _host_node_for_piece(host_ltree, piece)
+
+    if not host_node then
+        return climbed
+    end
+
+    return M.next_leaf(host_node)
+end
+
+--- Find the leaf directly before `node`, in document order.
+---
+--- Mirror image of `next_leaf`, including its injection-boundary handling:
+--- `_climb_previous` climbs toward the root looking for a previous sibling,
+--- then `last_leaf` descends into it; if `node` sits inside a piece of
+--- injected content and the climb doesn't stay within that same piece, this
+--- falls back to the host-grammar node the injection query captured and
+--- asks *its* previous leaf instead.
+---
+---@param node TSNode A leaf (or any node) to start searching from.
+---@return TSNode? # The previous leaf, if `node` isn't the first leaf in the buffer.
+---
+function M.previous_leaf(node)
+    local climbed = _climb_previous(node)
+    local ltree = _owning_ltree(node)
+
+    if not ltree then
+        return climbed
+    end
+
+    local host_ltree = ltree:parent()
+
+    if not host_ltree then
+        return climbed
+    end
+
+    local piece = _piece_at(ltree, node:start())
+
+    if not piece then
+        return climbed
+    end
+
+    if climbed and _within_piece(climbed, piece) then
+        return climbed
+    end
+
+    local host_node = _host_node_for_piece(host_ltree, piece)
+
+    if not host_node then
+        return climbed
+    end
+
+    return M.previous_leaf(host_node)
 end
 
 --- Check if `first` ends exactly where `second` starts.
