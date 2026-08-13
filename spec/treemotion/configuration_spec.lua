@@ -97,6 +97,22 @@ describe("default", function()
             end
         end
     )
+
+    it("works with a #commands.motion.subword.comment_markers table with several languages", function()
+        _assert_good({
+            commands = {
+                motion = {
+                    subword = {
+                        comment_markers = { lua = { "#" }, python = { "#" }, vim = { '"' } },
+                    },
+                },
+            },
+        })
+    end)
+
+    it("works with an #commands.motion.subword.comment_markers table with an empty character list", function()
+        _assert_good({ commands = { motion = { subword = { comment_markers = { lua = {} } } } } })
+    end)
 end)
 
 ---@diagnostic disable: assign-type-mismatch
@@ -134,6 +150,32 @@ describe("bad configuration - commands", function()
         _assert_bad(
             { commands = { hello_world = { say = { style = "bad_value" } } } },
             { 'commands.hello_world.say.style: expected "lowercase" or "uppercase", got bad_value' }
+        )
+    end)
+
+    it("happens with a bad type for #commands.motion.subword.comment_markers", function()
+        _assert_bad({ commands = { motion = { subword = { comment_markers = "aaa" } } } }, {
+            "commands.motion.subword.comment_markers: expected a table<string, string[]> "
+                .. "(treesitter language name -> comment-marker characters), got aaa",
+        })
+    end)
+
+    it("happens with a bad shape for #commands.motion.subword.comment_markers", function()
+        -- The bad value here is a *table*, so `vim.validate`'s "got <value>" suffix
+        -- would print an unstable memory address (`table: 0x...`) instead of
+        -- something a test can match exactly -- so this only checks the message's
+        -- stable prefix, unlike the exact-match `_assert_bad` calls elsewhere.
+        local issues = health.get_issues(configuration_.resolve_data({
+            commands = { motion = { subword = { comment_markers = { lua = "aaa" } } } },
+        }))
+
+        assert.same(1, #issues)
+        assert.is_true(
+            vim.startswith(
+                issues[1],
+                "commands.motion.subword.comment_markers: expected a table<string, string[]> "
+                    .. "(treesitter language name -> comment-marker characters), got "
+            )
         )
     end)
 
@@ -244,6 +286,36 @@ describe("health.check", function()
                 return message:find("include_anonymous", 1, true) ~= nil
             end, { predicate = true }))
         end
+    end)
+
+    it("doesn't warn about the shipped #commands.motion.subword.comment_markers defaults", function()
+        -- The defaults (`c`, `cpp`, `rust`, `python`, ...) cover languages most
+        -- users won't have every parser for -- see `_check_comment_markers`'s
+        -- docstring in `health.lua` for why warning about those would be noise.
+        health.check({})
+        health.check()
+
+        assert.same({}, mock_vim.get_vim_health_warnings())
+    end)
+
+    it(
+        "doesn't warn about a user #commands.motion.subword.comment_markers language with an installed parser",
+        function()
+            health.check({ commands = { motion = { subword = { comment_markers = { lua = { "#" } } } } } })
+
+            assert.same({}, mock_vim.get_vim_health_warnings())
+        end
+    )
+
+    it("warns about a user #commands.motion.subword.comment_markers language with no installed parser", function()
+        health.check({
+            commands = { motion = { subword = { comment_markers = { not_a_real_language = { "#" } } } } },
+        })
+
+        assert.same({
+            'No treesitter parser named "not_a_real_language" is installed, '
+                .. "so `comment_markers.not_a_real_language` has no effect until one is.",
+        }, mock_vim.get_vim_health_warnings())
     end)
 
     it("shows all issues at once", function()
