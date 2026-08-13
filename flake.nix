@@ -281,7 +281,7 @@
             ${luaCoverageEnv}/bin/busted --coverage .
           '';
 
-        minCoveragePercent = 35.00;
+        minCoveragePercent = 90.00;
 
         checkCoverageThreshold = # bash
           ''
