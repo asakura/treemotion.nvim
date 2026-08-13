@@ -496,6 +496,52 @@ describe("motion API - genuinely multi-row leaves", function()
     end)
 end)
 
+describe("motion API - leaves with a partial-coverage child", function()
+    before_each(function()
+        -- `"foo\nbar"` (a literal backslash-n, not an embedded newline)
+        -- parses as `string` = `"`(10-11), `string_content`(11-19),
+        -- `"`(19-20); `string_content` in turn has exactly *one* child,
+        -- `escape_sequence` (14-16, the `\n`) -- `"foo"` (11-14) and `"bar"`
+        -- (16-19) have no node of their own at all, the same "partial
+        -- coverage" shape as tree-sitter-rust's plain `//`/`/* */`
+        -- comments (see `_has_uncovered_text`'s docstring), just
+        -- reproducible with Lua's own grammar instead of needing Rust's.
+        -- Without settling `string_content` as one whole leaf, `w`/`e`/`b`
+        -- from inside `"foo"` used to jump straight to `escape_sequence`
+        -- (0,14), treating `"foo"` as an invisible gap instead of real,
+        -- unreachable content.
+        _BUFFER = vim.api.nvim_create_buf(false, true)
+        vim.api.nvim_buf_set_lines(_BUFFER, 0, -1, false, { [[local x = "foo\nbar"]] })
+        vim.api.nvim_set_current_buf(_BUFFER)
+        vim.treesitter.start(_BUFFER, "lua")
+    end)
+    after_each(_remove_buffer)
+
+    it("#w treats string_content as one whole leaf, not stopping on its embedded escape_sequence", function()
+        _set_cursor_at(0, 11) -- the start of `foo`, uncovered by `escape_sequence`
+
+        treemotion.run_motion_w()
+        local row, column = _get_cursor()
+        assert.same({ 0, 19 }, { row, column }) -- straight to the closing `"`, not `escape_sequence`'s start (14)
+    end)
+
+    it("#e lands on string_content's real last character, past the embedded escape_sequence", function()
+        _set_cursor_at(0, 11) -- the start of `foo`
+
+        treemotion.run_motion_e()
+        local row, column = _get_cursor()
+        assert.same({ 0, 18 }, { row, column }) -- the `r` in `bar`, string_content's own last character
+    end)
+
+    it("#b mirrors #w, from inside `bar` back to string_content's start", function()
+        _set_cursor_at(0, 18) -- the last character of `bar`
+
+        treemotion.run_motion_b()
+        local row, column = _get_cursor()
+        assert.same({ 0, 11 }, { row, column }) -- back to `foo`'s start, string_content's own start
+    end)
+end)
+
 describe("motion API - subword configuration", function()
     before_each(_initialize_subword_buffer)
 
