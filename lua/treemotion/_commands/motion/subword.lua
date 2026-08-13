@@ -358,6 +358,46 @@ end
 --- units at all for `node` rather than falling back to its full span --
 --- see `M.split`'s docstring.
 ---
+--- Collapse `node` to a single-row span, if it only spans multiple rows
+--- because of trailing blank characters.
+---
+--- Some grammars bake a trailing terminator into a token's own span instead
+--- of stopping right after its real content: tree-sitter-rust's
+--- `doc_comment` (everything after `///`) is produced by an external
+--- scanner that folds the line's trailing newline into the token itself --
+--- confirmed against the real grammar, its range ends at `(next_row, 0)`
+--- and its text literally ends in `"\n"`, even though every real character
+--- is still on `node`'s start row. That's not a Rust-only quirk: any
+--- grammar whose scanner consumes trailing whitespace/newline(s) as part of
+--- a token (commonly done so the scanner can disambiguate that token from
+--- whatever follows) produces the same shape, the same way any grammar
+--- can split a fixed-width comment-marker literal the way
+--- `_leading_continuation_length` above handles. Rather than special-casing
+--- node types per grammar, this asks the one question that's actually true
+--- generically: after trimming trailing blank characters, is everything
+--- that's left still on one row? A leaf with *real* content on more than
+--- one row (e.g. a Lua long string's `string_content`, confirmed to keep
+--- its embedded newline even after trimming) fails this check, so `M.split`
+--- keeps treating it as genuinely multi-row.
+---
+---@param node TSNode The leaf to check.
+---@param text string `node`'s full text.
+---@return string?, integer?, integer? # `nil` if `node` is genuinely
+---    multi-row; otherwise the trimmed text and its end row/column, both
+---    still `node`'s start row.
+---
+local function _single_row_span(node, text)
+    local trimmed = text:gsub("%s+$", "")
+
+    if trimmed == text or trimmed:find("\n") then
+        return nil
+    end
+
+    local start_row, start_col = node:start()
+
+    return trimmed, start_row, start_col + #trimmed
+end
+
 ---@param node TSNode The leaf `text` came from.
 ---@param text string `node`'s full text (see `M.split`).
 ---@return integer # 0 if `text`'s start doesn't continue a punctuation run.
@@ -401,16 +441,21 @@ end
 --- `word.offset` from the outer pass, `delimited.offset`/chunk length from
 --- the inner ones -- compose into each unit's absolute buffer column.
 ---
---- Before any of that, `_leading_continuation_length` strips off (and
---- shifts past) any leading characters that are really the tail of the
---- previous leaf's delimiter run -- see its docstring. When that
---- continuation consumes `node` in its entirety (tree-sitter-rust's lone
---- `/` `outer_doc_comment_marker` leaf, for `///` doc comments), `node` has
---- no content of its own left to become a unit, so this returns an empty
---- list instead of the usual whole-leaf fallback -- `_commands.motion.word`
---- treats that as "no stop here", skipping straight to the next/previous
---- leaf, the same way it already skips punctuation runs collapsed into a
---- single stop elsewhere.
+--- Before any of that, two passes narrow `node` down to the text that's
+--- actually eligible to split. `_single_row_span` first collapses a
+--- multi-row `node` down to one row when the only reason it spans rows is a
+--- trailing run of blank characters (tree-sitter-rust's `doc_comment`, see
+--- its docstring) -- genuinely multi-row content (a long string) is left
+--- alone and falls back to one whole-leaf unit, same as always. Then
+--- `_leading_continuation_length` strips off (and shifts past) any leading
+--- characters that are really the tail of the previous leaf's delimiter run
+--- -- see its docstring. When that continuation consumes `node` in its
+--- entirety (tree-sitter-rust's lone `/` `outer_doc_comment_marker` leaf,
+--- for `///` doc comments), `node` has no content of its own left to become
+--- a unit, so this returns an empty list instead of the usual whole-leaf
+--- fallback -- `_commands.motion.word` treats that as "no stop here",
+--- skipping straight to the next/previous leaf, the same way it already
+--- skips punctuation runs collapsed into a single stop elsewhere.
 ---
 ---@param node TSNode Any leaf (see `_commands.motion.leaf`).
 ---@return treemotion.SubwordUnit[] # Empty only when `node` is entirely a
@@ -420,14 +465,21 @@ end
 function M.split(node)
     local start_row, start_col = node:start()
     local end_row, end_col = node:end_()
+    local text = vim.treesitter.get_node_text(node, 0)
 
     if start_row ~= end_row then
-        -- Sub-word splitting only makes sense within a single line; no
-        -- real-world leaf (identifier, string, etc.) needs it across lines.
-        return { _new_unit(start_row, start_col, end_row, end_col) }
+        local collapsed_text, collapsed_end_row, collapsed_end_col = _single_row_span(node, text)
+
+        if not collapsed_text then
+            -- Genuinely multi-row content; sub-word splitting only makes
+            -- sense within a single line, so no real-world leaf (an
+            -- identifier, a long string, ...) needs it across lines.
+            return { _new_unit(start_row, start_col, end_row, end_col) }
+        end
+
+        text, end_row, end_col = collapsed_text, assert(collapsed_end_row), assert(collapsed_end_col)
     end
 
-    local text = vim.treesitter.get_node_text(node, 0)
     local continuation = _leading_continuation_length(node, text)
 
     if continuation > 0 and continuation == #text then

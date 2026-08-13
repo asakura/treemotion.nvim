@@ -455,6 +455,44 @@ describe("motion API - blank line gaps", function()
     end)
 end)
 
+describe("motion API - genuinely multi-row leaves", function()
+    before_each(function()
+        -- `local`(0,0), `x`(0,6), `=`(0,8), `[[`(0,10), `string_content`
+        -- (0,12 - 1,3, text `"foo\nbar"`), `]]`(1,3). `string_content` has
+        -- no trailing blank characters to trim, so `subword`'s row-collapsing
+        -- pass (added for tree-sitter-rust's `doc_comment`, see
+        -- `_single_row_span`'s docstring) must leave it alone -- this is the
+        -- "genuinely spans more than one row" branch of that same check,
+        -- confirming it still falls back to one whole-leaf unit rather than
+        -- being mishandled by the new collapsing logic.
+        _BUFFER = vim.api.nvim_create_buf(false, true)
+        vim.api.nvim_buf_set_lines(_BUFFER, 0, -1, false, { "local x = [[foo", "bar]]" })
+        vim.api.nvim_set_current_buf(_BUFFER)
+        vim.treesitter.start(_BUFFER, "lua")
+    end)
+    after_each(_remove_buffer)
+
+    it("#w lands on the whole multi-row leaf as a single stop, then the leaf after it", function()
+        _set_cursor_at(0, 10) -- the start of `[[`
+
+        treemotion.run_motion_w()
+        local row, column = _get_cursor()
+        assert.same({ 0, 12 }, { row, column }) -- `[[` -> `string_content`'s start, not split at the embedded newline
+
+        treemotion.run_motion_w()
+        row, column = _get_cursor()
+        assert.same({ 1, 3 }, { row, column }) -- straight to `]]`, skipping over `string_content` in one step
+    end)
+
+    it("#b mirrors #w, landing on the multi-row leaf's start from its end", function()
+        _set_cursor_at(1, 3) -- the start of `]]`
+
+        treemotion.run_motion_b()
+        local row, column = _get_cursor()
+        assert.same({ 0, 12 }, { row, column }) -- back to `string_content`'s start, on the first row
+    end)
+end)
+
 describe("motion API - subword configuration", function()
     before_each(_initialize_subword_buffer)
 
