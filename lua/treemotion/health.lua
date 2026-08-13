@@ -353,6 +353,16 @@ end
 --- worth a warning if it can't be found -- most likely a typo, or a parser
 --- that still needs installing.
 ---
+--- `configuration.lua`'s `_OPTIONAL_COMMENT_MARKERS` (~120 additional
+--- languages, auto-detected when their parser is installed) is exempt from
+--- this warning for the same reason as the shipped defaults -- it also
+--- isn't part of the user's raw override this function inspects. Unlike the
+--- shipped defaults, though, it's not merely low-noise to skip: it's
+--- already pre-gated by a `vim.treesitter.language.add()` check before
+--- `configuration.get_comment_markers` ever returns one of its entries, so
+--- there's never a "missing parser" case to warn about for it in the first
+--- place.
+---
 ---@param raw treemotion.Configuration The user's own configuration, unresolved.
 ---
 local function _check_comment_markers(raw)
