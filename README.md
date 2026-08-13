@@ -131,6 +131,19 @@ character as a comment marker -- see below). See
 `commands.motion.subword.code` / `.prose` under `Configuration` to control
 `comment_marker_case` itself per context.
 
+#### Backtick-enclosed identifiers
+
+Within prose, a backtick-enclosed span that's exactly one Vim word --
+`` `fooBar` ``, `` `foo-bar` `` -- is treated as a code identifier: `code`'s
+`camel_case`/`pascal_case`/`kebab_case`/`snake_case`/`comment_marker_case`
+rules apply to it instead of `prose`'s, and the backticks themselves are
+never landing stops, the same way a `comment_marker_case = "skip"` run
+already isn't. A backtick pair that isn't exactly one word (multiple words,
+e.g. `` `foo bar` ``, or an empty pair with nothing between them) is left as
+ordinary prose text, backticks included, with no behavior change.
+
+This is on by default; set `commands.motion.subword.backtick_identifiers = false`.
+
 #### Comment-marker characters
 
 Which characters count as comment-marker punctuation -- `-`/`_` included,
@@ -373,6 +386,10 @@ works as expected:
                         query = { ";" },
                         lua = { "-" },
                     },
+                    -- Whether a backtick-enclosed single word within prose
+                    -- (`` `fooBar` ``) is treated as a code identifier, with
+                    -- the backticks themselves never landing stops.
+                    backtick_identifiers = true,
                     -- Identifiers, string content, and similar: `-`/`_` divide
                     -- but are never landed on themselves.
                     code = {

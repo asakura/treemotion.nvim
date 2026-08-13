@@ -87,6 +87,16 @@ Fields ~
        configuration needed, as soon as their treesitter parser is installed
        -- see `_OPTIONAL_COMMENT_MARKERS` in `configuration.lua` for the full
        list and `configuration.get_comment_markers` for the resolution order.
+    {backtick_identifiers} `(boolean)`?
+       Whether a backtick-enclosed span within prose that's exactly one Vim
+       word (`` `fooBar` ``, `` `foo-bar` `` -- not `` `foo bar` `` or an
+       empty `` `` ``) is treated as a code identifier: `code`'s
+       camel_case/pascal_case/kebab_case/snake_case/comment_marker_case rules
+       apply to it instead of `prose`'s, and the backticks themselves produce
+       no landing stop for `w`/`b`/`e`/`ge` -- invisible, the same way a
+       `"skip"` comment-marker run already is. A backtick pair whose content
+       isn't a single word is left as ordinary prose text, backticks
+       included -- no behavior change for it. Defaults to `true`.
     {code} |treemotion.ConfigurationMotionSubwordRules|?
        Splitting rules for leaves that aren't tagged `@spell`.
     {prose} |treemotion.ConfigurationMotionSubwordRules|?
