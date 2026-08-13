@@ -40,6 +40,19 @@
           overlays = [ overlay ];
         };
 
+        # Purely optional test-time plumbing: `treemotion-nvim` itself doesn't
+        # depend on this and builds fine without it.
+        treesitterAllGrammars = pkgs.symlinkJoin {
+          name = "treemotion-treesitter-all-grammars";
+          paths = builtins.attrValues (
+            removeAttrs pkgs.vimPlugins.nvim-treesitter-parsers [
+              "override"
+              "overrideDerivation"
+              "recurseForDerivations"
+            ]
+          );
+        };
+
         lua51 = pkgs.lua51Packages;
 
         toLuaAnnotationModule =
@@ -183,7 +196,7 @@
                 _all = {
                   coverage = false,
                   lpath = "lua/?.lua;lua/?/init.lua;spec/?.lua;${pkgs.vimPlugins.mega-cmdparse}/lua/?.lua;${pkgs.vimPlugins.mega-cmdparse}/lua/?/init.lua;${pkgs.vimPlugins.mega-logging}/lua/?.lua;${pkgs.vimPlugins.mega-logging}/lua/?/init.lua",
-                  lua = "nvim -u NONE -U NONE -N -i NONE -l",
+                  lua = "nvim -u NONE -U NONE -N -i NONE --cmd 'set rtp+=${treesitterAllGrammars}' -l",
                 },
                 default = {
                   helper = "./spec/minimal_init.lua",
