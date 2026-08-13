@@ -43,10 +43,13 @@
 
 ---@class treemotion.ConfigurationMotionSubword
 ---    Sub-word splitting rules, configured separately for "code" leaves
----    (identifiers, string content, ...) and "prose" leaves (comments, or
----    any other span a treesitter `@spell` query marks as natural-language
----    text). Splitting a prose leaf first divides it into individual words
----    (on whitespace/punctuation, like real Vim's `w` in a text file) before
+---    (identifiers, ...) and "prose" leaves (comments, string content, or
+---    any other span a treesitter query marks `@spell` or `@string` --
+---    string content counts as prose too, since it just as often holds free
+---    text -- a description, an error message, a URL -- as it does an
+---    identifier-like slug; see `_is_prose_capture` in `subword.lua`).
+---    Splitting a prose leaf first divides it into individual words (on
+---    whitespace/punctuation, like real Vim's `w` in a text file) before
 ---    either ruleset ever runs; code leaves skip straight to these rules.
 ---@field comment_markers table<string, string[]>?
 ---    Which single characters count as comment-marker punctuation
@@ -84,10 +87,10 @@
 ---    isn't a single word is left as ordinary prose text, backticks
 ---    included -- no behavior change for it. Defaults to `true`.
 ---@field code treemotion.ConfigurationMotionSubwordRules?
----    Splitting rules for leaves that aren't tagged `@spell`.
+---    Splitting rules for leaves that aren't tagged `@spell` or `@string`.
 ---@field prose treemotion.ConfigurationMotionSubwordRules?
 ---    Splitting rules for leaves (or, after the word split above, individual
----    words within a leaf) that are tagged `@spell`.
+---    words within a leaf) that are tagged `@spell` or `@string`.
 
 ---@alias treemotion.SubwordDelimiterMode "none" | "skip" | "stop"
 

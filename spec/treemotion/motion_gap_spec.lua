@@ -177,18 +177,40 @@ describe("motion API - leaves with a partial-coverage child, across grammars", f
             -- `"foo\nbar"` (a literal backslash-n) parses as `string_content`
             -- (11-19) with exactly one child, `escape_sequence` (14-16, the
             -- `\n`) -- `"foo"` (11-14) and `"bar"` (16-19) have no node of
-            -- their own at all.
+            -- their own at all. `string_content` is also `@string`-tagged
+            -- (see `subword.lua`'s `_is_prose_capture`), so `subword` splits
+            -- its text like prose: `foo`(11-14, word-class), `\`(14-15,
+            -- its own "other"-class run), `nbar`(15-19, `n` and `bar` are
+            -- both word-class with nothing between them, so they're one
+            -- run) -- proving the escape sequence's uncovered text on
+            -- *both* sides survives as real, reachable content, not a
+            -- silent gap, regardless of where `subword` itself then splits.
             grammar.set_cursor(0, 11) -- start of `foo`, uncovered by `escape_sequence`
-            treemotion.run_motion_w()
-            assert.same({ 0, 19 }, { grammar.get_cursor() }) -- straight to the closing `"`
+
+            local w_expected = { 14, 15, 19 } -- `\`, `nbar`, straight to the closing `"`
+            for _, column in ipairs(w_expected) do
+                treemotion.run_motion_w()
+                local _, actual = grammar.get_cursor()
+                assert.same(column, actual)
+            end
 
             grammar.set_cursor(0, 11)
-            treemotion.run_motion_e()
-            assert.same({ 0, 18 }, { grammar.get_cursor() }) -- `string_content`'s own last character
 
-            grammar.set_cursor(0, 18) -- last character of `bar`
-            treemotion.run_motion_b()
-            assert.same({ 0, 11 }, { grammar.get_cursor() }) -- back to `foo`'s start
+            local e_expected = { 13, 14, 18 } -- end of `foo`, `\`, `nbar` (`string_content`'s own last character)
+            for _, column in ipairs(e_expected) do
+                treemotion.run_motion_e()
+                local _, actual = grammar.get_cursor()
+                assert.same(column, actual)
+            end
+
+            grammar.set_cursor(0, 18) -- last character of `nbar`
+
+            local b_expected = { 15, 14, 11 } -- start of `nbar`, `\`, `foo`
+            for _, column in ipairs(b_expected) do
+                treemotion.run_motion_b()
+                local _, actual = grammar.get_cursor()
+                assert.same(column, actual)
+            end
         end
     )
 

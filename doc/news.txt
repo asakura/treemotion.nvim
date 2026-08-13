@@ -8,9 +8,10 @@ NEW FEATURES                                     *treemotion-new-features*
 
 - `w`/`e`/`b`/`ge` now step through naming-convention sub-words inside a
   treesitter leaf too, e.g. `fooBar-bazQux` is four stops: `foo`, `Bar`,
-  `baz`, `Qux`. Comments (or any other `@spell`-tagged span) are treated as
-  prose instead, splitting into words on whitespace first, the way real
-  Vim's `w` does in a text file. Controlled separately for code and prose by
+  `baz`, `Qux`. Comments and string content (or any other `@spell`- or
+  `@string`-tagged span) are treated as prose instead, splitting into words
+  on whitespace first, the way real Vim's `w` does in a text file.
+  Controlled separately for code and prose by
   `commands.motion.subword.code` / `.prose`, each with `camel_case` /
   `.pascal_case` (boolean) and `kebab_case` / `.snake_case` /
   `.comment_marker_case` (`"none"` | `"skip"` | `"stop"`, controlling

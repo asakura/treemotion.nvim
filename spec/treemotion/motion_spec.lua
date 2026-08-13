@@ -62,10 +62,16 @@ end)
 ---
 --- Its leaves are `local fooBar_bazQux = " kebab-word "` (the `"` are
 --- separate leaves), whose sub-words -- with every `subword` option at its
---- default of `true` -- are `local`, `foo`, `Bar`, `baz`, `Qux`, `=`, `"`,
---- `kebab`, `word`, `"` (0-indexed start columns 0, 6, 9, 13, 16, 20, 22,
---- 23, 29, 33). The `_` (column 12) and `-` (column 28) are gaps: dropped
---- delimiters that no unit lands on.
+--- default -- are `local`, `foo`, `Bar`, `baz`, `Qux`, `=`, `"`, `kebab`,
+--- `-`, `word`, `"` (0-indexed start columns 0, 6, 9, 13, 16, 20, 22, 23,
+--- 28, 29, 33). `_` (column 12, inside the identifier `fooBar_bazQux`) is a
+--- gap: `commands.motion.subword.code.snake_case` defaults to `"skip"`, a
+--- dropped delimiter no unit lands on. `-` (column 28) is different: the
+--- string's content is `@string`-tagged (see `subword.lua`'s
+--- `_is_prose_capture`), so it's split with `commands.motion.subword.prose`'s
+--- rules instead of `.code`'s -- and `prose.kebab_case` defaults to
+--- `"stop"`, so the `-` itself is a landing stop, splitting `kebab-word`
+--- into three units (`kebab`, `-`, `word`), not two.
 local function _initialize_subword_buffer()
     _BUFFER = vim.api.nvim_create_buf(false, true)
     vim.api.nvim_buf_set_lines(_BUFFER, 0, -1, false, { [[local fooBar_bazQux = "kebab-word"]] })
@@ -77,10 +83,10 @@ describe("motion API - subword (naming convention) motions", function()
     before_each(_initialize_subword_buffer)
     after_each(_remove_buffer)
 
-    it("#w steps through camelCase/snake_case/kebab-case sub-words, skipping `_`/`-`", function()
+    it("#w steps through camelCase/snake_case sub-words, skipping `_` but landing on kebab-case `-`", function()
         _set_cursor(0)
 
-        local expected = { 6, 9, 13, 16, 20, 22, 23, 29, 33, 33 }
+        local expected = { 6, 9, 13, 16, 20, 22, 23, 28, 29, 33 }
 
         for _, column in ipairs(expected) do
             treemotion.run_motion_w()
@@ -91,7 +97,7 @@ describe("motion API - subword (naming convention) motions", function()
     it("#b steps backward through the same sub-words", function()
         _set_cursor(33)
 
-        local expected = { 29, 23, 22, 20, 16, 13, 9, 6, 0, 0 }
+        local expected = { 29, 28, 23, 22, 20, 16, 13, 9, 6, 0 }
 
         for _, column in ipairs(expected) do
             treemotion.run_motion_b()
@@ -102,7 +108,7 @@ describe("motion API - subword (naming convention) motions", function()
     it("#e moves to the end of the current, then each next, sub-word", function()
         _set_cursor(0)
 
-        local expected = { 4, 8, 11, 15, 18, 20, 22, 27, 32, 33 }
+        local expected = { 4, 8, 11, 15, 18, 20, 22, 27, 28, 32 }
 
         for _, column in ipairs(expected) do
             treemotion.run_motion_e()
@@ -113,7 +119,7 @@ describe("motion API - subword (naming convention) motions", function()
     it("#ge moves to the end of each previous sub-word, unconditionally", function()
         _set_cursor(33)
 
-        local expected = { 32, 27, 22, 20, 18, 15, 11, 8, 4, 4 }
+        local expected = { 32, 28, 27, 22, 20, 18, 15, 11, 8, 4 }
 
         for _, column in ipairs(expected) do
             treemotion.run_motion_ge()
@@ -380,16 +386,19 @@ describe("motion API - subword configuration", function()
         assert.same(16, _get_cursor_column())
     end)
 
-    it('stops splitting on `-` when #code.kebab_case is "none"', function()
-        treemotion.setup({ commands = { motion = { subword = { code = { kebab_case = "none" } } } } })
+    it('stops splitting on `-` when #prose.kebab_case is "none"', function()
+        -- `kebab-word` is a string's content, not an identifier, so it's
+        -- `prose`-governed (see `_initialize_subword_buffer`'s docstring) --
+        -- `#code.kebab_case` has no effect on it at all.
+        treemotion.setup({ commands = { motion = { subword = { prose = { kebab_case = "none" } } } } })
         _set_cursor(23) -- the start of `kebab-word`'s content
 
         treemotion.run_motion_e()
         assert.same(32, _get_cursor_column()) -- the whole `kebab-word` is one unit now
     end)
 
-    it('lands on `-` as its own stop when #code.kebab_case is "stop"', function()
-        treemotion.setup({ commands = { motion = { subword = { code = { kebab_case = "stop" } } } } })
+    it('lands on `-` as its own stop when #prose.kebab_case is "stop" (the default)', function()
+        treemotion.setup({ commands = { motion = { subword = { prose = { kebab_case = "stop" } } } } })
         _set_cursor(23) -- the start of `kebab-word`'s content
 
         local expected = { 27, 28, 32 } -- `kebab`, `-`, `word`

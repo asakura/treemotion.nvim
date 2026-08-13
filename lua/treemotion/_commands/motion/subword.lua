@@ -7,20 +7,20 @@
 --- Everything here is plain text/coordinate analysis -- no treesitter tree
 --- walking happens in this file, that's `_commands.motion.leaf`'s and
 --- `_commands.motion.word`'s job; the treesitter features this file does use
---- are reading a leaf's `@spell` highlight capture (`:help
---- treesitter-highlight-spell`) to tell "code" leaves (identifiers, string
---- content, ...) apart from "prose" leaves (comments, or whatever else a
---- language's highlight query marks as natural-language text), and reading
---- the attached parser's language name (`_current_language`) to look up
---- that language's comment-marker characters (`_comment_marker_characters`).
+--- are reading a leaf's highlight captures (`:help treesitter-highlight-spell`)
+--- to tell "code" leaves (identifiers, ...) apart from "prose" leaves
+--- (comments, string content, or whatever else a language's highlight query
+--- marks `@spell` or `@string`, see `_is_prose_capture`), and reading the
+--- attached parser's language name (`_current_language`) to look up that
+--- language's comment-marker characters (`_comment_marker_characters`).
 ---
 --- `M.split` is the entry point, and composes up to three passes:
---- `_split_prose_words` runs first, but *only* for `@spell`-tagged leaves --
---- it divides prose into individual words the way real Vim's `w` divides a
---- text file (on whitespace and punctuation), since a comment leaf's text
---- has no other word boundaries in it at all. Code leaves skip straight
---- past this pass, treating their whole text as a single "word". Every
---- resulting word (one, for code) then goes through `_split_delimiters`
+--- `_split_prose_words` runs first, but *only* for prose-tagged leaves -- it
+--- divides prose into individual words the way real Vim's `w` divides a
+--- text file (on whitespace and punctuation), since a comment or string
+--- leaf's text has no other word boundaries in it at all. Code leaves skip
+--- straight past this pass, treating their whole text as a single "word".
+--- Every resulting word (one, for code) then goes through `_split_delimiters`
 --- (dividing on `_`/`-`) and `_split_case` (dividing on camelCase/PascalCase
 --- boundaries), using `commands.motion.subword.code` or `.prose`'s rules,
 --- whichever matched. Each produced `treemotion.SubwordUnit` is just a
@@ -81,16 +81,39 @@ local function _new_unit(start_row, start_col, end_row, end_col)
     )
 end
 
---- Check whether `node` is tagged `@spell` -- i.e. natural-language prose, not code.
+--- Whether `capture` (a raw capture name from `vim.treesitter.get_captures_at_pos`)
+--- marks its node as prose rather than code.
 ---
---- Reuses Nvim's own spellchecking boundary (`:help treesitter-highlight-spell`)
---- rather than hand-listing prose-ish node type names (`comment`,
---- `line_comment`, markdown's `inline`, ...) per language -- those names are
---- grammar-specific and would need maintaining forever, while `@spell` is
---- already correct (and user-overridable) for every language with a
---- highlight query. Note this can, and often does, differ from a whole
---- node *kind*: Lua's `(comment) @spell` tags comments, but its
---- `string_content` isn't tagged at all, so string leaves stay "code".
+--- `@spell` is `:help treesitter-highlight-spell`'s own natural-language
+--- boundary, already correct (and user-overridable) per language without
+--- this plugin hand-listing prose-ish node type names. `@string` (and its
+--- dotted specializations, `@string.special.url`, `@string.regexp`, ...) is
+--- folded in here too: nvim-treesitter's highlight convention almost never
+--- tags a plain string's content `@spell` even when it holds free text (a
+--- Nix `description = "..."` value, a Lua error message, ...) -- confirmed
+--- against tree-sitter-nix's own `queries/highlights.scm`, which captures
+--- `string_expression` as `@string` and never emits `@spell` anywhere in the
+--- file at all. Without treating `@string` as prose too, a whole string
+--- literal collapses into a handful of huge `_split_delimiters`/`_split_case`
+--- chunks instead of stopping at each word, since code leaves are assumed
+--- (correctly, for real identifiers) to "never contain embedded blanks in
+--- the first place" -- an assumption free-form string content breaks. Using
+--- the capture *name* rather than a node type keeps this the same
+--- grammar-agnostic check `@spell` alone already was: any language whose
+--- highlight query uses the standard `@string`/`@spell` capture names gets
+--- this for free, no per-language query of this plugin's own required.
+---
+---@param capture string A capture name, as returned by `get_captures_at_pos` (dots and all).
+---@return boolean
+---
+local function _is_prose_capture(capture)
+    return capture == "spell" or capture == "string" or capture:match("^string%.") ~= nil
+end
+
+--- Check whether `node` is tagged `@spell` or `@string` -- i.e. natural-language
+--- prose (or string content, treated the same way), not code.
+---
+--- See `_is_prose_capture`'s docstring for why both capture families count.
 ---
 ---@param node TSNode Any leaf (see `_commands.motion.leaf`).
 ---@return boolean
@@ -99,7 +122,7 @@ local function _is_prose(node)
     local row, column = node:start()
 
     for _, capture in ipairs(vim.treesitter.get_captures_at_pos(0, row, column)) do
-        if capture.capture == "spell" then
+        if _is_prose_capture(capture.capture) then
             return true
         end
     end
@@ -197,9 +220,9 @@ end
 --- punctuation, with blank runs dropped entirely (never landed on, exactly
 --- like Vim's `w` always skips whitespace).
 ---
---- Only used for `@spell`-tagged (prose) leaves -- code leaves never
---- contain embedded blanks in the first place, so there's nothing for this
---- pass to do for them.
+--- Only used for prose (`@spell`- or `@string`-tagged, see
+--- `_is_prose_capture`) leaves -- code leaves never contain embedded blanks
+--- in the first place, so there's nothing for this pass to do for them.
 ---
 ---@param text string A leaf's full text.
 ---@return {text: string, offset: integer}[] # Each word and its 1-indexed start column in `text`.
@@ -711,8 +734,8 @@ end
 
 --- Split `node`'s text into sub-word units, per the user's `subword` configuration.
 ---
---- Composes up to three passes: for prose (`@spell`-tagged) leaves only,
---- `_split_prose_words` first divides the text into individual words; code
+--- Composes up to three passes: for prose (`@spell`- or `@string`-tagged)
+--- leaves only, `_split_prose_words` first divides the text into individual words; code
 --- leaves treat their whole text as a single word instead, since a normal
 --- token never contains embedded blanks. Every word then goes through
 --- `_split_delimiters` (dividing on `_`/`-`) and `_split_case` (dividing on

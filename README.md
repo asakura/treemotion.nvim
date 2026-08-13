@@ -114,10 +114,14 @@ e.g. `fooBar-bazQux` is four stops: `foo`, `Bar`, `baz`, `Qux`.
 
 #### Comments and prose
 
-Comments (or any other span a language's treesitter query tags `@spell`)
-are treated as prose instead of code: they first split into individual
-words on whitespace, the way real Vim's `w` does in a text file, before
-naming-convention splitting applies to each word.
+Comments and string content (or any other span a language's treesitter
+query tags `@spell` or `@string`) are treated as prose instead of code:
+they first split into individual words on whitespace, the way real Vim's
+`w` does in a text file, before naming-convention splitting applies to each
+word. String content counts as prose because it just as often holds free
+text -- a description, an error message, a URL -- as it does an
+identifier-like slug, and most treesitter highlight queries only ever tag
+comments (not strings) `@spell`.
 
 A run of that language's comment-opener punctuation -- e.g. Python/Bash
 `#`, C/Rust `/` (Rust's `///`), LaTeX `%`, Vim `"`, a treesitter query
@@ -187,152 +191,157 @@ things that _are_ per-language:
   just governed by `code.comment_marker_case` until you install a plugin
   (typically `nvim-treesitter`) that provides one for that language.
 
+String content gets full prose treatment too, via `@string` rather than
+`@spell` -- unlike `@spell`, virtually every language's highlight query
+already tags strings this way, so it isn't tracked as a separate column
+below.
+
 11 languages ship with comment-marker support built in, active regardless
 of what other treesitter parsers you have installed:
 
 | Language | Comment markers | Prose (`@spell`) |
 | -------- | --------------- | ---------------- |
-| `bash`   | `✓`             | -                |
-| `c`      | `✓`             | `✓`              |
-| `cpp`    | `✓`             | -                |
-| `latex`  | `✓`             | -                |
-| `lua`    | `✓`             | `✓`              |
-| `python` | `✓`             | -                |
-| `query`  | `✓`             | `✓`              |
-| `rust`   | `✓`             | -                |
-| `sh`     | `✓`             | -                |
-| `tex`    | `✓`             | -                |
-| `vim`    | `✓`             | `✓`              |
+| `bash` | `✓` | - |
+| `c` | `✓` | `✓` |
+| `cpp` | `✓` | - |
+| `latex` | `✓` | - |
+| `lua` | `✓` | `✓` |
+| `python` | `✓` | - |
+| `query` | `✓` | `✓` |
+| `rust` | `✓` | - |
+| `sh` | `✓` | - |
+| `tex` | `✓` | - |
+| `vim` | `✓` | `✓` |
 
 <details>
 <summary>124 more languages, auto-detected once their treesitter parser is installed</summary>
 
-| Language             | Comment markers | Prose (`@spell`) |
+| Language | Comment markers | Prose (`@spell`) |
 | -------------------- | --------------- | ---------------- |
-| `ada`                | `✓`             | -                |
-| `agda`               | `✓`             | -                |
-| `arduino`            | `✓`             | -                |
-| `asm`                | `✓`             | -                |
-| `awk`                | `✓`             | -                |
-| `beancount`          | `✓`             | -                |
-| `c3`                 | `✓`             | -                |
-| `c_sharp`            | `✓`             | -                |
-| `caddy`              | `✓`             | -                |
-| `cairo`              | `✓`             | -                |
-| `clojure`            | `✓`             | -                |
-| `cmake`              | `✓`             | -                |
-| `commonlisp`         | `✓`             | -                |
-| `cue`                | `✓`             | -                |
-| `d`                  | `✓`             | -                |
-| `dart`               | `✓`             | -                |
-| `desktop`            | `✓`             | -                |
-| `devicetree`         | `✓`             | -                |
-| `dhall`              | `✓`             | -                |
-| `dockerfile`         | `✓`             | -                |
-| `editorconfig`       | `✓`             | -                |
-| `elixir`             | `✓`             | -                |
-| `elm`                | `✓`             | -                |
-| `elvish`             | `✓`             | -                |
-| `erlang`             | `✓`             | -                |
-| `fennel`             | `✓`             | -                |
-| `fish`               | `✓`             | -                |
-| `fsharp`             | `✓`             | -                |
-| `gdscript`           | `✓`             | -                |
-| `gdshader`           | `✓`             | -                |
-| `git_config`         | `✓`             | -                |
-| `git_rebase`         | `✓`             | -                |
-| `gitattributes`      | `✓`             | -                |
-| `gitcommit`          | `✓`             | -                |
-| `gitignore`          | `✓`             | -                |
-| `gleam`              | `✓`             | -                |
-| `glsl`               | `✓`             | -                |
-| `go`                 | `✓`             | -                |
-| `graphql`            | `✓`             | -                |
-| `groovy`             | `✓`             | -                |
-| `haskell`            | `✓`             | -                |
-| `haskell_persistent` | `✓`             | -                |
-| `hcl`                | `✓`             | -                |
-| `hjson`              | `✓`             | -                |
-| `hlsl`               | `✓`             | -                |
-| `hyprlang`           | `✓`             | -                |
-| `idris`              | `✓`             | -                |
-| `ini`                | `✓`             | -                |
-| `java`               | `✓`             | -                |
-| `javascript`         | `✓`             | -                |
-| `jq`                 | `✓`             | -                |
-| `json5`              | `✓`             | -                |
-| `jsonnet`            | `✓`             | -                |
-| `julia`              | `✓`             | -                |
-| `kconfig`            | `✓`             | -                |
-| `kdl`                | `✓`             | -                |
-| `kitty`              | `✓`             | -                |
-| `kotlin`             | `✓`             | -                |
-| `ledger`             | `✓`             | -                |
-| `llvm`               | `✓`             | -                |
-| `luau`               | `✓`             | -                |
-| `make`               | `✓`             | -                |
-| `matlab`             | `✓`             | -                |
-| `meson`              | `✓`             | -                |
-| `muttrc`             | `✓`             | -                |
-| `nasm`               | `✓`             | -                |
-| `nginx`              | `✓`             | -                |
-| `nim`                | `✓`             | -                |
-| `nix`                | `✓`             | -                |
-| `objc`               | `✓`             | -                |
-| `odin`               | `✓`             | -                |
-| `pascal`             | `✓`             | -                |
-| `perl`               | `✓`             | -                |
-| `php`                | `✓`             | -                |
-| `php_only`           | `✓`             | -                |
-| `pkl`                | `✓`             | -                |
-| `powershell`         | `✓`             | -                |
-| `prolog`             | `✓`             | -                |
-| `promql`             | `✓`             | -                |
-| `properties`         | `✓`             | -                |
-| `proto`              | `✓`             | -                |
-| `prql`               | `✓`             | -                |
-| `puppet`             | `✓`             | -                |
-| `purescript`         | `✓`             | -                |
-| `pymanifest`         | `✓`             | -                |
-| `r`                  | `✓`             | -                |
-| `racket`             | `✓`             | -                |
-| `requirements`       | `✓`             | -                |
-| `rescript`           | `✓`             | -                |
-| `robots_txt`         | `✓`             | -                |
-| `ron`                | `✓`             | -                |
-| `ruby`               | `✓`             | -                |
-| `scala`              | `✓`             | -                |
-| `scheme`             | `✓`             | -                |
-| `scss`               | `✓`             | -                |
-| `snakemake`          | `✓`             | -                |
-| `solidity`           | `✓`             | -                |
-| `sparql`             | `✓`             | -                |
-| `sql`                | `✓`             | -                |
-| `ssh_config`         | `✓`             | -                |
-| `starlark`           | `✓`             | -                |
-| `swift`              | `✓`             | -                |
-| `sxhkdrc`            | `✓`             | -                |
-| `systemverilog`      | `✓`             | -                |
-| `tcl`                | `✓`             | -                |
-| `teal`               | `✓`             | -                |
-| `terraform`          | `✓`             | -                |
-| `thrift`             | `✓`             | -                |
-| `tmux`               | `✓`             | -                |
-| `toml`               | `✓`             | -                |
-| `tsx`                | `✓`             | -                |
-| `typescript`         | `✓`             | -                |
-| `typespec`           | `✓`             | -                |
-| `udev`               | `✓`             | -                |
-| `unison`             | `✓`             | -                |
-| `v`                  | `✓`             | -                |
-| `vala`               | `✓`             | -                |
-| `vhdl`               | `✓`             | -                |
-| `wgsl`               | `✓`             | -                |
-| `wgsl_bevy`          | `✓`             | -                |
-| `yaml`               | `✓`             | -                |
-| `zathurarc`          | `✓`             | -                |
-| `zig`                | `✓`             | -                |
-| `zsh`                | `✓`             | -                |
+| `ada` | `✓` | - |
+| `agda` | `✓` | - |
+| `arduino` | `✓` | - |
+| `asm` | `✓` | - |
+| `awk` | `✓` | - |
+| `beancount` | `✓` | - |
+| `c3` | `✓` | - |
+| `c_sharp` | `✓` | - |
+| `caddy` | `✓` | - |
+| `cairo` | `✓` | - |
+| `clojure` | `✓` | - |
+| `cmake` | `✓` | - |
+| `commonlisp` | `✓` | - |
+| `cue` | `✓` | - |
+| `d` | `✓` | - |
+| `dart` | `✓` | - |
+| `desktop` | `✓` | - |
+| `devicetree` | `✓` | - |
+| `dhall` | `✓` | - |
+| `dockerfile` | `✓` | - |
+| `editorconfig` | `✓` | - |
+| `elixir` | `✓` | - |
+| `elm` | `✓` | - |
+| `elvish` | `✓` | - |
+| `erlang` | `✓` | - |
+| `fennel` | `✓` | - |
+| `fish` | `✓` | - |
+| `fsharp` | `✓` | - |
+| `gdscript` | `✓` | - |
+| `gdshader` | `✓` | - |
+| `git_config` | `✓` | - |
+| `git_rebase` | `✓` | - |
+| `gitattributes` | `✓` | - |
+| `gitcommit` | `✓` | - |
+| `gitignore` | `✓` | - |
+| `gleam` | `✓` | - |
+| `glsl` | `✓` | - |
+| `go` | `✓` | - |
+| `graphql` | `✓` | - |
+| `groovy` | `✓` | - |
+| `haskell` | `✓` | - |
+| `haskell_persistent` | `✓` | - |
+| `hcl` | `✓` | - |
+| `hjson` | `✓` | - |
+| `hlsl` | `✓` | - |
+| `hyprlang` | `✓` | - |
+| `idris` | `✓` | - |
+| `ini` | `✓` | - |
+| `java` | `✓` | - |
+| `javascript` | `✓` | - |
+| `jq` | `✓` | - |
+| `json5` | `✓` | - |
+| `jsonnet` | `✓` | - |
+| `julia` | `✓` | - |
+| `kconfig` | `✓` | - |
+| `kdl` | `✓` | - |
+| `kitty` | `✓` | - |
+| `kotlin` | `✓` | - |
+| `ledger` | `✓` | - |
+| `llvm` | `✓` | - |
+| `luau` | `✓` | - |
+| `make` | `✓` | - |
+| `matlab` | `✓` | - |
+| `meson` | `✓` | - |
+| `muttrc` | `✓` | - |
+| `nasm` | `✓` | - |
+| `nginx` | `✓` | - |
+| `nim` | `✓` | - |
+| `nix` | `✓` | - |
+| `objc` | `✓` | - |
+| `odin` | `✓` | - |
+| `pascal` | `✓` | - |
+| `perl` | `✓` | - |
+| `php` | `✓` | - |
+| `php_only` | `✓` | - |
+| `pkl` | `✓` | - |
+| `powershell` | `✓` | - |
+| `prolog` | `✓` | - |
+| `promql` | `✓` | - |
+| `properties` | `✓` | - |
+| `proto` | `✓` | - |
+| `prql` | `✓` | - |
+| `puppet` | `✓` | - |
+| `purescript` | `✓` | - |
+| `pymanifest` | `✓` | - |
+| `r` | `✓` | - |
+| `racket` | `✓` | - |
+| `requirements` | `✓` | - |
+| `rescript` | `✓` | - |
+| `robots_txt` | `✓` | - |
+| `ron` | `✓` | - |
+| `ruby` | `✓` | - |
+| `scala` | `✓` | - |
+| `scheme` | `✓` | - |
+| `scss` | `✓` | - |
+| `snakemake` | `✓` | - |
+| `solidity` | `✓` | - |
+| `sparql` | `✓` | - |
+| `sql` | `✓` | - |
+| `ssh_config` | `✓` | - |
+| `starlark` | `✓` | - |
+| `swift` | `✓` | - |
+| `sxhkdrc` | `✓` | - |
+| `systemverilog` | `✓` | - |
+| `tcl` | `✓` | - |
+| `teal` | `✓` | - |
+| `terraform` | `✓` | - |
+| `thrift` | `✓` | - |
+| `tmux` | `✓` | - |
+| `toml` | `✓` | - |
+| `tsx` | `✓` | - |
+| `typescript` | `✓` | - |
+| `typespec` | `✓` | - |
+| `udev` | `✓` | - |
+| `unison` | `✓` | - |
+| `v` | `✓` | - |
+| `vala` | `✓` | - |
+| `vhdl` | `✓` | - |
+| `wgsl` | `✓` | - |
+| `wgsl_bevy` | `✓` | - |
+| `yaml` | `✓` | - |
+| `zathurarc` | `✓` | - |
+| `zig` | `✓` | - |
+| `zsh` | `✓` | - |
 
 </details>
 
@@ -390,8 +399,8 @@ works as expected:
                     -- (`` `fooBar` ``) is treated as a code identifier, with
                     -- the backticks themselves never landing stops.
                     backtick_identifiers = true,
-                    -- Identifiers, string content, and similar: `-`/`_` divide
-                    -- but are never landed on themselves.
+                    -- Identifiers and similar: `-`/`_` divide but are never
+                    -- landed on themselves.
                     code = {
                         camel_case = true,
                         pascal_case = true,
@@ -399,10 +408,10 @@ works as expected:
                         snake_case = "skip",
                         comment_marker_case = "stop",
                     },
-                    -- Comments, or any other `@spell`-tagged span: mirrors real
-                    -- Vim's own `iskeyword` in a text file, where `-` is
-                    -- punctuation (its own stop) but `_` is a keyword character
-                    -- (doesn't split at all).
+                    -- Comments, string content, or any other `@spell`-/`@string`-
+                    -- tagged span: mirrors real Vim's own `iskeyword` in a text
+                    -- file, where `-` is punctuation (its own stop) but `_` is a
+                    -- keyword character (doesn't split at all).
                     prose = {
                         camel_case = true,
                         pascal_case = true,
