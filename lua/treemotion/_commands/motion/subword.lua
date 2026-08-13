@@ -271,16 +271,16 @@ end
 --- `_leading_continuation_length`'s docstring for the same philosophy
 --- applied to leaf-boundary tokenization quirks).
 ---
+--- Beyond the shipped/user-configured languages, `comment_marker_case` also
+--- activates automatically for any language in
+--- `configuration.get_comment_markers`'s optional table whose treesitter
+--- parser is actually installed -- no configuration needed for those.
+---
 ---@param language string? A treesitter language name (see `_current_language`), or `nil` if unknown.
 ---@return table<string, true>
 ---
 local function _comment_marker_characters(language)
-    if not language then
-        return {}
-    end
-
-    local markers = configuration.resolve_data().commands.motion.subword.comment_markers
-    local characters = markers and markers[language]
+    local characters = language and configuration.get_comment_markers(language)
 
     if not characters then
         return {}
