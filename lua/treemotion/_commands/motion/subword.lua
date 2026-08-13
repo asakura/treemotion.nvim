@@ -504,9 +504,24 @@ end
 --- skipping straight to the next/previous leaf, the same way it already
 --- skips punctuation runs collapsed into a single stop elsewhere.
 ---
+--- One more empty case falls out of `_split_delimiters` itself: a leaf
+--- that's *entirely* a `comment_marker_case = "skip"` run (Lua's `--`
+--- opener as its own leaf, not just a piece of a bigger `comment_content`)
+--- has real content -- unlike an all-blank prose leaf -- but every bit of
+--- it is a marker `_split_delimiters` was told to drop, so `words` is
+--- non-empty while `units` ends up empty anyway. That's `"skip"` doing
+--- exactly what it says -- forcing a landing stop back in for it would
+--- silently override the user's own setting -- so this returns `units`
+--- as-is (possibly empty) rather than falling back to a whole-leaf unit;
+--- only a leaf with *no words at all* (`#words == 0`, e.g. an
+--- all-whitespace comment, nothing for `comment_marker_case` to have ever
+--- acted on) still gets that fallback, since there both `_split_prose_words`
+--- and `_split_delimiters` genuinely found nothing to work with.
+---
 ---@param node TSNode Any leaf (see `_commands.motion.leaf`).
----@return treemotion.SubwordUnit[] # Empty only when `node` is entirely a
----    punctuation-run continuation of the leaf before it; otherwise
+---@return treemotion.SubwordUnit[] # Empty when `node` is entirely a
+---    punctuation-run continuation of the leaf before it, or entirely a
+---    dropped (`"skip"`) delimiter run with no other content; otherwise
 ---    `node`'s full span if nothing else splits it.
 ---
 function M.split(node)
@@ -543,6 +558,15 @@ function M.split(node)
     local is_prose = _is_prose(node)
     local camel_case, pascal_case, kebab_case, snake_case, comment_marker_case = _options(is_prose)
     local words = is_prose and _split_prose_words(text) or { { text = text, offset = 1 } }
+
+    if #words == 0 then
+        -- No real content at all (e.g. an all-whitespace prose comment) --
+        -- nothing for any delimiter setting to have acted on, so fall back
+        -- to one unit spanning the whole leaf, the same way a leaf with no
+        -- delimiters in it at all would.
+        return { _new_unit(start_row, start_col, end_row, end_col) }
+    end
+
     local units = {}
 
     for _, word in ipairs(words) do
@@ -556,13 +580,6 @@ function M.split(node)
                 column = column + #chunk
             end
         end
-    end
-
-    if #units == 0 then
-        -- The whole leaf was delimiter/blank characters (e.g. a lone `_`,
-        -- or an all-whitespace comment); fall back to treating it as one
-        -- unit so motions still land somewhere.
-        return { _new_unit(start_row, start_col, end_row, end_col) }
     end
 
     return units

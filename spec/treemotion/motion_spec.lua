@@ -656,6 +656,32 @@ describe("motion API - subword configuration", function()
         end
     )
 
+    it(
+        "skips a `--`-only leaf on every line, not just the one under the cursor, "
+            .. 'when #prose.comment_marker_case is "skip"',
+        function()
+            -- Regression test: `--` is its own leaf, separate from
+            -- `comment_content`, with no other content of its own -- so a
+            -- naive "no units -> fall back to the whole leaf" rule would
+            -- silently turn `"skip"` back into a stop for it on *every*
+            -- line, not just coincidentally not-noticing it on the first
+            -- one the cursor already started on.
+            treemotion.setup({ commands = { motion = { subword = { prose = { comment_marker_case = "skip" } } } } })
+            vim.api.nvim_buf_set_lines(assert(_BUFFER), 0, -1, false, { "-- foo", "-- bar" })
+
+            _set_cursor_at(0, 3) -- the start of `foo`
+            treemotion.run_motion_w()
+
+            -- Straight to `bar` on the next line; never stops on line 2's `--`.
+            assert.same({ 1, 3 }, { _get_cursor() })
+
+            treemotion.run_motion_b()
+
+            -- Mirrored: straight back to `foo`, never stopping on line 2's `--` either.
+            assert.same({ 0, 3 }, { _get_cursor() })
+        end
+    )
+
     it("#camel_case and #pascal_case toggle independently by the identifier's leading case", function()
         vim.api.nvim_buf_set_lines(assert(_BUFFER), 0, -1, false, { "local FooBar = fooBar" })
 
