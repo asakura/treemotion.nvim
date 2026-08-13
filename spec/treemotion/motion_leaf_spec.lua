@@ -21,11 +21,11 @@ local treemotion = require("treemotion")
 --- See `grammar_helpers.lua`'s `M.wrap` docstring for why this thin
 --- `it(...)` call has to live here instead of in the shared module.
 ---
----@param fixture {filetype: string, lines: string[]}
+---@param fixture {filetype: string, lines: string[], comment_node: string?}
 ---@param description string
 ---@param body fun(buffer: integer)
 local function _it_per_grammar(fixture, description, body)
-    it(string.format("[%s] %s", fixture.filetype, description), grammar.wrap(fixture, body))
+    it(string.format("[%s] %s", fixture.filetype, description), grammar.wrap(pending, fixture, body))
 end
 
 ---@class treemotion.spec.LeafFixture

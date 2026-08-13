@@ -23,9 +23,14 @@ local M = {}
 
 ---@param filetype string
 ---@param lines string[]
+---@param comment_node string? See `M.wrap`'s `fixture.comment_node` docstring.
 ---@return integer buffer
 ---@return boolean available # `false` if `filetype` has no treesitter parser here.
-function M.new_buffer(filetype, lines)
+function M.new_buffer(filetype, lines, comment_node)
+    if comment_node then
+        vim.treesitter.query.set(filetype, "highlights", string.format("(%s) @spell", comment_node))
+    end
+
     local buffer = vim.api.nvim_create_buf(false, true)
     vim.api.nvim_buf_set_lines(buffer, 0, -1, false, lines)
     vim.api.nvim_set_current_buf(buffer)
@@ -62,16 +67,44 @@ end
 ---
 --- Busted injects `describe`/`it`/`pending` as chunk-local globals into each
 --- `_spec.lua` file it loads directly, not into modules reached via
---- `require` -- so this module cannot call `it`/`pending` itself. Each spec
---- file instead calls `it(description, grammar.wrap(fixture, body))`, from
---- a context where those globals genuinely exist.
+--- `require` -- so this module cannot call `it`/`pending` itself. It also
+--- can't just call the bare name `pending` from inside a closure defined
+--- here and expect it to resolve at the *caller's* scope the way a dynamic
+--- language's free variable lookup might: Lua resolves a global by the
+--- chunk's own `_ENV` upvalue, fixed at load time for wherever the source
+--- line lexically lives, not by walking the call stack -- and busted loads
+--- `grammar_helpers.lua` as an ordinary `require`d module with the real
+--- `_G`, not the extended per-`_spec.lua`-file environment `describe`/`it`/
+--- `pending` live in. Concretely: `_G.pending` is `nil` here even while a
+--- spec file's own bare `pending` resolves fine. This isn't hypothetical --
+--- every fixture across this whole test suite happened to have its parser
+--- available prior to `_OPTIONAL_COMMENT_MARKERS`'s cross-grammar fixtures
+--- (see `motion_comment_marker_spec.lua`), so this branch had literally
+--- never run before those were added, and `nix build '.#treemotion-nvim'`'s
+--- `checkPhase` (only Neovim's 6 bundled grammars, no `treesitterAllGrammars`)
+--- was what finally exercised it and surfaced the bug. The fix: each spec
+--- file passes its own `pending` through explicitly instead of `M.wrap`
+--- assuming it can reach one.
 ---
----@param fixture {filetype: string, lines: string[]}
+---@param pending fun(reason: string) The calling spec file's own `pending`
+---    (busted injects it as a chunk-local in `_spec.lua` files -- pass the
+---    bare name through from a context where it resolves).
+---@param fixture {filetype: string, lines: string[], comment_node: string?}
+---    `comment_node`, if given, registers a synthetic `(comment_node) @spell`
+---    highlight query for `filetype` before starting the parser -- see
+---    `motion_comment_marker_spec.lua`'s module docstring for why: real
+---    `@spell` captures require a language's `queries/<lang>/highlights.scm`,
+---    which `flake.nix`'s `treesitterAllGrammars` deliberately doesn't vendor
+---    (only compiled `parser/<lang>.so` files) for any grammar beyond
+---    Neovim's own bundled few. Fixtures for those bundled languages (lua,
+---    c, vim, query) omit `comment_node` and rely on Neovim's real bundled
+---    query instead, exercising the plugin against genuine highlight data
+---    for at least that subset.
 ---@param body fun(buffer: integer)
 ---@return fun()
-function M.wrap(fixture, body)
+function M.wrap(pending, fixture, body)
     return function()
-        local buffer, available = M.new_buffer(fixture.filetype, fixture.lines)
+        local buffer, available = M.new_buffer(fixture.filetype, fixture.lines, fixture.comment_node)
 
         if not available then
             M.remove_buffer(buffer)
