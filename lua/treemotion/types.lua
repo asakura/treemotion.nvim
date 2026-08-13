@@ -4,6 +4,8 @@
 --- operation of this Lua plugin.
 ---
 
+---@alias treemotion.HintKind "word_boundaries" | "motions" | "none"
+
 ---@class treemotion.Configuration
 ---    The user's customizations for this plugin.
 ---@field commands treemotion.ConfigurationCommands?
@@ -22,8 +24,6 @@
 ---@field logging treemotion.LoggingConfiguration
 ---    Control how and which logs print to file / Neovim. Always present,
 ---    though its own `use_console` / `use_file` fields may both be `false`.
-
----@alias treemotion.HintKind "word_boundaries" | "motions" | "none"
 
 ---@class treemotion.ConfigurationCommands
 ---    Customize the fallback behavior of all `:TreeMotion` commands.
@@ -76,10 +76,6 @@
 ---    words within a leaf) that are tagged `@spell`.
 
 ---@alias treemotion.SubwordDelimiterMode "none" | "skip" | "stop"
----    How `kebab_case`/`snake_case` treat a `-`/`_` delimiter once found:
----    `"none"` leaves it embedded, not a split point at all; `"skip"` splits
----    on it but drops the delimiter character itself, so no unit ever lands
----    on it; `"stop"` splits on it **and** keeps the delimiter as its own unit.
 
 ---@class treemotion.ConfigurationMotionSubwordRules
 ---    Which naming conventions additionally split a leaf (or prose word) on.

@@ -79,7 +79,8 @@ Parameters ~
 Move the cursor like `w`: to the start of the next treesitter leaf.
 
 Parameters ~
-    {count} `(number)`? |A| |1|-|or|-m|or|e |value.| |How| |many| leaves to move over.
+    {count} `(number)`?
+       A 1-or-more value. How many leaves to move over.
 
 ------------------------------------------------------------------------------
                                                     *treemotion.run_motion_ge()*
@@ -89,7 +90,8 @@ Parameters ~
 Move the cursor like `ge`: to the end of the previous treesitter leaf.
 
 Parameters ~
-    {count} `(number)`? |A| |1|-|or|-m|or|e |value.| |How| |many| leaves to move over.
+    {count} `(number)`?
+       A 1-or-more value. How many leaves to move over.
 
 ------------------------------------------------------------------------------
                                                      *treemotion.run_motion_e()*
@@ -99,7 +101,8 @@ Parameters ~
 Move the cursor like `e`: to the end of the current or next treesitter leaf.
 
 Parameters ~
-    {count} `(number)`? |A| |1|-|or|-m|or|e |value.| |How| |many| leaves to move over.
+    {count} `(number)`?
+       A 1-or-more value. How many leaves to move over.
 
 ------------------------------------------------------------------------------
                                                      *treemotion.run_motion_b()*
@@ -109,7 +112,8 @@ Parameters ~
 Move the cursor like `b`: to the start of the current or previous treesitter leaf.
 
 Parameters ~
-    {count} `(number)`? |A| |1|-|or|-m|or|e |value.| |How| |many| leaves to move over.
+    {count} `(number)`?
+       A 1-or-more value. How many leaves to move over.
 
 ------------------------------------------------------------------------------
                                                      *treemotion.run_motion_W()*
@@ -119,7 +123,8 @@ Parameters ~
 Move the cursor like `W`: to the start of the next run of contiguous treesitter leaves.
 
 Parameters ~
-    {count} `(number)`? |A| |1|-|or|-m|or|e |value.| |How| |many| runs to move over.
+    {count} `(number)`?
+       A 1-or-more value. How many runs to move over.
 
 ------------------------------------------------------------------------------
                                                     *treemotion.run_motion_gE()*
@@ -129,7 +134,8 @@ Parameters ~
 Move the cursor like `gE`: to the end of the previous run of contiguous treesitter leaves.
 
 Parameters ~
-    {count} `(number)`? |A| |1|-|or|-m|or|e |value.| |How| |many| runs to move over.
+    {count} `(number)`?
+       A 1-or-more value. How many runs to move over.
 
 ------------------------------------------------------------------------------
                                                      *treemotion.run_motion_E()*
@@ -139,7 +145,8 @@ Parameters ~
 Move the cursor like `E`: to the end of the current or next run of contiguous treesitter leaves.
 
 Parameters ~
-    {count} `(number)`? |A| |1|-|or|-m|or|e |value.| |How| |many| runs to move over.
+    {count} `(number)`?
+       A 1-or-more value. How many runs to move over.
 
 ------------------------------------------------------------------------------
                                                      *treemotion.run_motion_B()*
@@ -149,7 +156,8 @@ Parameters ~
 Move the cursor like `B`: to the start of the current or previous run of contiguous treesitter leaves.
 
 Parameters ~
-    {count} `(number)`? |A| |1|-|or|-m|or|e |value.| |How| |many| runs to move over.
+    {count} `(number)`?
+       A 1-or-more value. How many runs to move over.
 
 ------------------------------------------------------------------------------
                                    *treemotion.run_goodnight_moon_count_sheep()*
