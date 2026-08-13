@@ -68,7 +68,11 @@
 ---    language's own entry here lists that character; a language with no
 ---    `-`/`_` entry leaves a bare run of either under `kebab_case`/`snake_case`
 ---    instead, same as every other character (see `comment_marker_case`'s
----    docstring below).
+---    docstring below). Beyond the languages shown here, roughly 120
+---    additional languages are supported automatically, with no
+---    configuration needed, as soon as their treesitter parser is installed
+---    -- see `_OPTIONAL_COMMENT_MARKERS` in `configuration.lua` for the full
+---    list and `configuration.get_comment_markers` for the resolution order.
 ---@field code treemotion.ConfigurationMotionSubwordRules?
 ---    Splitting rules for leaves that aren't tagged `@spell`.
 ---@field prose treemotion.ConfigurationMotionSubwordRules?
