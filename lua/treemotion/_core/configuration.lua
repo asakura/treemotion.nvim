@@ -43,6 +43,7 @@ local _DEFAULTS = {
                     query = { ";" },
                     lua = { "-" },
                 },
+                backtick_identifiers = true,
                 code = {
                     camel_case = true,
                     pascal_case = true,
