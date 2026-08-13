@@ -606,6 +606,98 @@ describe("motion API - subword configuration", function()
     end)
 end)
 
+describe("motion API - #backtick_identifiers", function()
+    before_each(function()
+        _BUFFER = vim.api.nvim_create_buf(false, true)
+        vim.api.nvim_set_current_buf(_BUFFER)
+        vim.treesitter.start(_BUFFER, "lua")
+    end)
+
+    after_each(function()
+        _remove_buffer()
+        treemotion.setup({ commands = { motion = { subword = { backtick_identifiers = true } } } })
+    end)
+
+    it("collapses a single-word backtick span into a code identifier, hiding the backticks", function()
+        -- `-- see `fooBar` here`: `comment_content` (starting at column 2) is
+        -- " see `fooBar` here". `fooBar` (columns 8-14) is one Vim word, so
+        -- it's carved out and split with #code's rules instead of #prose's;
+        -- the backticks at columns 7 and 15 produce no unit at all.
+        vim.api.nvim_buf_set_lines(assert(_BUFFER), 0, -1, false, { "-- see `fooBar` here" })
+        _set_cursor(0)
+
+        -- `--`(start), `see`, `foo`, `Bar`, `here`, `here` (no more units).
+        local expected = { 3, 8, 11, 16, 16 }
+
+        for _, column in ipairs(expected) do
+            treemotion.run_motion_w()
+            assert.same(column, _get_cursor_column())
+        end
+    end)
+
+    it("applies #code.kebab_case (not #prose's) to a backtick-enclosed identifier", function()
+        -- #code.kebab_case defaults to "skip" (vs. #prose's "stop"), so the
+        -- `-` inside a backtick identifier never becomes its own stop --
+        -- proving this really borrows #code's rules, not #prose's (which
+        -- share the same camel_case/pascal_case defaults, so those two
+        -- alone couldn't tell the two rule sets apart).
+        vim.api.nvim_buf_set_lines(assert(_BUFFER), 0, -1, false, { "-- see `foo-bar` here" })
+        _set_cursor(0)
+
+        local expected = { 3, 8, 12, 17, 17 } -- `--`(start), `see`, `foo`, `bar`, `here`
+
+        for _, column in ipairs(expected) do
+            treemotion.run_motion_w()
+            assert.same(column, _get_cursor_column())
+        end
+    end)
+
+    it("leaves a multi-word backtick span as ordinary prose, with no rule changes", function()
+        -- `foo bar` (two words) fails the single-word check, so the whole
+        -- span -- backticks included -- falls back to exactly what
+        -- `_split_prose_words` alone would already produce.
+        vim.api.nvim_buf_set_lines(assert(_BUFFER), 0, -1, false, { "-- see `foo bar` here" })
+        _set_cursor(0)
+
+        -- `--`(start), `see`, "`", `foo`, `bar`, "`", `here`, `here` (no more units).
+        local expected = { 3, 7, 8, 12, 15, 17, 17 }
+
+        for _, column in ipairs(expected) do
+            treemotion.run_motion_w()
+            assert.same(column, _get_cursor_column())
+        end
+    end)
+
+    it("leaves an empty backtick pair as ordinary prose punctuation", function()
+        vim.api.nvim_buf_set_lines(assert(_BUFFER), 0, -1, false, { "-- see `` here" })
+        _set_cursor(0)
+
+        local expected = { 3, 7, 10, 10 } -- `--`(start), `see`, "``", `here`, `here` (no more units)
+
+        for _, column in ipairs(expected) do
+            treemotion.run_motion_w()
+            assert.same(column, _get_cursor_column())
+        end
+    end)
+
+    it("#backtick_identifiers = false disables the feature entirely", function()
+        treemotion.setup({ commands = { motion = { subword = { backtick_identifiers = false } } } })
+        vim.api.nvim_buf_set_lines(assert(_BUFFER), 0, -1, false, { "-- see `foo-bar` here" })
+        _set_cursor(0)
+
+        -- With the feature off, the backticks are ordinary punctuation stops
+        -- again, and `foo-bar` is just a #prose word -- #prose.kebab_case
+        -- defaults to "stop", so `-` lands as its own stop too, the mirror
+        -- image of the enabled case above (#code.kebab_case = "skip").
+        local expected = { 3, 7, 8, 11, 12, 15, 17, 17 }
+
+        for _, column in ipairs(expected) do
+            treemotion.run_motion_w()
+            assert.same(column, _get_cursor_column())
+        end
+    end)
+end)
+
 describe("motion API - no parser", function()
     it("does nothing instead of erroring when the buffer has no treesitter parser", function()
         local buffer = vim.api.nvim_create_buf(false, true)

@@ -26,6 +26,14 @@
 --- whichever matched. Each produced `treemotion.SubwordUnit` is just a
 --- coordinate range, not a real tree node -- there's no parent/child/sibling
 --- structure to a sub-word slice, only a start and an end.
+---
+--- When `commands.motion.subword.backtick_identifiers` is enabled (the
+--- default), prose word-splitting gets one more wrinkle: a backtick-enclosed
+--- span that's exactly one Vim word (`` `fooBar` ``, `` `foo-bar` ``, not
+--- `` `foo bar` `` or `` `` ``) is pulled out and run through `.code`'s
+--- rules instead of `.prose`'s, and the backticks themselves produce no
+--- unit at all -- invisible to `w`/`b`/`e`/`ge`, the same way a `"skip"`
+--- comment-marker run already is. See `_split_backtick_identifiers`.
 
 local configuration = require("treemotion._core.configuration")
 local motion_constant = require("treemotion._commands.motion.constant")
@@ -119,6 +127,43 @@ local function _options(is_prose)
     return rules.camel_case, rules.pascal_case, rules.kebab_case, rules.snake_case, rules.comment_marker_case
 end
 
+--- Same as `_options`, but as one table instead of five parallel return
+--- values -- needed wherever the result might have to be cached in a local
+--- and reused later (see `M.split`'s backtick-identifier handling), since a
+--- plain multi-return can't be stored without immediately unpacking it into
+--- five more locals anyway.
+---
+---@param is_prose boolean Whether to read `commands.motion.subword.prose` or `.code`.
+---@return {camel_case: boolean, pascal_case: boolean, kebab_case: treemotion.SubwordDelimiterMode,
+---    snake_case: treemotion.SubwordDelimiterMode, comment_marker_case: treemotion.SubwordDelimiterMode}
+---
+local function _rules(is_prose)
+    local camel_case, pascal_case, kebab_case, snake_case, comment_marker_case = _options(is_prose)
+
+    return {
+        camel_case = camel_case,
+        pascal_case = pascal_case,
+        kebab_case = kebab_case,
+        snake_case = snake_case,
+        comment_marker_case = comment_marker_case,
+    }
+end
+
+--- Whether `commands.motion.subword.backtick_identifiers` is enabled.
+---
+---@return boolean
+---
+local function _backtick_identifiers_enabled()
+    -- `assert()`: see `_options`'s identical use above -- `commands.motion.subword`
+    -- is optional in the LuaCATS types, but `configuration._DEFAULTS` always
+    -- fills it in, so `resolve_data()`'s result always has it. Don't `assert()`
+    -- the boolean field itself, though (unlike `_options`' table fields) --
+    -- `false` is a legitimate value here, and `assert(false)` would raise.
+    local subword = assert(configuration.resolve_data().commands.motion.subword)
+
+    return subword.backtick_identifiers
+end
+
 --- Classify one character the way real Vim's `w` classifies it in a text file.
 ---
 --- Real Vim's word motions only recognize three classes: blank, "keyword"
@@ -184,6 +229,115 @@ local function _split_prose_words(text)
     end
 
     return chunks
+end
+
+--- Whether `content` -- backtick-enclosed text with the backticks already
+--- stripped -- is exactly one Vim word: a single uninterrupted run of
+--- "word"-class or "other"-class characters (see `_char_class`), with no
+--- leading/trailing blanks and no embedded class change.
+---
+--- Deliberately reuses `_split_prose_words`'s own run classification rather
+--- than a bespoke identifier pattern, so "a single word" here means the same
+--- thing it already means everywhere else `w`/`b`/`e`/`ge` land -- `fooBar`
+--- and `foo-bar` both qualify (`-`/case are further split per `.code`'s
+--- rules once `M.split` treats the span as an identifier), but `foo bar`
+--- (two words) and `foo.bar` (a class change between `foo`/`.`/`bar`) don't.
+---
+---@param content string Text between one matched pair of backticks. May be empty.
+---@return boolean
+---
+local function _is_single_word(content)
+    if content == "" then
+        return false
+    end
+
+    local words = _split_prose_words(content)
+
+    return #words == 1 and words[1].offset == 1 and #words[1].text == #content
+end
+
+--- Locate backtick-enclosed spans in `text` and classify each as a candidate
+--- identifier (its content is exactly one Vim word, per `_is_single_word`)
+--- or ordinary prose (anything else -- multiple words, or an empty
+--- `` `` ``, backticks included).
+---
+--- Only adjacent, non-nested backtick *pairs* are recognized (`` `([^`]*)` ``
+--- via plain Lua pattern matching, not a real parser) -- there's no markdown
+--- grammar backing this, just the same punctuation-as-delimiter approach
+--- `_split_delimiters` already takes for `-`/`_`/comment markers. A pair
+--- that fails the single-word check is left untouched (not even flagged as
+--- its own segment) so it folds back into whichever prose segment
+--- eventually gets flushed around it -- exactly the same text `_split_prose_words`
+--- would have produced without this feature at all.
+---
+---@param text string A prose leaf's full text (see `M.split`).
+---@return {kind: "prose"|"identifier", text: string, offset: integer}[] # `offset` is
+---    each segment's 1-indexed start column in `text` -- for `"identifier"` segments,
+---    that's the character right after the opening backtick, since the backticks
+---    themselves are excluded from the segment (and, in turn, never become a unit).
+---
+local function _split_backtick_identifiers(text)
+    local segments = {}
+    local search_start = 1
+    local prose_start = 1
+
+    while true do
+        local match_start, match_end, content = text:find("`([^`\n]*)`", search_start)
+
+        if not match_start then
+            break
+        end
+
+        if _is_single_word(content) then
+            if match_start > prose_start then
+                table.insert(
+                    segments,
+                    { kind = "prose", text = text:sub(prose_start, match_start - 1), offset = prose_start }
+                )
+            end
+
+            table.insert(segments, { kind = "identifier", text = content, offset = match_start + 1 })
+
+            prose_start = match_end + 1
+        end
+
+        search_start = match_end + 1
+    end
+
+    if prose_start <= #text then
+        table.insert(segments, { kind = "prose", text = text:sub(prose_start), offset = prose_start })
+    end
+
+    return segments
+end
+
+--- Split a prose leaf's `text` into words, the same shape `_split_prose_words`
+--- returns, except each word also carries whether it's a backtick-enclosed
+--- identifier (see `_split_backtick_identifiers`) for `M.split` to apply
+--- `.code`'s rules to instead of `.prose`'s.
+---
+---@param text string A prose leaf's full text (see `M.split`).
+---@param backtick_identifiers boolean Whether `commands.motion.subword.backtick_identifiers` is enabled.
+---@return {text: string, offset: integer, is_identifier: boolean?}[]
+---
+local function _prose_words(text, backtick_identifiers)
+    if not backtick_identifiers then
+        return _split_prose_words(text)
+    end
+
+    local words = {}
+
+    for _, segment in ipairs(_split_backtick_identifiers(text)) do
+        if segment.kind == "identifier" then
+            table.insert(words, { text = segment.text, offset = segment.offset, is_identifier = true })
+        else
+            for _, word in ipairs(_split_prose_words(segment.text)) do
+                table.insert(words, { text = word.text, offset = segment.offset + word.offset - 1 })
+            end
+        end
+    end
+
+    return words
 end
 
 --- Find every column in `text` where a new camelCase/PascalCase word starts.
@@ -634,9 +788,9 @@ function M.split(node)
     end
 
     local is_prose = _is_prose(node)
-    local camel_case, pascal_case, kebab_case, snake_case, comment_marker_case = _options(is_prose)
+    local rules = _rules(is_prose)
     local comment_marker_characters = _comment_marker_characters(_current_language())
-    local words = is_prose and _split_prose_words(text) or { { text = text, offset = 1 } }
+    local words = is_prose and _prose_words(text, _backtick_identifiers_enabled()) or { { text = text, offset = 1 } }
 
     if #words == 0 then
         -- No real content at all (e.g. an all-whitespace prose comment) --
@@ -646,17 +800,37 @@ function M.split(node)
         return { _new_unit(start_row, start_col, end_row, end_col) }
     end
 
+    -- Fetched lazily, at most once, only if a backtick-identifier word is
+    -- actually encountered below -- most prose leaves have none, and
+    -- `_rules(false)` is an extra `resolve_data()` walk not worth paying for
+    -- on every prose leaf regardless.
+    local identifier_rules
+
     local units = {}
 
     for _, word in ipairs(words) do
         local word_column = text_start_col + word.offset - 1
+        local word_rules = rules
+
+        if word.is_identifier then
+            identifier_rules = identifier_rules or _rules(false)
+            word_rules = identifier_rules
+        end
 
         for _, delimited in
-            ipairs(_split_delimiters(word.text, kebab_case, snake_case, comment_marker_case, comment_marker_characters))
+            ipairs(
+                _split_delimiters(
+                    word.text,
+                    word_rules.kebab_case,
+                    word_rules.snake_case,
+                    word_rules.comment_marker_case,
+                    comment_marker_characters
+                )
+            )
         do
             local column = word_column + delimited.offset - 1
 
-            for _, chunk in ipairs(_split_case(delimited.text, camel_case, pascal_case)) do
+            for _, chunk in ipairs(_split_case(delimited.text, word_rules.camel_case, word_rules.pascal_case)) do
                 table.insert(units, _new_unit(start_row, column, start_row, column + #chunk))
                 column = column + #chunk
             end
