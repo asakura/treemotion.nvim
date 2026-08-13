@@ -108,7 +108,10 @@ whatever parser is already attached to the buffer.
   language's treesitter query tags `@spell`) are treated as prose instead:
   they first split into individual words on whitespace, the way real Vim's
   `w` does in a text file, before naming-convention splitting applies to
-  each word. See `commands.motion.subword.code` / `.prose` under
+  each word. A run of comment-opener punctuation (`#`, `/`, `%` -- e.g.
+  Rust's `///`) is one stop by default, same as `-`/`_`; set
+  `comment_marker_case = "skip"` to jump straight past it to the next real
+  word instead. See `commands.motion.subword.code` / `.prose` under
   `Configuration` to control this per context.
 - `W` / `E` / `B` / `gE` move one contiguous _run_ of leaves at a time -- a
   run is a maximal sequence of leaves with no whitespace between them,
@@ -182,6 +185,7 @@ works as expected:
                         pascal_case = true,
                         kebab_case = "skip",
                         snake_case = "skip",
+                        comment_marker_case = "stop",
                     },
                     -- Comments, or any other `@spell`-tagged span: mirrors real
                     -- Vim's own `iskeyword` in a text file, where `-` is
@@ -192,6 +196,7 @@ works as expected:
                         pascal_case = true,
                         kebab_case = "stop",
                         snake_case = "none",
+                        comment_marker_case = "stop",
                     },
                 },
             },

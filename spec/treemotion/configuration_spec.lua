@@ -79,20 +79,24 @@ describe("default", function()
         })
     end)
 
-    it("works with every #commands.motion.subword.kebab_case/snake_case mode, for both code and prose", function()
-        for _, mode in ipairs({ "none", "skip", "stop" }) do
-            _assert_good({
-                commands = {
-                    motion = {
-                        subword = {
-                            code = { kebab_case = mode, snake_case = mode },
-                            prose = { kebab_case = mode, snake_case = mode },
+    it(
+        "works with every #commands.motion.subword.kebab_case/snake_case/comment_marker_case mode, "
+            .. "for both code and prose",
+        function()
+            for _, mode in ipairs({ "none", "skip", "stop" }) do
+                _assert_good({
+                    commands = {
+                        motion = {
+                            subword = {
+                                code = { kebab_case = mode, snake_case = mode, comment_marker_case = mode },
+                                prose = { kebab_case = mode, snake_case = mode, comment_marker_case = mode },
+                            },
                         },
                     },
-                },
-            })
+                })
+            end
         end
-    end)
+    )
 end)
 
 ---@diagnostic disable: assign-type-mismatch
@@ -165,6 +169,18 @@ describe("bad configuration - commands", function()
                 ),
             })
         end)
+
+        it(
+            string.format("happens with a bad value for #commands.motion.subword.%s.comment_marker_case", context),
+            function()
+                _assert_bad({ commands = { motion = { subword = { [context] = { comment_marker_case = "aaa" } } } } }, {
+                    string.format(
+                        'commands.motion.subword.%s.comment_marker_case: expected "none" or "skip" or "stop", got aaa',
+                        context
+                    ),
+                })
+            end
+        )
     end
 end)
 ---@diagnostic enable: assign-type-mismatch

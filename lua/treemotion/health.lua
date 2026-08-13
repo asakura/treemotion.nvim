@@ -176,7 +176,7 @@ local function _get_command_issues(data)
             end
         end
 
-        for _, field in ipairs({ "kebab_case", "snake_case" }) do
+        for _, field in ipairs({ "kebab_case", "snake_case", "comment_marker_case" }) do
             local message = _get_enum_issue(
                 "commands.motion.subword." .. context .. "." .. field,
                 tabler.get_value(data, { "commands", "motion", "subword", context, field }),

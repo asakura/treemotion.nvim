@@ -502,8 +502,20 @@ describe("motion API - subword configuration", function()
             commands = {
                 motion = {
                     subword = {
-                        code = { camel_case = true, pascal_case = true, kebab_case = "skip", snake_case = "skip" },
-                        prose = { camel_case = true, pascal_case = true, kebab_case = "stop", snake_case = "none" },
+                        code = {
+                            camel_case = true,
+                            pascal_case = true,
+                            kebab_case = "skip",
+                            snake_case = "skip",
+                            comment_marker_case = "stop",
+                        },
+                        prose = {
+                            camel_case = true,
+                            pascal_case = true,
+                            kebab_case = "stop",
+                            snake_case = "none",
+                            comment_marker_case = "stop",
+                        },
                     },
                 },
             },
@@ -538,6 +550,56 @@ describe("motion API - subword configuration", function()
 
         for _, column in ipairs(expected) do
             treemotion.run_motion_e()
+            assert.same(column, _get_cursor_column())
+        end
+    end)
+
+    it('lands on a `#`/`/`/`%` run as its own stop when #prose.comment_marker_case is "stop" (the default)', function()
+        -- `--` (0), `comment_content` = `" ### heading text"` (2-...) --
+        -- `###` (class "other", per `_char_class`) is its own
+        -- `_split_prose_words` word, isolated by the surrounding blanks, so
+        -- `comment_marker_case` alone decides whether it's a landing stop.
+        vim.api.nvim_buf_set_lines(assert(_BUFFER), 0, -1, false, { "-- ### heading text" })
+
+        _set_cursor(0)
+
+        local expected = { 3, 7, 15, 15 } -- `--`, `###`, `heading`, `text`
+
+        for _, column in ipairs(expected) do
+            treemotion.run_motion_w()
+            assert.same(column, _get_cursor_column())
+        end
+    end)
+
+    it('jumps straight past a `#`/`/`/`%` run when #prose.comment_marker_case is "skip"', function()
+        treemotion.setup({ commands = { motion = { subword = { prose = { comment_marker_case = "skip" } } } } })
+        vim.api.nvim_buf_set_lines(assert(_BUFFER), 0, -1, false, { "-- ### heading text" })
+
+        _set_cursor(0)
+
+        local expected = { 7, 15, 15 } -- `--`, straight to `heading` (`###` is never a stop), `text`
+
+        for _, column in ipairs(expected) do
+            treemotion.run_motion_w()
+            assert.same(column, _get_cursor_column())
+        end
+    end)
+
+    it('leaves a `#`/`/`/`%` run merged into its word when #prose.comment_marker_case is "none"', function()
+        treemotion.setup({ commands = { motion = { subword = { prose = { comment_marker_case = "none" } } } } })
+        -- With no split at all, `###` stays embedded exactly where
+        -- `_split_prose_words` already isolated it -- so this looks
+        -- identical to `"stop"` here (a lone, whitespace-bounded run has
+        -- nothing else to merge with); `"none"` only differs from `"stop"`
+        -- for a run mixed into a larger word, e.g. `foo/bar`.
+        vim.api.nvim_buf_set_lines(assert(_BUFFER), 0, -1, false, { "-- ### heading text" })
+
+        _set_cursor(0)
+
+        local expected = { 3, 7, 15, 15 } -- `--`, `###`, `heading`, `text`
+
+        for _, column in ipairs(expected) do
+            treemotion.run_motion_w()
             assert.same(column, _get_cursor_column())
         end
     end)

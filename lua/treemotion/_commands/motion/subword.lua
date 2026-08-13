@@ -100,8 +100,11 @@ end
 --- Read the user's `subword` splitting configuration for `is_prose`'s context.
 ---
 ---@param is_prose boolean Whether to read `commands.motion.subword.prose` or `.code`.
----@return boolean, boolean, treemotion.SubwordDelimiterMode, treemotion.SubwordDelimiterMode
----    camel_case, pascal_case, kebab_case, snake_case
+---@return boolean # camel_case
+---@return boolean # pascal_case
+---@return treemotion.SubwordDelimiterMode # kebab_case
+---@return treemotion.SubwordDelimiterMode # snake_case
+---@return treemotion.SubwordDelimiterMode # comment_marker_case
 ---
 local function _options(is_prose)
     -- `assert()`: `commands.motion.subword.code`/`.prose` are optional in
@@ -111,7 +114,7 @@ local function _options(is_prose)
     local subword = assert(configuration.resolve_data().commands.motion.subword)
     local rules = assert(is_prose and subword.prose or subword.code)
 
-    return rules.camel_case, rules.pascal_case, rules.kebab_case, rules.snake_case
+    return rules.camel_case, rules.pascal_case, rules.kebab_case, rules.snake_case, rules.comment_marker_case
 end
 
 --- Classify one character the way real Vim's `w` classifies it in a text file.
@@ -246,49 +249,70 @@ local function _split_case(text, camel_case, pascal_case)
     return chunks
 end
 
---- Look up how `char` should be treated, per `kebab_case`/`snake_case`.
+--- The punctuation characters `comment_marker_case` applies to.
+---
+--- Deliberately a small, curated set rather than "any punctuation" (unlike
+--- `_leading_continuation_length`'s leaf-boundary-continuation fix, which
+--- has to handle arbitrary tokenization quirks generically): these are the
+--- comment-opener characters this plugin has been verified against across
+--- grammars (`#` for Python/Bash/Elixir, `/` for Rust/C/JS, `%` for
+--- LaTeX/Erlang/Matlab -- see `_leading_continuation_length`'s docstring).
+--- Applying `"skip"` to arbitrary punctuation instead would also eat real
+--- operator runs (`===`, `**`, ...) that have nothing to do with comments.
+--- `-` is deliberately excluded even though it's a comment marker too
+--- (Lua's `--`) -- `kebab_case` already owns that character.
+---
+---@type table<string, true>
+local _COMMENT_MARKER_CHARACTERS = { ["#"] = true, ["/"] = true, ["%"] = true }
+
+--- Look up how `char` should be treated, per `kebab_case`/`snake_case`/`comment_marker_case`.
 ---
 ---@param char string A single character.
 ---@param kebab_case treemotion.SubwordDelimiterMode How to treat `-`.
 ---@param snake_case treemotion.SubwordDelimiterMode How to treat `_`.
----@return treemotion.SubwordDelimiterMode # `"none"` for any character that isn't `-`/`_`.
+---@param comment_marker_case treemotion.SubwordDelimiterMode How to treat `_COMMENT_MARKER_CHARACTERS`.
+---@return treemotion.SubwordDelimiterMode # `"none"` for any character that isn't covered by one of the three above.
 ---
-local function _delimiter_mode(char, kebab_case, snake_case)
+local function _delimiter_mode(char, kebab_case, snake_case, comment_marker_case)
     if char == "-" then
         return kebab_case
     elseif char == "_" then
         return snake_case
+    elseif _COMMENT_MARKER_CHARACTERS[char] then
+        return comment_marker_case
     end
 
     return motion_constant.DelimiterMode.none
 end
 
---- Split `text` on runs of `_`/`-` delimiters, per `kebab_case`/`snake_case`'s configured mode.
+--- Split `text` on runs of `_`/`-`/comment-marker delimiters, per their configured modes.
 ---
 --- A run of consecutive same-mode delimiter characters (e.g. the `---` in a
---- LuaCATS doc comment) is treated as *one* stop, not one per character --
---- matching real Vim's `w`, where a run of same-class punctuation is always
---- a single word no matter how long it is. In `"skip"` mode the run closes
---- off the chunk before it and starts a new one right after it, without
---- appearing in either chunk -- `w`/`b`/`e`/`ge` skip over it entirely
---- instead of landing on it. `"stop"` does the same, but also inserts the
---- run itself as its own chunk in between, so it *does* become a landing
---- stop. `"none"` isn't a split point at all -- the run just stays embedded
---- in whichever chunk it's already part of. `offset` lets `M.split`
---- translate each chunk's position back into an absolute buffer column.
+--- LuaCATS doc comment, or the `///` in a Rust one) is treated as *one*
+--- stop, not one per character -- matching real Vim's `w`, where a run of
+--- same-class punctuation is always a single word no matter how long it is.
+--- In `"skip"` mode the run closes off the chunk before it and starts a new
+--- one right after it, without appearing in either chunk -- `w`/`b`/`e`/`ge`
+--- skip over it entirely instead of landing on it. `"stop"` does the same,
+--- but also inserts the run itself as its own chunk in between, so it
+--- *does* become a landing stop. `"none"` isn't a split point at all -- the
+--- run just stays embedded in whichever chunk it's already part of.
+--- `offset` lets `M.split` translate each chunk's position back into an
+--- absolute buffer column.
 ---
 ---@param text string A word to split (a whole leaf's text, for code; one `_split_prose_words` word, for prose).
 ---@param kebab_case treemotion.SubwordDelimiterMode How to treat `-`.
 ---@param snake_case treemotion.SubwordDelimiterMode How to treat `_`.
+---@param comment_marker_case treemotion.SubwordDelimiterMode How to treat `#`/`/`/`%`.
 ---@return {text: string, offset: integer}[] # Each chunk and its 1-indexed start column in `text`.
 ---
-local function _split_delimiters(text, kebab_case, snake_case)
+local function _split_delimiters(text, kebab_case, snake_case, comment_marker_case)
     local chunks = {}
     local start = 1
     local index = 1
 
     while index <= #text do
-        local mode = _delimiter_mode(text:sub(index, index), kebab_case, snake_case)
+        local mode = _delimiter_mode(text:sub(index, index), kebab_case, snake_case, comment_marker_case)
 
         if mode == motion_constant.DelimiterMode.none then
             index = index + 1
@@ -301,7 +325,8 @@ local function _split_delimiters(text, kebab_case, snake_case)
 
             while
                 run_end < #text
-                and _delimiter_mode(text:sub(run_end + 1, run_end + 1), kebab_case, snake_case) == mode
+                and _delimiter_mode(text:sub(run_end + 1, run_end + 1), kebab_case, snake_case, comment_marker_case)
+                    == mode
             do
                 run_end = run_end + 1
             end
@@ -494,14 +519,14 @@ function M.split(node)
     end
 
     local is_prose = _is_prose(node)
-    local camel_case, pascal_case, kebab_case, snake_case = _options(is_prose)
+    local camel_case, pascal_case, kebab_case, snake_case, comment_marker_case = _options(is_prose)
     local words = is_prose and _split_prose_words(text) or { { text = text, offset = 1 } }
     local units = {}
 
     for _, word in ipairs(words) do
         local word_column = text_start_col + word.offset - 1
 
-        for _, delimited in ipairs(_split_delimiters(word.text, kebab_case, snake_case)) do
+        for _, delimited in ipairs(_split_delimiters(word.text, kebab_case, snake_case, comment_marker_case)) do
             local column = word_column + delimited.offset - 1
 
             for _, chunk in ipairs(_split_case(delimited.text, camel_case, pascal_case)) do

@@ -89,6 +89,17 @@ Fields ~
    |on| |it| |but| |drops| |the| delim|it|er |ch|a|r|a|cter| |||it|s|elf|, |so| |no| |un|it|| |ever| |l||a|nd|s|
    |on| |it|; `"stop"` ||spl|it||s| |on| |it| *||a|nd|* |keeps| |the| delim|it|er ||a|s| ||it|s| |own| ||un|it||.|)?
        How to handle `_`, e.g. `foo_bar` -> `foo`, `bar` (`"skip"`) or `foo`, `_`, `bar` (`"stop"`).
+    {comment_m|a|rker_c||a|s|e} ("n|on|e" | "skip" | "stop"
+   |How| `keb|a|b_c||a|s|e`/`sn|a|ke_c||a|s|e` |tre||a|t|| |a| `-`/`_` delim|it|er ||on|ce| found:
+   `"n|on|e"` |le|a|ves| |it| |embedded|, ||no|t| |a| |spl|it|| |point| ||a|t| ||a|ll|; `"skip"` ||spl|it||s|
+   |on| |it| |but| |drops| |the| delim|it|er |ch|a|r|a|cter| |||it|s|elf|, |so| |no| |un|it|| |ever| |l||a|nd|s|
+   |on| |it|; `"stop"` ||spl|it||s| |on| |it| *||a|nd|* |keeps| |the| delim|it|er ||a|s| ||it|s| |own| ||un|it||.|)?
+       How to handle a run of `#`/`/`/`%` (common comment-opener punctuation,
+       e.g. Python/Bash `#`, Rust/C/JS `/`, LaTeX/Erlang/Matlab `%`), e.g.
+       `/// text` -> `text` (`"skip"`, jumps straight past a Rust-style `///`
+       marker) or `///`, `text` (`"stop"`, the marker is its own stop first).
+       Doesn't cover `-`, even though it's a comment marker too (Lua's `--`)
+       -- `kebab_case` already owns that character.
 
 ------------------------------------------------------------------------------
 *treemotion.ConfigurationGoodnightMoon*

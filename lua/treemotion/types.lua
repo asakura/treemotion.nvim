@@ -70,6 +70,13 @@
 ---    How to handle `-`, e.g. `foo-bar` -> `foo`, `bar` (`"skip"`) or `foo`, `-`, `bar` (`"stop"`).
 ---@field snake_case treemotion.SubwordDelimiterMode?
 ---    How to handle `_`, e.g. `foo_bar` -> `foo`, `bar` (`"skip"`) or `foo`, `_`, `bar` (`"stop"`).
+---@field comment_marker_case treemotion.SubwordDelimiterMode?
+---    How to handle a run of `#`/`/`/`%` (common comment-opener punctuation,
+---    e.g. Python/Bash `#`, Rust/C/JS `/`, LaTeX/Erlang/Matlab `%`), e.g.
+---    `/// text` -> `text` (`"skip"`, jumps straight past a Rust-style `///`
+---    marker) or `///`, `text` (`"stop"`, the marker is its own stop first).
+---    Doesn't cover `-`, even though it's a comment marker too (Lua's `--`)
+---    -- `kebab_case` already owns that character.
 
 ---@class treemotion.ConfigurationGoodnightMoon
 ---    The default values when a user calls `:TreeMotion goodnight-moon`.
