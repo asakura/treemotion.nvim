@@ -67,16 +67,25 @@
 ---@field pascal_case boolean?
 ---    Split uppercase-leading identifiers at case transitions, e.g. `FooBar` -> `Foo`, `Bar`.
 ---@field kebab_case treemotion.SubwordDelimiterMode?
----    How to handle `-`, e.g. `foo-bar` -> `foo`, `bar` (`"skip"`) or `foo`, `-`, `bar` (`"stop"`).
+---    How to handle `-` next to real identifier content, e.g. `foo-bar` ->
+---    `foo`, `bar` (`"skip"`) or `foo`, `-`, `bar` (`"stop"`). Only applies
+---    when `-` sits beside a letter/digit; a run that's *only* `-` (Lua's
+---    `--`, a `-----` separator) is a bare punctuation marker instead, so
+---    `comment_marker_case` governs it -- see that field.
 ---@field snake_case treemotion.SubwordDelimiterMode?
----    How to handle `_`, e.g. `foo_bar` -> `foo`, `bar` (`"skip"`) or `foo`, `_`, `bar` (`"stop"`).
+---    How to handle `_` next to real identifier content, e.g. `foo_bar` ->
+---    `foo`, `bar` (`"skip"`) or `foo`, `_`, `bar` (`"stop"`). Same
+---    real-identifier-content caveat as `kebab_case`: a run that's only `_`
+---    falls to `comment_marker_case` instead.
 ---@field comment_marker_case treemotion.SubwordDelimiterMode?
 ---    How to handle a run of `#`/`/`/`%` (common comment-opener punctuation,
 ---    e.g. Python/Bash `#`, Rust/C/JS `/`, LaTeX/Erlang/Matlab `%`), e.g.
 ---    `/// text` -> `text` (`"skip"`, jumps straight past a Rust-style `///`
 ---    marker) or `///`, `text` (`"stop"`, the marker is its own stop first).
----    Doesn't cover `-`, even though it's a comment marker too (Lua's `--`)
----    -- `kebab_case` already owns that character.
+---    Also governs `-`/`_` whenever the whole run has no identifier content
+---    beside it (Lua's `--` comment opener, a `-----` separator, a `///`
+---    doc-comment marker) -- `kebab_case`/`snake_case` only take over once
+---    `-`/`_` sits next to a real letter/digit, like `hello-world`.
 
 ---@class treemotion.ConfigurationGoodnightMoon
 ---    The default values when a user calls `:TreeMotion goodnight-moon`.

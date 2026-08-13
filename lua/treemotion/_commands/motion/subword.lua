@@ -259,8 +259,12 @@ end
 --- LaTeX/Erlang/Matlab -- see `_leading_continuation_length`'s docstring).
 --- Applying `"skip"` to arbitrary punctuation instead would also eat real
 --- operator runs (`===`, `**`, ...) that have nothing to do with comments.
---- `-` is deliberately excluded even though it's a comment marker too
---- (Lua's `--`) -- `kebab_case` already owns that character.
+--- `-` is deliberately excluded here even though it's a comment marker too
+--- (Lua's `--`) -- but only from this fixed set, not from
+--- `comment_marker_case` altogether: `_split_delimiters` still routes a
+--- bare `-`/`_` run (Lua's `--`, a `-----` separator) through
+--- `comment_marker_case`, reserving `kebab_case`/`snake_case` for `-`/`_`
+--- that actually sit inside an identifier (`hello-world`).
 ---
 ---@type table<string, true>
 local _COMMENT_MARKER_CHARACTERS = { ["#"] = true, ["/"] = true, ["%"] = true }
@@ -300,13 +304,31 @@ end
 --- `offset` lets `M.split` translate each chunk's position back into an
 --- absolute buffer column.
 ---
+--- `kebab_case`/`snake_case` only apply when `text` actually has an
+--- identifier to case-split -- i.e. `-`/`_` sit between (or beside) real
+--- alphanumeric content, like `hello-world` or `snake_case`. When `text` is
+--- *entirely* delimiter characters (no letter or digit anywhere in it --
+--- Lua's `--` comment opener, a `---` doc-comment marker, a `-----`
+--- separator line), there's no identifier being kebab/snake-cased at all --
+--- it's a bare punctuation run, the same kind of thing `#`/`/`/`%` already
+--- always are (`_char_class` isolates them into their own word before this
+--- function even runs, since they're never grouped as `"word"` class). So
+--- for a text like that, `comment_marker_case` governs *every* delimiter in
+--- it, `-`/`_` included, instead of `kebab_case`/`snake_case` -- letting
+--- "skip past comment markers" and "split kebab-case identifiers" be tuned
+--- independently even though both happen to use `-`.
+---
 ---@param text string A word to split (a whole leaf's text, for code; one `_split_prose_words` word, for prose).
----@param kebab_case treemotion.SubwordDelimiterMode How to treat `-`.
----@param snake_case treemotion.SubwordDelimiterMode How to treat `_`.
----@param comment_marker_case treemotion.SubwordDelimiterMode How to treat `#`/`/`/`%`.
+---@param kebab_case treemotion.SubwordDelimiterMode How to treat `-` next to real identifier content.
+---@param snake_case treemotion.SubwordDelimiterMode How to treat `_` next to real identifier content.
+---@param comment_marker_case treemotion.SubwordDelimiterMode How to treat `#`/`/`/`%`, or `text`-wide `-`/`_` runs.
 ---@return {text: string, offset: integer}[] # Each chunk and its 1-indexed start column in `text`.
 ---
 local function _split_delimiters(text, kebab_case, snake_case, comment_marker_case)
+    if not text:find("%w") then
+        kebab_case, snake_case = comment_marker_case, comment_marker_case
+    end
+
     local chunks = {}
     local start = 1
     local index = 1

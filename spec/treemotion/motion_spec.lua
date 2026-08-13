@@ -212,7 +212,9 @@ end)
 --- highlight query (`:help treesitter-highlight-spell`) matches the whole
 --- `comment` node's range, so *both* leaves count as prose -- including
 --- `--` itself, whose two `-` characters form one run and become a single
---- stop under prose's default `kebab_case = "stop"` (a run of consecutive
+--- stop under prose's default `comment_marker_case = "stop"` (a bare `-`
+--- run with no identifier beside it, so `comment_marker_case` governs it,
+--- not `kebab_case` -- see `_split_delimiters`; a run of consecutive
 --- same-mode delimiter characters is always one unit, however long, the
 --- same way real Vim's `w` treats a run of same-class punctuation as one
 --- word). `comment_content` then splits into words on whitespace --
@@ -281,9 +283,10 @@ describe("motion API - subword (prose) motions", function()
     end)
 
     it("#w lands once on a whole run of delimiters, however long, not once per character", function()
-        -- `------` (0-6) is a run of six same-mode (`kebab_case = "stop"`)
-        -- delimiter characters -- one unit, not six, matching real Vim's
-        -- `w` treating a run of same-class punctuation as a single word.
+        -- `------` (0-6) is a run of six same-mode (`comment_marker_case =
+        -- "stop"` -- a bare `-` run, no identifier beside it) delimiter
+        -- characters -- one unit, not six, matching real Vim's `w` treating
+        -- a run of same-class punctuation as a single word.
         vim.api.nvim_buf_set_lines(assert(_BUFFER), 0, -1, false, { "-- ------ hi" })
 
         _set_cursor(0)
@@ -603,6 +606,55 @@ describe("motion API - subword configuration", function()
             assert.same(column, _get_cursor_column())
         end
     end)
+
+    it(
+        "a bare `-` run (no identifier beside it) follows #comment_marker_case, " .. "independently of #kebab_case",
+        function()
+            -- `kebab_case = "skip"` would normally drop a `-` run entirely,
+            -- but `--` here has no identifier content beside it, so
+            -- `comment_marker_case` (still the default `"stop"`) governs it
+            -- instead -- it stays a landing stop even though `kebab_case`
+            -- says "skip".
+            treemotion.setup({ commands = { motion = { subword = { prose = { kebab_case = "skip" } } } } })
+            vim.api.nvim_buf_set_lines(assert(_BUFFER), 0, -1, false, { "-- hello-world" })
+
+            _set_cursor(0)
+
+            -- Cursor starts exactly on `--`(0)'s own stop, so the first
+            -- press moves past it: `hello`, `world` (kebab_case="skip"
+            -- still drops the embedded `-` itself as a landing spot).
+            local expected = { 3, 9, 9 }
+
+            for _, column in ipairs(expected) do
+                treemotion.run_motion_w()
+                assert.same(column, _get_cursor_column())
+            end
+        end
+    )
+
+    it(
+        "a bare `-` run (no identifier beside it) skips under #comment_marker_case "
+            .. '= "skip", even while #kebab_case stays "stop"',
+        function()
+            -- The reverse: `comment_marker_case = "skip"` drops the bare
+            -- `--` run entirely, while `kebab_case` (still the default
+            -- `"stop"`) keeps splitting `hello-world`'s embedded `-` as its
+            -- own stop -- the two settings tune independently even though
+            -- both apply to `-`.
+            treemotion.setup({ commands = { motion = { subword = { prose = { comment_marker_case = "skip" } } } } })
+            vim.api.nvim_buf_set_lines(assert(_BUFFER), 0, -1, false, { "-- hello-world" })
+
+            _set_cursor(0)
+
+            -- `--` is never a stop; `hello`, `-`, `world` (kebab_case="stop").
+            local expected = { 3, 8, 9, 9 }
+
+            for _, column in ipairs(expected) do
+                treemotion.run_motion_w()
+                assert.same(column, _get_cursor_column())
+            end
+        end
+    )
 
     it("#camel_case and #pascal_case toggle independently by the identifier's leading case", function()
         vim.api.nvim_buf_set_lines(assert(_BUFFER), 0, -1, false, { "local FooBar = fooBar" })

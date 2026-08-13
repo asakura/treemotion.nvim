@@ -136,10 +136,13 @@ whatever parser is already attached to the buffer.
     they first split into individual words on whitespace, the way real Vim’s
     `w` does in a text file, before naming-convention splitting applies to
     each word. A run of comment-opener punctuation (`#`, `/`, `%` – e.g.
-    Rust’s `///`) is one stop by default, same as `-`/`_`; set
-    `comment_marker_case = "skip"` to jump straight past it to the next real
-    word instead. See `commands.motion.subword.code` / `.prose` under
-    `Configuration` to control this per context.
+    Rust’s `///` – or a bare `-`/`_` run with no identifier beside it, like
+    Lua’s `--` or a `-----` separator) is one stop by default, same as a
+    `-`/`_` inside an identifier; set `comment_marker_case = "skip"` to jump
+    straight past it to the next real word instead, independently of
+    `kebab_case`/`snake_case` (which only apply once `-`/`_` sits next to a
+    real letter or digit, e.g. `hello-world`). See `commands.motion.subword.code`
+    / `.prose` under `Configuration` to control this per context.
 - `W` / `E` / `B` / `gE` move one contiguous _run_ of leaves at a time – a
     run is a maximal sequence of leaves with no whitespace between them,
     mirroring how Vim’s real `W` ignores punctuation inside a WORD while `w`

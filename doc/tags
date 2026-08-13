@@ -1,3 +1,4 @@
+only	treemotion_types.txt	/*only*
 treemotion-commands	treemotion.txt	/*treemotion-commands*
 treemotion-configuration	treemotion.txt	/*treemotion-configuration*
 treemotion-coverage	treemotion.txt	/*treemotion-coverage*
