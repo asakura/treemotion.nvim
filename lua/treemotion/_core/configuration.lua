@@ -62,6 +62,157 @@ local _DEFAULTS = {
     },
 }
 
+--- Additional treesitter language -> comment-marker-character entries beyond
+--- `_DEFAULTS`, activated automatically (see `M.get_comment_markers`) only
+--- when that language's parser is actually installed. Grouped by marker
+--- character for readability, mirroring `_DEFAULTS`' own 11 entries.
+---
+--- Deliberately a curated, high-confidence list, not a guess at every
+--- nixpkgs treesitter grammar: markup/template languages with block-only or
+--- multi-character comment delimiters (HTML, XML, JSON, Jinja/Twig/Liquid,
+--- Markdown, reStructuredText) and dozens of very niche grammars are
+--- excluded rather than guessed at.
+---
+---@type table<string, string[]>
+local _OPTIONAL_COMMENT_MARKERS = {
+    -- "#"
+    awk = { "#" },
+    cmake = { "#" },
+    dockerfile = { "#" },
+    fish = { "#" },
+    gitattributes = { "#" },
+    gitcommit = { "#" },
+    git_rebase = { "#" },
+    gitignore = { "#" },
+    graphql = { "#" },
+    jq = { "#" },
+    julia = { "#" },
+    kconfig = { "#" },
+    make = { "#" },
+    meson = { "#" },
+    muttrc = { "#" },
+    nginx = { "#" },
+    nim = { "#" },
+    nix = { "#" },
+    elixir = { "#" },
+    perl = { "#" },
+    powershell = { "#" },
+    prql = { "#" },
+    puppet = { "#" },
+    r = { "#" },
+    requirements = { "#" },
+    robots_txt = { "#" },
+    ruby = { "#" },
+    snakemake = { "#" },
+    sparql = { "#" },
+    ssh_config = { "#" },
+    starlark = { "#" },
+    sxhkdrc = { "#" },
+    tcl = { "#" },
+    toml = { "#" },
+    yaml = { "#" },
+    zsh = { "#" },
+    caddy = { "#" },
+    desktop = { "#" },
+    hyprlang = { "#" },
+    kitty = { "#" },
+    promql = { "#" },
+    pymanifest = { "#" },
+    tmux = { "#" },
+    udev = { "#" },
+    zathurarc = { "#" },
+    gdscript = { "#" },
+    elvish = { "#" },
+    -- "#" + ";"
+    ini = { "#", ";" },
+    editorconfig = { "#", ";" },
+    git_config = { "#", ";" },
+    -- "#" + "!"
+    properties = { "#", "!" },
+    -- "#" + "/" (both accepted)
+    hcl = { "#", "/" },
+    terraform = { "#", "/" },
+    hjson = { "#", "/" },
+
+    -- "/" (matches "//")
+    c_sharp = { "/" },
+    java = { "/" },
+    javascript = { "/" },
+    typescript = { "/" },
+    tsx = { "/" },
+    go = { "/" },
+    kotlin = { "/" },
+    scala = { "/" },
+    swift = { "/" },
+    dart = { "/" },
+    groovy = { "/" },
+    zig = { "/" },
+    glsl = { "/" },
+    hlsl = { "/" },
+    jsonnet = { "/" },
+    proto = { "/" },
+    thrift = { "/" },
+    solidity = { "/" },
+    typespec = { "/" },
+    gdshader = { "/" },
+    d = { "/" },
+    objc = { "/" },
+    odin = { "/" },
+    v = { "/" },
+    pkl = { "/" },
+    systemverilog = { "/" },
+    php = { "/" },
+    php_only = { "/" },
+    scss = { "/" },
+    cue = { "/" },
+    kdl = { "/" },
+    ron = { "/" },
+    gleam = { "/" },
+    fsharp = { "/" },
+    vala = { "/" },
+    rescript = { "/" },
+    cairo = { "/" },
+    wgsl = { "/" },
+    wgsl_bevy = { "/" },
+    pascal = { "/" },
+    arduino = { "/" },
+    c3 = { "/" },
+    devicetree = { "/" },
+    json5 = { "/" },
+
+    -- "-" (matches "--")
+    haskell = { "-" },
+    haskell_persistent = { "-" },
+    elm = { "-" },
+    purescript = { "-" },
+    sql = { "-" },
+    ada = { "-" },
+    vhdl = { "-" },
+    agda = { "-" },
+    dhall = { "-" },
+    idris = { "-" },
+    unison = { "-" },
+    teal = { "-" },
+    luau = { "-" },
+
+    -- ";"
+    scheme = { ";" },
+    racket = { ";" },
+    commonlisp = { ";" },
+    clojure = { ";" },
+    fennel = { ";" },
+    asm = { ";" },
+    nasm = { ";" },
+    llvm = { ";" },
+    ledger = { ";" },
+    beancount = { ";" },
+
+    -- "%"
+    erlang = { "%" },
+    prolog = { "%" },
+    matlab = { "%" },
+}
+
 --- Setup `treemotion` for the first time, if needed.
 function M.initialize_data_if_needed()
     if vim.g.loaded_treemotion then
@@ -95,6 +246,40 @@ function M.resolve_data(data)
     M.initialize_data_if_needed()
 
     return vim.tbl_deep_extend("force", M.DATA, data or {})
+end
+
+--- Look up `language`'s comment-marker characters, whether shipped/user-configured
+--- or auto-detected from `_OPTIONAL_COMMENT_MARKERS`.
+---
+--- The `_OPTIONAL_COMMENT_MARKERS` fallback is deliberately resolved here, lazily,
+--- per call -- not merged into `M.DATA` up front in `initialize_data_if_needed()`.
+--- `vim.treesitter.language.add()` (see `health.lua`'s identical use) loads the
+--- parser it checks for, which is a real cost across ~120 candidate languages;
+--- doing that for every one of them at plugin load, on every Neovim startup,
+--- regardless of which languages actually get edited that session, would be
+--- wasteful. Checking lazily for just the buffer's current language costs
+--- nothing extra: by the time this is called, that language's parser is already
+--- loaded (see `_current_language()`'s use of `vim.treesitter.get_parser()`).
+---
+---@param language string A treesitter language name.
+---@return string[]?
+---
+function M.get_comment_markers(language)
+    M.initialize_data_if_needed()
+
+    local shipped = M.DATA.commands.motion.subword.comment_markers[language]
+
+    if shipped then
+        return shipped
+    end
+
+    local optional = _OPTIONAL_COMMENT_MARKERS[language]
+
+    if optional and vim.treesitter.language.add(language) then
+        return optional
+    end
+
+    return nil
 end
 
 --- Merge `data` into the current configuration, in-place.
