@@ -155,39 +155,45 @@
 
         neovimRuntime = "${pkgs.neovim-unwrapped}/share/nvim/runtime";
 
-        luarcJson = pkgs.writeText "luarc.json" ''
-          {
-              "diagnostics.libraryFiles": "Disable",
-              "runtime.version": "LuaJIT",
-              "workspace.checkThirdParty": "Disable",
-              "workspace.ignoreDir": [],
-              "workspace.library": [
-                  "${luaTypesBustedModule}/library",
-                  "${luaTypesLuassertModule}/library",
-                  "${pkgs.vimPlugins.luvit-meta}/library",
-                  "${pkgs.vimPlugins.mega-cmdparse}/lua",
-                  "${pkgs.vimPlugins.mega-logging}/lua",
-                  "${neovimRuntime}/lua"
-              ]
-          }
-        '';
+        luarcJson =
+          pkgs.writeText "luarc.json"
+            # json
+            ''
+              {
+                  "diagnostics.libraryFiles": "Disable",
+                  "runtime.version": "LuaJIT",
+                  "workspace.checkThirdParty": "Disable",
+                  "workspace.ignoreDir": [],
+                  "workspace.library": [
+                      "${luaTypesBustedModule}/library",
+                      "${luaTypesLuassertModule}/library",
+                      "${pkgs.vimPlugins.luvit-meta}/library",
+                      "${pkgs.vimPlugins.mega-cmdparse}/lua",
+                      "${pkgs.vimPlugins.mega-logging}/lua",
+                      "${neovimRuntime}/lua"
+                  ]
+              }
+            '';
 
-        bustedConfig = pkgs.writeText ".busted" ''
-          return {
-            _all = {
-              coverage = false,
-              lpath = "lua/?.lua;lua/?/init.lua;spec/?.lua;${pkgs.vimPlugins.mega-cmdparse}/lua/?.lua;${pkgs.vimPlugins.mega-cmdparse}/lua/?/init.lua;${pkgs.vimPlugins.mega-logging}/lua/?.lua;${pkgs.vimPlugins.mega-logging}/lua/?/init.lua",
-              lua = "nvim -u NONE -U NONE -N -i NONE -l",
-            },
-            default = {
-              helper = "./spec/minimal_init.lua",
-              verbose = true,
-            },
-            tests = {
-              verbose = true,
-            },
-          }
-        '';
+        bustedConfig =
+          pkgs.writeText ".busted"
+            # lua
+            ''
+              return {
+                _all = {
+                  coverage = false,
+                  lpath = "lua/?.lua;lua/?/init.lua;spec/?.lua;${pkgs.vimPlugins.mega-cmdparse}/lua/?.lua;${pkgs.vimPlugins.mega-cmdparse}/lua/?/init.lua;${pkgs.vimPlugins.mega-logging}/lua/?.lua;${pkgs.vimPlugins.mega-logging}/lua/?/init.lua",
+                  lua = "nvim -u NONE -U NONE -N -i NONE -l",
+                },
+                default = {
+                  helper = "./spec/minimal_init.lua",
+                  verbose = true,
+                },
+                tests = {
+                  verbose = true,
+                },
+              }
+            '';
 
         dependencyLinks = pkgs.linkFarm "treemotion-dependency-links" {
           ".luarc.json" = luarcJson;
@@ -250,30 +256,34 @@
           '';
         };
 
-        llscheckScript = configpath: ''
-          export VIMRUNTIME="${neovimRuntime}"
-          llscheck --configpath ${configpath} .
-        '';
+        llscheckScript =
+          configpath: # bash
+          ''
+            export VIMRUNTIME="${neovimRuntime}"
+            llscheck --configpath ${configpath} .
+          '';
 
-        runCoverage = ''
-          ${luaCoverageEnv}/bin/busted --coverage .
-        '';
+        runCoverage = # bash
+          ''
+            ${luaCoverageEnv}/bin/busted --coverage .
+          '';
 
         minCoveragePercent = 35.00;
 
-        checkCoverageThreshold = ''
-          luacov
+        checkCoverageThreshold = # bash
+          ''
+            luacov
 
-          total_line="$(grep '^Total' luacov.report.out | tail -n1)"
-          coverage="$(echo "$total_line" | awk '{print $NF}' | tr -d '%')"
+            total_line="$(grep '^Total' luacov.report.out | tail -n1)"
+            coverage="$(echo "$total_line" | awk '{print $NF}' | tr -d '%')"
 
-          echo "Total coverage: $coverage% (minimum required: ${toString minCoveragePercent}%)"
+            echo "Total coverage: $coverage% (minimum required: ${toString minCoveragePercent}%)"
 
-          if ! awk -v cov="$coverage" -v min="${toString minCoveragePercent}" 'BEGIN { exit !(cov >= min) }'; then
-            echo "Coverage $coverage% is below the required minimum of ${toString minCoveragePercent}%."
-            exit 1
-          fi
-        '';
+            if ! awk -v cov="$coverage" -v min="${toString minCoveragePercent}" 'BEGIN { exit !(cov >= min) }'; then
+              echo "Coverage $coverage% is below the required minimum of ${toString minCoveragePercent}%."
+              exit 1
+            fi
+          '';
       in
       {
         devShells.default = pkgs.mkShell {
@@ -282,12 +292,28 @@
         };
 
         checks = {
-          luacheck = mkCheck "luacheck" "luacheck lua plugin scripts spec";
-          stylua = mkCheck "stylua" "stylua lua plugin scripts spec --color always --check";
-          nixfmt = mkCheck "nixfmt" "nixfmt --check flake.nix";
-          mdformat = mkCheck "mdformat" "mdformat --check README.md markdown/manual/docs/index.md";
+          luacheck =
+            mkCheck "luacheck" # bash
+              "luacheck lua plugin scripts spec";
+
+          stylua =
+            mkCheck "stylua" # bash
+              "stylua lua plugin scripts spec --color always --check";
+
+          nixfmt =
+            mkCheck "nixfmt"
+              # bash
+              "nixfmt --check flake.nix";
+
+          mdformat =
+            mkCheck "mdformat" # bash
+              "mdformat --check README.md markdown/manual/docs/index.md";
+
+          test =
+            mkCheck "test" # bash
+              "busted .";
+
           llscheck = mkCheck "llscheck" (llscheckScript ".luarc.json");
-          test = mkCheck "test" "busted .";
           coverage = mkCheck "coverage" (runCoverage + checkCoverageThreshold);
           treemotion-nvim = pkgs.vimPlugins.treemotion-nvim;
         };
@@ -300,22 +326,35 @@
         apps = {
           stylua =
             mkApp "stylua" "Auto-format lua/plugin/scripts/spec in place with stylua"
+              # bash
               "stylua lua plugin scripts spec";
-          nixfmt = mkApp "nixfmt" "Auto-format flake.nix with nixfmt" "nixfmt flake.nix";
+
+          nixfmt =
+            mkApp "nixfmt" "Auto-format flake.nix with nixfmt" # bash
+              "nixfmt flake.nix";
+
           mdformat =
             mkApp "mdformat" "Auto-format README.md and markdown/manual/docs/index.md with mdformat"
+              # bash
               "mdformat README.md markdown/manual/docs/index.md";
+
           luacheck =
             mkApp "luacheck" "Lint lua/plugin/scripts/spec with luacheck"
+              # bash
               "luacheck lua plugin scripts spec";
+
           llscheck =
             mkApp "llscheck" "Type-check against a .luarc.json (default: ./.luarc.json) with llscheck"
               (llscheckScript ''"''${1:-.luarc.json}"'');
-          test = mkApp "test" "Run the busted test suite" "busted .";
+
+          test =
+            mkApp "test" "Run the busted test suite" # bash
+              "busted .";
 
           api-documentation =
             mkApp "api-documentation"
               "Regenerate doc/treemotion_api.txt + doc/treemotion_types.txt from LuaCATS docstrings"
+              # bash
               ''
                 nvim -u scripts/make_api_documentation/minimal_init.lua -l scripts/make_api_documentation/main.lua
               '';
@@ -323,6 +362,7 @@
           user-documentation =
             mkApp "user-documentation"
               "Regenerate doc/treemotion.txt from README.md with panvimdoc, then rebuild doc/tags"
+              # bash
               ''
                 # `panvimdoc.sh` hard-codes its `scripts/` dir to `/scripts` whenever
                 # `GITHUB_ACTIONS=true` is set -- that check comes before `--scripts-dir`
@@ -341,10 +381,12 @@
             mkApp "coverage-html" "Run busted under luacov and write an HTML coverage report to luacov_html/"
               (
                 runCoverage
-                + ''
-                  ${luaCoverageEnv}/bin/luacov --reporter multiple.html
-                  luacov
-                ''
+                +
+                  # bash
+                  ''
+                    ${luaCoverageEnv}/bin/luacov --reporter multiple.html
+                    luacov
+                  ''
               );
 
           coverage-threshold =
@@ -353,6 +395,7 @@
 
           coverage-serve =
             mkApp "coverage-serve" "Serve luacov_html/ over HTTP with miniserve"
+              # bash
               "miniserve luacov_html --index index.html --port 8000 --interfaces 127.0.0.1";
         };
 
