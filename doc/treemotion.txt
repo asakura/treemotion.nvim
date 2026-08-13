@@ -135,14 +135,27 @@ whatever parser is already attached to the buffer.
     language’s treesitter query tags `@spell`) are treated as prose instead:
     they first split into individual words on whitespace, the way real Vim’s
     `w` does in a text file, before naming-convention splitting applies to
-    each word. A run of comment-opener punctuation (`#`, `/`, `%` – e.g.
-    Rust’s `///` – or a bare `-`/`_` run with no identifier beside it, like
+    each word. A run of that language’s comment-opener punctuation (Python/Bash
+    `#`, C/Rust `/` – e.g. Rust’s `///` – LaTeX `%`, Vim `"`, a treesitter
+    query file’s `;`, or a bare `-`/`_` run with no identifier beside it, like
     Lua’s `--` or a `-----` separator) is one stop by default, same as a
     `-`/`_` inside an identifier; set `comment_marker_case = "skip"` to jump
     straight past it to the next real word instead, independently of
     `kebab_case`/`snake_case` (which only apply once `-`/`_` sits next to a
-    real letter or digit, e.g. `hello-world`). See `commands.motion.subword.code`
-    / `.prose` under `Configuration` to control this per context.
+    real letter or digit, e.g. `hello-world`). Which characters count as
+    comment-marker punctuation is configured per treesitter language, via
+    `commands.motion.subword.comment_markers` – a language with no entry has
+    no comment-marker characters at all, so `comment_marker_case` is a no-op
+    there until you add one (see `Configuration` below); this is deliberate,
+    not an oversight, since the same punctuation means unrelated things in
+    different grammars (`"` opens a comment in Vimscript but closes a string
+    everywhere else). See `commands.motion.subword.code` / `.prose` under
+    `Configuration` to control `comment_marker_case` itself per context.
+    `:checkhealth treemotion` warns if a language _you_ added to
+    `comment_markers` has no treesitter parser installed (a likely typo, or a
+    parser you haven’t installed yet) – it stays silent about the shipped
+    defaults above, since most setups won’t have every one of those parsers
+    installed and that isn’t a problem.
 - `W` / `E` / `B` / `gE` move one contiguous _run_ of leaves at a time – a
     run is a maximal sequence of leaves with no whitespace between them,
     mirroring how Vim’s real `W` ignores punctuation inside a WORD while `w`
@@ -212,6 +225,22 @@ works as expected:
                 },
                 motion = {
                     subword = {
+                        -- Which single characters count as comment-marker
+                        -- punctuation, per treesitter language. A language with
+                        -- no entry has none at all -- add your own to extend this
+                        -- list.
+                        comment_markers = {
+                            c = { "/" },
+                            cpp = { "/" },
+                            rust = { "/" },
+                            python = { "#" },
+                            bash = { "#" },
+                            sh = { "#" },
+                            latex = { "%" },
+                            tex = { "%" },
+                            vim = { '"' },
+                            query = { ";" },
+                        },
                         -- Identifiers, string content, and similar: `-`/`_` divide
                         -- but are never landed on themselves.
                         code = {

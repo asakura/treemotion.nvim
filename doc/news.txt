@@ -15,9 +15,16 @@ NEW FEATURES                                     *treemotion-new-features*
   `.pascal_case` (boolean) and `kebab_case` / `.snake_case` /
   `.comment_marker_case` (`"none"` | `"skip"` | `"stop"`, controlling
   whether `-` / `_` next to real identifier content / a run of
-  comment-opener punctuation (`#`, `/`, `%`, or a bare `-`/`_` run like
-  Lua's `--`) splits at all and whether the delimiter itself becomes its
-  own stop). `W`/`E`/`B`/`gE` are unaffected.
+  comment-opener punctuation, or a bare `-`/`_` run like Lua's `--`, splits
+  at all and whether the delimiter itself becomes its own stop).
+  Comment-opener punctuation is configured per treesitter language via
+  `commands.motion.subword.comment_markers` (defaults include Python/Bash
+  `#`, C/Rust `/`, LaTeX `%`, Vim `"`, treesitter query `;` -- a language
+  with no entry has none at all, so `comment_marker_case` is a no-op there
+  until configured). `:checkhealth treemotion` warns if a language *you*
+  added to `comment_markers` has no treesitter parser installed, but stays
+  silent about the shipped defaults, since most setups won't have every one
+  of those installed. `W`/`E`/`B`/`gE` are unaffected.
 
 
 ===============================================================================
