@@ -56,7 +56,7 @@
 ---    docstring). Deliberately per-language rather than one fixed global set:
 ---    the same punctuation means different things in different grammars --
 ---    `"` opens a comment in Vimscript but closes a string everywhere else,
----    `;` ends a comment in a treesitter query file but ends a *statement* in
+---    `;` ends a comment in a treesitter query file but ends a **statement** in
 ---    every C-family language -- so a character only gets `comment_marker_case`
 ---    treatment in the languages it's actually configured for here, never
 ---    globally. Unset entries fall back to `_DEFAULTS`' per-language list;
@@ -79,7 +79,7 @@
 ---    How `kebab_case`/`snake_case` treat a `-`/`_` delimiter once found:
 ---    `"none"` leaves it embedded, not a split point at all; `"skip"` splits
 ---    on it but drops the delimiter character itself, so no unit ever lands
----    on it; `"stop"` splits on it *and* keeps the delimiter as its own unit.
+---    on it; `"stop"` splits on it **and** keeps the delimiter as its own unit.
 
 ---@class treemotion.ConfigurationMotionSubwordRules
 ---    Which naming conventions additionally split a leaf (or prose word) on.
@@ -90,9 +90,9 @@
 ---@field kebab_case treemotion.SubwordDelimiterMode?
 ---    How to handle `-` next to real identifier content, e.g. `foo-bar` ->
 ---    `foo`, `bar` (`"skip"`) or `foo`, `-`, `bar` (`"stop"`). Only applies
----    when `-` sits beside a letter/digit; a run that's *only* `-` (a
+---    when `-` sits beside a letter/digit; a run that's **only** `-` (a
 ---    language's own comment opener, a `-----` separator) is a bare
----    punctuation marker instead, so `comment_marker_case` governs it *if*
+---    punctuation marker instead, so `comment_marker_case` governs it **if**
 ---    the current language's `comment_markers` lists `-` -- otherwise this
 ---    setting keeps governing even a bare run, since there's nothing else
 ---    configured to hand it off to. See `comment_marker_case`.

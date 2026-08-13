@@ -1,5 +1,3 @@
-only	treemotion_types.txt	/*only*
-statement	treemotion_types.txt	/*statement*
 treemotion-commands	treemotion.txt	/*treemotion-commands*
 treemotion-configuration	treemotion.txt	/*treemotion-configuration*
 treemotion-coverage	treemotion.txt	/*treemotion-coverage*
@@ -45,4 +43,3 @@ treemotion.run_motion_ge()	treemotion_api.txt	/*treemotion.run_motion_ge()*
 treemotion.run_motion_w()	treemotion_api.txt	/*treemotion.run_motion_w()*
 treemotion.setup()	treemotion_api.txt	/*treemotion.setup()*
 treemotion.txt	treemotion.txt	/*treemotion.txt*
-you	news.txt	/*you*
