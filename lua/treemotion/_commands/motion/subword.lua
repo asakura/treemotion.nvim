@@ -6,11 +6,13 @@
 ---
 --- Everything here is plain text/coordinate analysis -- no treesitter tree
 --- walking happens in this file, that's `_commands.motion.leaf`'s and
---- `_commands.motion.word`'s job; the one treesitter feature this file does
---- use is reading a leaf's `@spell` highlight capture (`:help
+--- `_commands.motion.word`'s job; the treesitter features this file does use
+--- are reading a leaf's `@spell` highlight capture (`:help
 --- treesitter-highlight-spell`) to tell "code" leaves (identifiers, string
 --- content, ...) apart from "prose" leaves (comments, or whatever else a
---- language's highlight query marks as natural-language text).
+--- language's highlight query marks as natural-language text), and reading
+--- the attached parser's language name (`_current_language`) to look up
+--- that language's comment-marker characters (`_comment_marker_characters`).
 ---
 --- `M.split` is the entry point, and composes up to three passes:
 --- `_split_prose_words` runs first, but *only* for `@spell`-tagged leaves --
@@ -249,40 +251,90 @@ local function _split_case(text, camel_case, pascal_case)
     return chunks
 end
 
---- The punctuation characters `comment_marker_case` applies to.
+--- Look up which single characters count as comment-marker punctuation for `language`.
 ---
---- Deliberately a small, curated set rather than "any punctuation" (unlike
---- `_leading_continuation_length`'s leaf-boundary-continuation fix, which
---- has to handle arbitrary tokenization quirks generically): these are the
---- comment-opener characters this plugin has been verified against across
---- grammars (`#` for Python/Bash/Elixir, `/` for Rust/C/JS, `%` for
---- LaTeX/Erlang/Matlab -- see `_leading_continuation_length`'s docstring).
---- Applying `"skip"` to arbitrary punctuation instead would also eat real
---- operator runs (`===`, `**`, ...) that have nothing to do with comments.
---- `-` is deliberately excluded here even though it's a comment marker too
---- (Lua's `--`) -- but only from this fixed set, not from
---- `comment_marker_case` altogether: `_split_delimiters` still routes a
---- bare `-`/`_` run (Lua's `--`, a `-----` separator) through
---- `comment_marker_case`, reserving `kebab_case`/`snake_case` for `-`/`_`
---- that actually sit inside an identifier (`hello-world`).
+--- Deliberately per-language rather than one fixed global set: the same
+--- punctuation means different, unrelated things in different grammars --
+--- `"` opens a comment in Vimscript but closes a string everywhere else;
+--- `;` ends a comment in a treesitter query file but ends a *statement* in
+--- every C-family language. Applying `comment_marker_case` to a character
+--- globally would make `"skip"` start eating string-quote or
+--- statement-terminator leaves in every *other* language that happens to
+--- reuse the same character for something unrelated -- so a character only
+--- ever gets `comment_marker_case` treatment in the languages
+--- `commands.motion.subword.comment_markers` actually lists it for (see
+--- that field's docstring in `types.lua`). A language with no entry at all
+--- has no comment-marker characters, so `comment_marker_case` is silently a
+--- no-op there until the user configures one -- consistent with this
+--- plugin's general approach of only claiming behavior it's actually
+--- verified against a real grammar, never guessing (see
+--- `_leading_continuation_length`'s docstring for the same philosophy
+--- applied to leaf-boundary tokenization quirks).
 ---
----@type table<string, true>
-local _COMMENT_MARKER_CHARACTERS = { ["#"] = true, ["/"] = true, ["%"] = true }
+---@param language string? A treesitter language name (see `_current_language`), or `nil` if unknown.
+---@return table<string, true>
+---
+local function _comment_marker_characters(language)
+    if not language then
+        return {}
+    end
+
+    local markers = configuration.resolve_data().commands.motion.subword.comment_markers
+    local characters = markers and markers[language]
+
+    if not characters then
+        return {}
+    end
+
+    local set = {}
+
+    for _, character in ipairs(characters) do
+        set[character] = true
+    end
+
+    return set
+end
+
+--- The treesitter language attached to the current buffer, if any.
+---
+--- Reads the *language* a parser actually attached
+--- (`vim.treesitter.get_parser():lang()`), not `vim.bo.filetype` -- the two
+--- usually match for the languages this plugin has been verified against,
+--- but don't have to (e.g. a filetype attached to a differently-named
+--- parser). Doesn't attempt injection-aware resolution (a node inside an
+--- injected language block, e.g. a fenced code block in markdown, still
+--- reports the *root* parser's language) -- narrower than fully correct,
+--- but matches every other language-resolution point in this plugin, none
+--- of which are injection-aware either.
+---
+---@return string?
+---
+local function _current_language()
+    local ok, parser = pcall(vim.treesitter.get_parser, 0)
+
+    if not ok or not parser then
+        return nil
+    end
+
+    return parser:lang()
+end
 
 --- Look up how `char` should be treated, per `kebab_case`/`snake_case`/`comment_marker_case`.
 ---
 ---@param char string A single character.
 ---@param kebab_case treemotion.SubwordDelimiterMode How to treat `-`.
 ---@param snake_case treemotion.SubwordDelimiterMode How to treat `_`.
----@param comment_marker_case treemotion.SubwordDelimiterMode How to treat `_COMMENT_MARKER_CHARACTERS`.
+---@param comment_marker_case treemotion.SubwordDelimiterMode How to treat `comment_marker_characters`.
+---@param comment_marker_characters table<string, true> This language's comment-marker punctuation (see
+---    `_comment_marker_characters`).
 ---@return treemotion.SubwordDelimiterMode # `"none"` for any character that isn't covered by one of the three above.
 ---
-local function _delimiter_mode(char, kebab_case, snake_case, comment_marker_case)
+local function _delimiter_mode(char, kebab_case, snake_case, comment_marker_case, comment_marker_characters)
     if char == "-" then
         return kebab_case
     elseif char == "_" then
         return snake_case
-    elseif _COMMENT_MARKER_CHARACTERS[char] then
+    elseif comment_marker_characters[char] then
         return comment_marker_case
     end
 
@@ -321,10 +373,13 @@ end
 ---@param text string A word to split (a whole leaf's text, for code; one `_split_prose_words` word, for prose).
 ---@param kebab_case treemotion.SubwordDelimiterMode How to treat `-` next to real identifier content.
 ---@param snake_case treemotion.SubwordDelimiterMode How to treat `_` next to real identifier content.
----@param comment_marker_case treemotion.SubwordDelimiterMode How to treat `#`/`/`/`%`, or `text`-wide `-`/`_` runs.
+---@param comment_marker_case treemotion.SubwordDelimiterMode How to treat `comment_marker_characters`, or
+---    `text`-wide `-`/`_` runs.
+---@param comment_marker_characters table<string, true> This language's comment-marker punctuation (see
+---    `_comment_marker_characters`).
 ---@return {text: string, offset: integer}[] # Each chunk and its 1-indexed start column in `text`.
 ---
-local function _split_delimiters(text, kebab_case, snake_case, comment_marker_case)
+local function _split_delimiters(text, kebab_case, snake_case, comment_marker_case, comment_marker_characters)
     if not text:find("%w") then
         kebab_case, snake_case = comment_marker_case, comment_marker_case
     end
@@ -334,7 +389,13 @@ local function _split_delimiters(text, kebab_case, snake_case, comment_marker_ca
     local index = 1
 
     while index <= #text do
-        local mode = _delimiter_mode(text:sub(index, index), kebab_case, snake_case, comment_marker_case)
+        local mode = _delimiter_mode(
+            text:sub(index, index),
+            kebab_case,
+            snake_case,
+            comment_marker_case,
+            comment_marker_characters
+        )
 
         if mode == motion_constant.DelimiterMode.none then
             index = index + 1
@@ -347,7 +408,13 @@ local function _split_delimiters(text, kebab_case, snake_case, comment_marker_ca
 
             while
                 run_end < #text
-                and _delimiter_mode(text:sub(run_end + 1, run_end + 1), kebab_case, snake_case, comment_marker_case)
+                and _delimiter_mode(
+                        text:sub(run_end + 1, run_end + 1),
+                        kebab_case,
+                        snake_case,
+                        comment_marker_case,
+                        comment_marker_characters
+                    )
                     == mode
             do
                 run_end = run_end + 1
@@ -557,6 +624,7 @@ function M.split(node)
 
     local is_prose = _is_prose(node)
     local camel_case, pascal_case, kebab_case, snake_case, comment_marker_case = _options(is_prose)
+    local comment_marker_characters = _comment_marker_characters(_current_language())
     local words = is_prose and _split_prose_words(text) or { { text = text, offset = 1 } }
 
     if #words == 0 then
@@ -572,7 +640,9 @@ function M.split(node)
     for _, word in ipairs(words) do
         local word_column = text_start_col + word.offset - 1
 
-        for _, delimited in ipairs(_split_delimiters(word.text, kebab_case, snake_case, comment_marker_case)) do
+        for _, delimited in
+            ipairs(_split_delimiters(word.text, kebab_case, snake_case, comment_marker_case, comment_marker_characters))
+        do
             local column = word_column + delimited.offset - 1
 
             for _, chunk in ipairs(_split_case(delimited.text, camel_case, pascal_case)) do
