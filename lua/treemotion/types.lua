@@ -48,6 +48,24 @@
 ---    text). Splitting a prose leaf first divides it into individual words
 ---    (on whitespace/punctuation, like real Vim's `w` in a text file) before
 ---    either ruleset ever runs; code leaves skip straight to these rules.
+---@field comment_markers table<string, string[]>?
+---    Which single characters count as comment-marker punctuation
+---    (`comment_marker_case`'s target), keyed by treesitter language name
+---    (`vim.treesitter.get_parser():lang()`, e.g. `"lua"`, `"c"`, `"vim"` --
+---    not always the same as `'filetype'`; see `_comment_marker_characters`'s
+---    docstring). Deliberately per-language rather than one fixed global set:
+---    the same punctuation means different things in different grammars --
+---    `"` opens a comment in Vimscript but closes a string everywhere else,
+---    `;` ends a comment in a treesitter query file but ends a *statement* in
+---    every C-family language -- so a character only gets `comment_marker_case`
+---    treatment in the languages it's actually configured for here, never
+---    globally. Unset entries fall back to `_DEFAULTS`' per-language list;
+---    a language with no entry at all has no comment-marker characters, so
+---    `comment_marker_case` is a no-op there until configured. `-`/`_` are
+---    never part of this list -- a bare `-`/`_` run (Lua's `--`, a `-----`
+---    separator) already falls to `comment_marker_case` unconditionally,
+---    language-agnostically, via `kebab_case`/`snake_case`'s own bare-run
+---    rule (see `comment_marker_case`'s docstring below).
 ---@field code treemotion.ConfigurationMotionSubwordRules?
 ---    Splitting rules for leaves that aren't tagged `@spell`.
 ---@field prose treemotion.ConfigurationMotionSubwordRules?
@@ -78,14 +96,16 @@
 ---    real-identifier-content caveat as `kebab_case`: a run that's only `_`
 ---    falls to `comment_marker_case` instead.
 ---@field comment_marker_case treemotion.SubwordDelimiterMode?
----    How to handle a run of `#`/`/`/`%` (common comment-opener punctuation,
----    e.g. Python/Bash `#`, Rust/C/JS `/`, LaTeX/Erlang/Matlab `%`), e.g.
----    `/// text` -> `text` (`"skip"`, jumps straight past a Rust-style `///`
----    marker) or `///`, `text` (`"stop"`, the marker is its own stop first).
----    Also governs `-`/`_` whenever the whole run has no identifier content
----    beside it (Lua's `--` comment opener, a `-----` separator, a `///`
----    doc-comment marker) -- `kebab_case`/`snake_case` only take over once
----    `-`/`_` sits next to a real letter/digit, like `hello-world`.
+---    How to handle a run of the current language's comment-marker
+---    punctuation (see `comment_markers`), e.g. `/// text` -> `text`
+---    (`"skip"`, jumps straight past a Rust-style `///` marker) or `///`,
+---    `text` (`"stop"`, the marker is its own stop first). Also governs
+---    `-`/`_` whenever the whole run has no identifier content beside it
+---    (Lua's `--` comment opener, a `-----` separator, a `///` doc-comment
+---    marker) -- `kebab_case`/`snake_case` only take over once `-`/`_` sits
+---    next to a real letter/digit, like `hello-world`. This one setting
+---    still applies uniformly across languages; only *which characters*
+---    count as a marker in the first place is per-language, via `comment_markers`.
 
 ---@class treemotion.ConfigurationGoodnightMoon
 ---    The default values when a user calls `:TreeMotion goodnight-moon`.
