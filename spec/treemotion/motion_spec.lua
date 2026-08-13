@@ -1,11 +1,15 @@
---- Make sure the treesitter `w`/`e`/`b`/`ge`/`W`/`E`/`B`/`gE` motions work.
+--- Make sure the treesitter `w`/`e`/`b`/`ge`/`W`/`E`/`B`/`gE` motions work,
+--- plus the `subword` (camelCase/kebab_case/snake_case/comment_marker_case)
+--- splitting layered on top of them, and the `:TreeMotion` command wiring.
+---
+--- Cross-grammar coverage of the underlying leaf/gap/run mechanics lives in
+--- `motion_leaf_spec.lua`, `motion_gap_spec.lua`, and
+--- `motion_comment_marker_spec.lua` instead of here -- this file's fixtures
+--- stay Lua-specific because they exercise `subword`'s text-splitting rules
+--- and option plumbing, not grammar-shape generality.
 ---
 --- The fixture text is `foo.bar(1, 2)`, whose leaves are
 --- `foo . bar ( 1 , 2 )` (0-indexed start columns 0, 3, 4, 7, 8, 9, 11, 12).
---- The space before `2` is the only gap, so it splits the leaves into
---- exactly two "WORD" runs: `foo.bar(1,` (columns 0-10) and `2)` (columns
---- 11-13) -- that boundary is what every `W`/`E`/`B`/`gE` test below exists
---- to exercise, since it's the one place `word` and `WORD` motions disagree.
 
 local treemotion = require("treemotion")
 
@@ -42,101 +46,15 @@ describe("motion API - word (leaf) motions", function()
     before_each(_initialize_buffer)
     after_each(_remove_buffer)
 
-    it("#w moves to the start of each next leaf", function()
-        _set_cursor(0)
-
-        local expected = { 3, 4, 7, 8, 9, 11, 12, 12 }
-
-        for _, column in ipairs(expected) do
-            treemotion.run_motion_w()
-            assert.same(column, _get_cursor_column())
-        end
-    end)
-
+    -- Cross-grammar #w/#b/#e/#ge coverage lives in `motion_leaf_spec.lua`;
+    -- `--count` plumbing is Lua-only since it's option handling, not
+    -- grammar-shape generality.
     it("#w with a count moves over multiple leaves at once", function()
         _set_cursor(0)
 
         treemotion.run_motion_w(3)
 
         assert.same(7, _get_cursor_column())
-    end)
-
-    it("#b moves to the start of each previous leaf", function()
-        _set_cursor(12)
-
-        local expected = { 11, 9, 8, 7, 4, 3, 0, 0 }
-
-        for _, column in ipairs(expected) do
-            treemotion.run_motion_b()
-            assert.same(column, _get_cursor_column())
-        end
-    end)
-
-    it("#e moves to the end of the current, then each next, leaf", function()
-        _set_cursor(0)
-
-        local expected = { 2, 3, 6, 7, 8, 9, 11, 12 }
-
-        for _, column in ipairs(expected) do
-            treemotion.run_motion_e()
-            assert.same(column, _get_cursor_column())
-        end
-    end)
-
-    it("#ge moves to the end of each previous leaf", function()
-        _set_cursor(12)
-
-        local expected = { 11, 9, 8, 7, 6, 3, 2, 2 }
-
-        for _, column in ipairs(expected) do
-            treemotion.run_motion_ge()
-            assert.same(column, _get_cursor_column())
-        end
-    end)
-end)
-
-describe("motion API - WORD (contiguous run) motions", function()
-    before_each(_initialize_buffer)
-    after_each(_remove_buffer)
-
-    it("#W jumps over an entire run, not leaf-by-leaf", function()
-        _set_cursor(0)
-
-        treemotion.run_motion_W()
-        assert.same(11, _get_cursor_column())
-
-        treemotion.run_motion_W()
-        assert.same(11, _get_cursor_column()) -- no run after the last one
-    end)
-
-    it("#b moves leaf-by-leaf where #B moves run-by-run", function()
-        _set_cursor(12)
-
-        treemotion.run_motion_B()
-        assert.same(11, _get_cursor_column()) -- to the start of the current run
-
-        treemotion.run_motion_B()
-        assert.same(0, _get_cursor_column()) -- to the start of the previous run
-    end)
-
-    it("#E jumps to the end of the current, then next, run", function()
-        _set_cursor(0)
-
-        treemotion.run_motion_E()
-        assert.same(9, _get_cursor_column())
-
-        treemotion.run_motion_E()
-        assert.same(12, _get_cursor_column())
-    end)
-
-    it("#gE jumps to the end of the previous run, skipping leaves inside it", function()
-        _set_cursor(12)
-
-        treemotion.run_motion_gE()
-        assert.same(9, _get_cursor_column()) -- end of the previous run
-
-        treemotion.run_motion_gE()
-        assert.same(9, _get_cursor_column()) -- no run before the first one
     end)
 end)
 
@@ -365,20 +283,6 @@ describe("motion API - subword unit fallback", function()
     end)
 end)
 
---- A blank line has no treesitter node of its own, so `get_node()` at
---- `(1, 0)` doesn't land on a leaf -- it lands on the whole-buffer `chunk`
---- (the smallest node whose range still covers the blank line), which has
---- children and no useful next/previous sibling of its own. Without
---- specifically handling that, every motion run from a blank line does
---- nothing at all, since the traversal has nowhere to climb to. Leaf
---- columns, both lines: `local`=0, `a`/`b`=6, `=`=8, `1`/`2`=10.
-local function _initialize_blank_line_buffer()
-    _BUFFER = vim.api.nvim_create_buf(false, true)
-    vim.api.nvim_buf_set_lines(_BUFFER, 0, -1, false, { "local a = 1", "", "local b = 2" })
-    vim.api.nvim_set_current_buf(_BUFFER)
-    vim.treesitter.start(_BUFFER, "lua")
-end
-
 ---@param row integer 0-indexed row.
 ---@param column integer 0-indexed column.
 local function _set_cursor_at(row, column)
@@ -392,52 +296,17 @@ local function _get_cursor()
     return cursor[1] - 1, cursor[2]
 end
 
-describe("motion API - blank line gaps", function()
-    before_each(_initialize_blank_line_buffer)
+-- Cross-grammar coverage of blank-line gaps, genuinely multi-row leaves,
+-- and leaves with a partial-coverage child now lives in `motion_gap_spec.lua`.
+-- The two "does nothing on an edgeless blank line" cases stay here since
+-- they're about the traversal's edge behavior, not grammar-shape generality.
+describe("motion API - blank line gaps with no leaf on one side", function()
+    before_each(function()
+        _BUFFER = vim.api.nvim_create_buf(false, true)
+        vim.api.nvim_set_current_buf(_BUFFER)
+        vim.treesitter.start(_BUFFER, "lua")
+    end)
     after_each(_remove_buffer)
-
-    it("#w advances past a blank line to the very next leaf, without overshooting past it", function()
-        _set_cursor_at(1, 0)
-        treemotion.run_motion_w()
-
-        local row, column = _get_cursor()
-        assert.same({ 2, 0 }, { row, column }) -- `local`, not `a` (an un-guarded unconditional step would overshoot)
-    end)
-
-    it("#W does the same at the run level", function()
-        _set_cursor_at(1, 0)
-        treemotion.run_motion_W()
-
-        local row, column = _get_cursor()
-        assert.same({ 2, 0 }, { row, column })
-    end)
-
-    it("#e advances past a blank line to the end of the nearest next leaf", function()
-        _set_cursor_at(1, 0)
-        treemotion.run_motion_e()
-
-        local row, column = _get_cursor()
-        assert.same({ 2, 4 }, { row, column }) -- the end of `local`
-    end)
-
-    it("#b retreats past a blank line to the start of the nearest previous leaf", function()
-        _set_cursor_at(1, 0)
-        treemotion.run_motion_b()
-
-        local row, column = _get_cursor()
-        assert.same({ 0, 10 }, { row, column }) -- the start of `1`
-    end)
-
-    it(
-        "#ge retreats past a blank line to the end of the nearest previous leaf, without overshooting past it",
-        function()
-            _set_cursor_at(1, 0)
-            treemotion.run_motion_ge()
-
-            local row, column = _get_cursor()
-            assert.same({ 0, 10 }, { row, column }) -- `1`, not `=` (an un-guarded unconditional step would overshoot)
-        end
-    )
 
     it("#w does nothing, without erroring, on a blank line with no leaf after it", function()
         vim.api.nvim_buf_set_lines(assert(_BUFFER), 0, -1, false, { "local a = 1", "" })
@@ -458,90 +327,6 @@ describe("motion API - blank line gaps", function()
     end)
 end)
 
-describe("motion API - genuinely multi-row leaves", function()
-    before_each(function()
-        -- `local`(0,0), `x`(0,6), `=`(0,8), `[[`(0,10), `string_content`
-        -- (0,12 - 1,3, text `"foo\nbar"`), `]]`(1,3). `string_content` has
-        -- no trailing blank characters to trim, so `subword`'s row-collapsing
-        -- pass (added for tree-sitter-rust's `doc_comment`, see
-        -- `_single_row_span`'s docstring) must leave it alone -- this is the
-        -- "genuinely spans more than one row" branch of that same check,
-        -- confirming it still falls back to one whole-leaf unit rather than
-        -- being mishandled by the new collapsing logic.
-        _BUFFER = vim.api.nvim_create_buf(false, true)
-        vim.api.nvim_buf_set_lines(_BUFFER, 0, -1, false, { "local x = [[foo", "bar]]" })
-        vim.api.nvim_set_current_buf(_BUFFER)
-        vim.treesitter.start(_BUFFER, "lua")
-    end)
-    after_each(_remove_buffer)
-
-    it("#w lands on the whole multi-row leaf as a single stop, then the leaf after it", function()
-        _set_cursor_at(0, 10) -- the start of `[[`
-
-        treemotion.run_motion_w()
-        local row, column = _get_cursor()
-        assert.same({ 0, 12 }, { row, column }) -- `[[` -> `string_content`'s start, not split at the embedded newline
-
-        treemotion.run_motion_w()
-        row, column = _get_cursor()
-        assert.same({ 1, 3 }, { row, column }) -- straight to `]]`, skipping over `string_content` in one step
-    end)
-
-    it("#b mirrors #w, landing on the multi-row leaf's start from its end", function()
-        _set_cursor_at(1, 3) -- the start of `]]`
-
-        treemotion.run_motion_b()
-        local row, column = _get_cursor()
-        assert.same({ 0, 12 }, { row, column }) -- back to `string_content`'s start, on the first row
-    end)
-end)
-
-describe("motion API - leaves with a partial-coverage child", function()
-    before_each(function()
-        -- `"foo\nbar"` (a literal backslash-n, not an embedded newline)
-        -- parses as `string` = `"`(10-11), `string_content`(11-19),
-        -- `"`(19-20); `string_content` in turn has exactly *one* child,
-        -- `escape_sequence` (14-16, the `\n`) -- `"foo"` (11-14) and `"bar"`
-        -- (16-19) have no node of their own at all, the same "partial
-        -- coverage" shape as tree-sitter-rust's plain `//`/`/* */`
-        -- comments (see `_has_uncovered_text`'s docstring), just
-        -- reproducible with Lua's own grammar instead of needing Rust's.
-        -- Without settling `string_content` as one whole leaf, `w`/`e`/`b`
-        -- from inside `"foo"` used to jump straight to `escape_sequence`
-        -- (0,14), treating `"foo"` as an invisible gap instead of real,
-        -- unreachable content.
-        _BUFFER = vim.api.nvim_create_buf(false, true)
-        vim.api.nvim_buf_set_lines(_BUFFER, 0, -1, false, { [[local x = "foo\nbar"]] })
-        vim.api.nvim_set_current_buf(_BUFFER)
-        vim.treesitter.start(_BUFFER, "lua")
-    end)
-    after_each(_remove_buffer)
-
-    it("#w treats string_content as one whole leaf, not stopping on its embedded escape_sequence", function()
-        _set_cursor_at(0, 11) -- the start of `foo`, uncovered by `escape_sequence`
-
-        treemotion.run_motion_w()
-        local row, column = _get_cursor()
-        assert.same({ 0, 19 }, { row, column }) -- straight to the closing `"`, not `escape_sequence`'s start (14)
-    end)
-
-    it("#e lands on string_content's real last character, past the embedded escape_sequence", function()
-        _set_cursor_at(0, 11) -- the start of `foo`
-
-        treemotion.run_motion_e()
-        local row, column = _get_cursor()
-        assert.same({ 0, 18 }, { row, column }) -- the `r` in `bar`, string_content's own last character
-    end)
-
-    it("#b mirrors #w, from inside `bar` back to string_content's start", function()
-        _set_cursor_at(0, 18) -- the last character of `bar`
-
-        treemotion.run_motion_b()
-        local row, column = _get_cursor()
-        assert.same({ 0, 11 }, { row, column }) -- back to `foo`'s start, string_content's own start
-    end)
-end)
-
 describe("motion API - subword configuration", function()
     before_each(_initialize_subword_buffer)
 
@@ -551,6 +336,14 @@ describe("motion API - subword configuration", function()
             commands = {
                 motion = {
                     subword = {
+                        -- `M.DATA` is one shared, process-wide table (`configuration.lua`'s
+                        -- `merge_data` mutates it in place), so a test that adds a
+                        -- one-off `comment_markers.lua` entry (see the `#`/`/`/`%`
+                        -- tests below) has to explicitly clear it back out here,
+                        -- the same way `code`/`prose` below get a full reset rather
+                        -- than a partial one -- otherwise it would leak into
+                        -- whichever spec file runs next in this same busted process.
+                        comment_markers = { lua = {} },
                         code = {
                             camel_case = true,
                             pascal_case = true,
@@ -603,25 +396,45 @@ describe("motion API - subword configuration", function()
         end
     end)
 
-    it('lands on a `#`/`/`/`%` run as its own stop when #prose.comment_marker_case is "stop" (the default)', function()
-        -- `--` (0), `comment_content` = `" ### heading text"` (2-...) --
-        -- `###` (class "other", per `_char_class`) is its own
-        -- `_split_prose_words` word, isolated by the surrounding blanks, so
-        -- `comment_marker_case` alone decides whether it's a landing stop.
-        vim.api.nvim_buf_set_lines(assert(_BUFFER), 0, -1, false, { "-- ### heading text" })
+    -- `#` isn't Lua's own comment-marker character (only `-` is, and that
+    -- goes through `kebab_case`'s bare-run rule, not this table at all --
+    -- see `comment_markers`' docstring in `types.lua`), so these three
+    -- tests explicitly register it for `"lua"` first, the same way a real
+    -- user would add a custom marker character for a language this plugin
+    -- doesn't already recognize one for.
+    it(
+        'lands on a `#`/`/`/`%`-style run as its own stop when #prose.comment_marker_case is "stop" (the default)',
+        function()
+            treemotion.setup({ commands = { motion = { subword = { comment_markers = { lua = { "#" } } } } } })
 
-        _set_cursor(0)
+            -- `--` (0), `comment_content` = `" ### heading text"` (2-...) --
+            -- `###` (class "other", per `_char_class`) is its own
+            -- `_split_prose_words` word, isolated by the surrounding blanks, so
+            -- `comment_marker_case` alone decides whether it's a landing stop.
+            vim.api.nvim_buf_set_lines(assert(_BUFFER), 0, -1, false, { "-- ### heading text" })
 
-        local expected = { 3, 7, 15, 15 } -- `--`, `###`, `heading`, `text`
+            _set_cursor(0)
 
-        for _, column in ipairs(expected) do
-            treemotion.run_motion_w()
-            assert.same(column, _get_cursor_column())
+            local expected = { 3, 7, 15, 15 } -- `--`, `###`, `heading`, `text`
+
+            for _, column in ipairs(expected) do
+                treemotion.run_motion_w()
+                assert.same(column, _get_cursor_column())
+            end
         end
-    end)
+    )
 
-    it('jumps straight past a `#`/`/`/`%` run when #prose.comment_marker_case is "skip"', function()
-        treemotion.setup({ commands = { motion = { subword = { prose = { comment_marker_case = "skip" } } } } })
+    it('jumps straight past a `#`/`/`/`%`-style run when #prose.comment_marker_case is "skip"', function()
+        treemotion.setup({
+            commands = {
+                motion = {
+                    subword = {
+                        comment_markers = { lua = { "#" } },
+                        prose = { comment_marker_case = "skip" },
+                    },
+                },
+            },
+        })
         vim.api.nvim_buf_set_lines(assert(_BUFFER), 0, -1, false, { "-- ### heading text" })
 
         _set_cursor(0)
@@ -634,8 +447,17 @@ describe("motion API - subword configuration", function()
         end
     end)
 
-    it('leaves a `#`/`/`/`%` run merged into its word when #prose.comment_marker_case is "none"', function()
-        treemotion.setup({ commands = { motion = { subword = { prose = { comment_marker_case = "none" } } } } })
+    it('leaves a `#`/`/`/`%`-style run merged into its word when #prose.comment_marker_case is "none"', function()
+        treemotion.setup({
+            commands = {
+                motion = {
+                    subword = {
+                        comment_markers = { lua = { "#" } },
+                        prose = { comment_marker_case = "none" },
+                    },
+                },
+            },
+        })
         -- With no split at all, `###` stays embedded exactly where
         -- `_split_prose_words` already isolated it -- so this looks
         -- identical to `"stop"` here (a lone, whitespace-bounded run has
