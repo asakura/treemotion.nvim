@@ -113,6 +113,11 @@ describe("default", function()
     it("works with an #commands.motion.subword.comment_markers table with an empty character list", function()
         _assert_good({ commands = { motion = { subword = { comment_markers = { lua = {} } } } } })
     end)
+
+    it("works with #commands.motion.subword.backtick_identifiers set to either boolean", function()
+        _assert_good({ commands = { motion = { subword = { backtick_identifiers = true } } } })
+        _assert_good({ commands = { motion = { subword = { backtick_identifiers = false } } } })
+    end)
 end)
 
 describe("get_comment_markers", function()
@@ -253,6 +258,13 @@ describe("bad configuration - commands", function()
                 "commands.motion.subword.comment_markers: expected a table<string, string[]> "
                     .. "(treesitter language name -> comment-marker characters), got "
             )
+        )
+    end)
+
+    it("happens with a bad type for #commands.motion.subword.backtick_identifiers", function()
+        _assert_bad(
+            { commands = { motion = { subword = { backtick_identifiers = "aaa" } } } },
+            { "commands.motion.subword.backtick_identifiers: expected a boolean, got aaa" }
         )
     end)
 

@@ -191,6 +191,17 @@ local function _get_command_issues(data)
         return true
     end, "a table<string, string[]> (treesitter language name -> comment-marker characters)")
 
+    do
+        local message = _get_boolean_issue(
+            "commands.motion.subword.backtick_identifiers",
+            tabler.get_value(data, { "commands", "motion", "subword", "backtick_identifiers" })
+        )
+
+        if message ~= nil then
+            table.insert(output, message)
+        end
+    end
+
     for _, context in ipairs({ "code", "prose" }) do
         for _, field in ipairs({ "camel_case", "pascal_case" }) do
             local message = _get_boolean_issue(
