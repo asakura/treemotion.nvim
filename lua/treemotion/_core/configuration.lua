@@ -30,6 +30,18 @@ local _DEFAULTS = {
         },
         motion = {
             subword = {
+                comment_markers = {
+                    c = { "/" },
+                    cpp = { "/" },
+                    rust = { "/" },
+                    python = { "#" },
+                    bash = { "#" },
+                    sh = { "#" },
+                    latex = { "%" },
+                    tex = { "%" },
+                    vim = { '"' },
+                    query = { ";" },
+                },
                 code = {
                     camel_case = true,
                     pascal_case = true,
