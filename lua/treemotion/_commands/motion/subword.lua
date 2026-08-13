@@ -347,42 +347,6 @@ local function _split_delimiters(text, kebab_case, snake_case, comment_marker_ca
     return chunks
 end
 
---- How many of `text`'s leading characters continue a punctuation run that
---- started in the character immediately before `node`, on the same line.
----
---- Tokenization is a grammar concern, not a textual one, and this isn't a
---- Lua-only quirk -- e.g. tree-sitter-lua's comment opener is a fixed
---- 2-character `--` literal no matter how many dashes actually follow, so a
---- `---` doc comment's third dash ends up as `comment_content`'s leading
---- character instead of staying part of the same `-` run as its two
---- siblings in the `--` leaf; tree-sitter-rust does the exact same thing
---- one level deeper for `///` outer doc comments, which parse as a `//`
---- leaf, then a *lone* `/` leaf (`outer_doc_comment_marker`), then the
---- `doc_comment` text -- confirmed against the real grammar, not just
---- Lua's. Left alone, that stray leading character would read as a fresh
---- 1-character word/chunk of its own once `M.split` runs on the sibling
---- leaf it landed in -- a landing stop real Vim's `w` would never produce,
---- since a run of same-class punctuation is always one word regardless of
---- how a particular grammar happened to tokenize it. `M.split` strips this
---- many characters off `text` before splitting, so the run's only landing
---- stop stays wherever it started -- in the previous leaf.
----
---- Not restricted to `-`/`_` (the two characters `kebab_case`/`snake_case`
---- know about) -- any non-blank, non-alphanumeric character qualifies,
---- since the same fixed-width-literal-token tokenization can split any
---- punctuation-based comment/doc-comment marker (`#`, `/`, `%`, ...) the
---- same way. Alphanumeric characters are deliberately excluded: an
---- identifier or number split across a leaf boundary is a different,
---- riskier kind of grammar quirk (e.g. a number literal's mantissa and
---- exponent as separate leaves) where blindly merging could swallow a
---- genuinely distinct token instead of a stray delimiter fragment.
----
---- Can return `#text` itself -- tree-sitter-rust's lone `/` leaf (the
---- `outer_doc_comment_marker` mentioned above) is *entirely* consumed this
---- way, not just a prefix of it. `M.split` handles that by producing no
---- units at all for `node` rather than falling back to its full span --
---- see `M.split`'s docstring.
----
 --- Collapse `node` to a single-row span, if it only spans multiple rows
 --- because of trailing blank characters.
 ---
@@ -423,6 +387,42 @@ local function _single_row_span(node, text)
     return trimmed, start_row, start_col + #trimmed
 end
 
+--- How many of `text`'s leading characters continue a punctuation run that
+--- started in the character immediately before `node`, on the same line.
+---
+--- Tokenization is a grammar concern, not a textual one, and this isn't a
+--- Lua-only quirk -- e.g. tree-sitter-lua's comment opener is a fixed
+--- 2-character `--` literal no matter how many dashes actually follow, so a
+--- `---` doc comment's third dash ends up as `comment_content`'s leading
+--- character instead of staying part of the same `-` run as its two
+--- siblings in the `--` leaf; tree-sitter-rust does the exact same thing
+--- one level deeper for `///` outer doc comments, which parse as a `//`
+--- leaf, then a *lone* `/` leaf (`outer_doc_comment_marker`), then the
+--- `doc_comment` text -- confirmed against the real grammar, not just
+--- Lua's. Left alone, that stray leading character would read as a fresh
+--- 1-character word/chunk of its own once `M.split` runs on the sibling
+--- leaf it landed in -- a landing stop real Vim's `w` would never produce,
+--- since a run of same-class punctuation is always one word regardless of
+--- how a particular grammar happened to tokenize it. `M.split` strips this
+--- many characters off `text` before splitting, so the run's only landing
+--- stop stays wherever it started -- in the previous leaf.
+---
+--- Not restricted to `-`/`_` (the two characters `kebab_case`/`snake_case`
+--- know about) -- any non-blank, non-alphanumeric character qualifies,
+--- since the same fixed-width-literal-token tokenization can split any
+--- punctuation-based comment/doc-comment marker (`#`, `/`, `%`, ...) the
+--- same way. Alphanumeric characters are deliberately excluded: an
+--- identifier or number split across a leaf boundary is a different,
+--- riskier kind of grammar quirk (e.g. a number literal's mantissa and
+--- exponent as separate leaves) where blindly merging could swallow a
+--- genuinely distinct token instead of a stray delimiter fragment.
+---
+--- Can return `#text` itself -- tree-sitter-rust's lone `/` leaf (the
+--- `outer_doc_comment_marker` mentioned above) is *entirely* consumed this
+--- way, not just a prefix of it. `M.split` handles that by producing no
+--- units at all for `node` rather than falling back to its full span --
+--- see `M.split`'s docstring.
+---
 ---@param node TSNode The leaf `text` came from.
 ---@param text string `node`'s full text (see `M.split`).
 ---@return integer # 0 if `text`'s start doesn't continue a punctuation run.
