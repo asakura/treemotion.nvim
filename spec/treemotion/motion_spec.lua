@@ -340,14 +340,14 @@ describe("motion API - subword configuration", function()
             commands = {
                 motion = {
                     subword = {
-                        -- `M.DATA` is one shared, process-wide table (`configuration.lua`'s
-                        -- `merge_data` mutates it in place), so a test that adds a
-                        -- one-off `comment_markers.lua` entry (see the `#`/`/`/`%`
-                        -- tests below) has to explicitly clear it back out here,
-                        -- the same way `code`/`prose` below get a full reset rather
-                        -- than a partial one -- otherwise it would leak into
-                        -- whichever spec file runs next in this same busted process.
-                        comment_markers = { lua = {} },
+                        -- `M.DATA` is one shared, process-wide table, so a test that
+                        -- adds a one-off `comment_markers.lua` entry (see the
+                        -- `#`/`/`/`%` tests below) has to explicitly restore it here,
+                        -- the same way `code`/`prose` below get a full reset. Restore
+                        -- to `_DEFAULTS`' own `{ "-" }`, not `{}` -- otherwise this
+                        -- leaks into whichever spec file runs next in the same
+                        -- busted process.
+                        comment_markers = { lua = { "-" } },
                         code = {
                             camel_case = true,
                             pascal_case = true,
@@ -511,10 +511,7 @@ describe("motion API - subword configuration", function()
             -- `--` run entirely, while `kebab_case` (still the default
             -- `"stop"`) keeps splitting `hello-world`'s embedded `-` as its
             -- own stop -- the two settings tune independently even though
-            -- both apply to `-`. `-` has to be registered in
-            -- `comment_markers.lua` (this describe block's `after_each`
-            -- resets it to `{}`) for `comment_marker_case` to govern `--`
-            -- at all. The cursor starts on the line *before* `--`, so `w`
+            -- both apply to `-`. The cursor starts on the line *before* `--`, so `w`
             -- actually approaches it from outside -- landing straight on
             -- `hello` proves `--` itself was skipped, not just that the
             -- first `w` moved past wherever the cursor happened to start.
@@ -551,11 +548,7 @@ describe("motion API - subword configuration", function()
             -- naive "no units -> fall back to the whole leaf" rule would
             -- silently turn `"skip"` back into a stop for it on *every*
             -- line, not just coincidentally not-noticing it on the first
-            -- one the cursor already started on. This describe block's
-            -- `after_each` resets `comment_markers.lua` to `{}`, so `-`
-            -- has to be registered again here for `comment_marker_case` to
-            -- govern the bare `--` run at all (see `_DEFAULTS`' own
-            -- `lua = { "-" }`, which this mirrors).
+            -- one the cursor already started on.
             treemotion.setup({
                 commands = {
                     motion = {

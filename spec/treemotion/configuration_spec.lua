@@ -115,6 +115,83 @@ describe("default", function()
     end)
 end)
 
+describe("get_comment_markers", function()
+    ---@type treemotion.ResolvedConfiguration
+    local _snapshot
+
+    before_each(function()
+        _snapshot = vim.deepcopy(configuration_.DATA)
+
+        -- `M.DATA` is one shared, process-wide table, and `motion_spec.lua`'s
+        -- "subword configuration" describe block deliberately leaves `lua`'s
+        -- `comment_markers` zeroed out to `{}` in its own `after_each` (see
+        -- its comment) -- a leak into whichever spec file runs next in the
+        -- same busted process. Force the real shipped default back before
+        -- every test here so these assertions don't depend on file run order.
+        configuration_.DATA.commands.motion.subword.comment_markers.lua = { "-" }
+        configuration_.DATA.commands.motion.subword.comment_markers.toml = nil
+    end)
+
+    after_each(function()
+        configuration_.DATA = _snapshot
+    end)
+
+    it("returns a shipped #_DEFAULTS entry unchanged", function()
+        assert.same({ "-" }, configuration_.get_comment_markers("lua"))
+    end)
+
+    it(
+        "prefers a user-configured #comment_markers override over both the shipped default "
+            .. "and the _OPTIONAL_COMMENT_MARKERS table",
+        function()
+            configuration_.merge_data({
+                commands = { motion = { subword = { comment_markers = { lua = { "@" }, toml = { "@" } } } } },
+            })
+
+            -- `lua` is a shipped default (`_DEFAULTS`' `"-"`); `toml` only exists
+            -- in `_OPTIONAL_COMMENT_MARKERS` (`"#"`) -- the override wins in both cases.
+            assert.same({ "@" }, configuration_.get_comment_markers("lua"))
+            assert.same({ "@" }, configuration_.get_comment_markers("toml"))
+        end
+    )
+
+    it("resolves an #_OPTIONAL_COMMENT_MARKERS entry when the language's treesitter parser is installed", function()
+        -- `toml` isn't one of Neovim's bundled grammars, but the Nix-driven
+        -- dev-shell/`nix run .#test` suite's `treesitterAllGrammars` (see
+        -- `flake.nix`) makes it available there -- consistent with how
+        -- `motion_leaf_spec.lua`/`motion_gap_spec.lua` already rely on
+        -- grammars beyond the bundled set. `nix build '.#treemotion-nvim'`'s
+        -- own `checkPhase`, though, only has Neovim's 6 bundled grammars, so
+        -- guard this the same way `grammar_helpers.lua`'s cross-grammar
+        -- fixtures do, rather than asserting a parser that may not exist here.
+        if not vim.treesitter.language.add("toml") then
+            ---@diagnostic disable-next-line: missing-parameter
+            pending('no "toml" treesitter parser installed')
+
+            return
+        end
+
+        assert.same({ "#" }, configuration_.get_comment_markers("toml"))
+    end)
+
+    it("returns nil for an #_OPTIONAL_COMMENT_MARKERS entry when the language's parser is not installed", function()
+        -- The bundled busted/luassert LuaCATS stubs only declare `stub.new`'s
+        -- return type, not the fluent `.returns(...)` builder method it
+        -- actually has at runtime (same kind of stub-coverage gap as
+        -- `pending(reason)` in `grammar_helpers.lua`).
+        ---@diagnostic disable-next-line: undefined-field
+        local add_stub = stub(vim.treesitter.language, "add").returns(false)
+
+        assert.is_nil(configuration_.get_comment_markers("toml"))
+
+        add_stub:revert()
+    end)
+
+    it("returns nil for a language absent from both #_DEFAULTS and #_OPTIONAL_COMMENT_MARKERS", function()
+        assert.is_nil(configuration_.get_comment_markers("not_a_real_language"))
+    end)
+end)
+
 ---@diagnostic disable: assign-type-mismatch
 ---@diagnostic disable: missing-fields
 describe("bad configuration - commands", function()
