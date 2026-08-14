@@ -16,10 +16,33 @@
 --- inside the same leaf be a cheap index bump, only falling back to
 --- `_commands.motion.leaf` (and re-splitting) once a leaf's units run out.
 
+local logging = require("mega.logging")
+
 local leaf = require("treemotion._commands.motion.leaf")
 local subword = require("treemotion._commands.motion.subword")
 
+local _LOGGER = logging.get_logger("treemotion._commands.motion.word")
+
 local M = {}
+
+--- Log `name`'s result at debug level -- shared by `M.current_unit`/
+--- `M.next_unit`/`M.previous_unit` below, so a sub-word step's outcome (or
+--- lack of one) is reported the same way no matter which of them produced it.
+---
+---@param name string The wrapped function's name (plus any arguments worth reporting), for the log message.
+---@param unit treemotion.WordUnit? The result to report.
+---
+local function _log_unit_result(name, unit)
+    if not unit then
+        _LOGGER:fmt_debug("%s -> nil.", name)
+
+        return
+    end
+
+    local row, column = unit:start()
+
+    _LOGGER:fmt_debug("%s -> unit %s/%s at %s:%s.", name, unit._index, #unit._units, row, column)
+end
 
 --- One sub-word slice of a leaf, plus enough context to step to its neighbors.
 ---
@@ -130,6 +153,8 @@ function M.current_unit(forward)
         _first_nonempty_split(leaf.current_leaf(forward), forward and leaf.next_leaf or leaf.previous_leaf)
 
     if not node then
+        _log_unit_result(string.format("current_unit(forward=%s)", forward), nil)
+
         return nil
     end
 
@@ -140,7 +165,11 @@ function M.current_unit(forward)
 
     local row, column = leaf.cursor_position()
 
-    return _new_unit(node, units, _index_at(units, row, column))
+    local unit = _new_unit(node, units, _index_at(units, row, column))
+
+    _log_unit_result(string.format("current_unit(forward=%s)", forward), unit)
+
+    return unit
 end
 
 --- Find the sub-word unit directly after `unit`, in document order.
@@ -154,17 +183,29 @@ end
 ---@param unit treemotion.WordUnit
 ---@return treemotion.WordUnit? # The next sub-word unit, if `unit` isn't the last in the tree.
 function M.next_unit(unit)
+    local name = string.format("next_unit(unit %s/%s)", unit._index, #unit._units)
+
     if unit._index < #unit._units then
-        return _new_unit(unit._leaf, unit._units, unit._index + 1)
+        local result = _new_unit(unit._leaf, unit._units, unit._index + 1)
+
+        _log_unit_result(name, result)
+
+        return result
     end
 
     local node, units = _first_nonempty_split(leaf.next_leaf(unit._leaf), leaf.next_leaf)
 
     if not node then
+        _log_unit_result(name, nil)
+
         return nil
     end
 
-    return _new_unit(node, assert(units), 1)
+    local result = _new_unit(node, assert(units), 1)
+
+    _log_unit_result(name, result)
+
+    return result
 end
 
 --- Find the sub-word unit directly before `unit`, in document order.
@@ -176,19 +217,31 @@ end
 ---@param unit treemotion.WordUnit
 ---@return treemotion.WordUnit? # The previous sub-word unit, if `unit` isn't the first in the tree.
 function M.previous_unit(unit)
+    local name = string.format("previous_unit(unit %s/%s)", unit._index, #unit._units)
+
     if unit._index > 1 then
-        return _new_unit(unit._leaf, unit._units, unit._index - 1)
+        local result = _new_unit(unit._leaf, unit._units, unit._index - 1)
+
+        _log_unit_result(name, result)
+
+        return result
     end
 
     local node, units = _first_nonempty_split(leaf.previous_leaf(unit._leaf), leaf.previous_leaf)
 
     if not node then
+        _log_unit_result(name, nil)
+
         return nil
     end
 
     units = assert(units)
 
-    return _new_unit(node, units, #units)
+    local result = _new_unit(node, units, #units)
+
+    _log_unit_result(name, result)
+
+    return result
 end
 
 return M

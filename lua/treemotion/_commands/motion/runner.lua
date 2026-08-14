@@ -21,9 +21,13 @@
 --- apart: `_move_word_*` steps `_commands.motion.word` units,
 --- `_move_bigword_*` steps `_commands.motion.bigword` units.
 
+local logging = require("mega.logging")
+
 local leaf = require("treemotion._commands.motion.leaf")
 local bigword = require("treemotion._commands.motion.bigword")
 local word = require("treemotion._commands.motion.word")
+
+local _LOGGER = logging.get_logger("treemotion._commands.motion.runner")
 
 local M = {}
 
@@ -341,12 +345,37 @@ local function _move_bigword_backward_to_start(count)
     end
 end
 
+--- Run `move`, logging the cursor's position before and after.
+---
+--- Every `M.run_*` entry point goes through this, since it's where a
+--- keymap/`:TreeMotion motion` invocation actually starts -- logging here
+--- (rather than inside each `_move_*` helper) covers all eight motions with
+--- one implementation, and reports exactly what a user would want to
+--- reproduce a "cursor didn't land where I expected" report: which motion
+--- ran, with what `count`, from where, to where.
+---
+---@param name string The motion's Vim-facing name (`"w"`, `"gE"`, ...), for the log message.
+---@param move fun(count: integer): nil One of the `_move_*` helpers above.
+---@param count integer How many units to move over.
+---
+local function _run(name, move, count)
+    local start_row, start_column = leaf.cursor_position()
+
+    _LOGGER:fmt_debug('Running treemotion motion "%s" (count=%s) from %s:%s.', name, count, start_row, start_column)
+
+    move(count)
+
+    local end_row, end_column = leaf.cursor_position()
+
+    _LOGGER:fmt_debug('Finished treemotion motion "%s" at %s:%s.', name, end_row, end_column)
+end
+
 --- Move like `w`: to the start of the next sub-word unit.
 ---
 ---@param count number? A 1-or-more value. How many units to move over.
 ---
 function M.run_w(count)
-    _move_word_forward_to_start(count or 1)
+    _run("w", _move_word_forward_to_start, count or 1)
 end
 
 --- Move like `ge`: to the end of the previous sub-word unit.
@@ -354,7 +383,7 @@ end
 ---@param count number? A 1-or-more value. How many units to move over.
 ---
 function M.run_ge(count)
-    _move_word_backward_to_end(count or 1)
+    _run("ge", _move_word_backward_to_end, count or 1)
 end
 
 --- Move like `e`: to the end of the current or next sub-word unit.
@@ -362,7 +391,7 @@ end
 ---@param count number? A 1-or-more value. How many units to move over.
 ---
 function M.run_e(count)
-    _move_word_forward_to_end(count or 1)
+    _run("e", _move_word_forward_to_end, count or 1)
 end
 
 --- Move like `b`: to the start of the current or previous sub-word unit.
@@ -370,7 +399,7 @@ end
 ---@param count number? A 1-or-more value. How many units to move over.
 ---
 function M.run_b(count)
-    _move_word_backward_to_start(count or 1)
+    _run("b", _move_word_backward_to_start, count or 1)
 end
 
 --- Move like `W`: to the start of the next run of contiguous treesitter leaves
@@ -379,7 +408,7 @@ end
 ---@param count number? A 1-or-more value. How many units to move over.
 ---
 function M.run_W(count)
-    _move_bigword_forward_to_start(count or 1)
+    _run("W", _move_bigword_forward_to_start, count or 1)
 end
 
 --- Move like `gE`: to the end of the previous run of contiguous treesitter leaves
@@ -388,7 +417,7 @@ end
 ---@param count number? A 1-or-more value. How many units to move over.
 ---
 function M.run_gE(count)
-    _move_bigword_backward_to_end(count or 1)
+    _run("gE", _move_bigword_backward_to_end, count or 1)
 end
 
 --- Move like `E`: to the end of the current or next run of contiguous treesitter leaves
@@ -397,7 +426,7 @@ end
 ---@param count number? A 1-or-more value. How many units to move over.
 ---
 function M.run_E(count)
-    _move_bigword_forward_to_end(count or 1)
+    _run("E", _move_bigword_forward_to_end, count or 1)
 end
 
 --- Move like `B`: to the start of the current or previous run of contiguous treesitter leaves
@@ -406,7 +435,7 @@ end
 ---@param count number? A 1-or-more value. How many units to move over.
 ---
 function M.run_B(count)
-    _move_bigword_backward_to_start(count or 1)
+    _run("B", _move_bigword_backward_to_start, count or 1)
 end
 
 return M

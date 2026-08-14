@@ -42,9 +42,13 @@
 --- `w`/`b`/`e`/`ge`, the same way a `"skip"` comment-marker run already is.
 --- See `_split_backtick_identifiers`.
 
+local logging = require("mega.logging")
+
 local configuration = require("treemotion._core.configuration")
 local leaf = require("treemotion._commands.motion.leaf")
 local motion_constant = require("treemotion._commands.motion.constant")
+
+local _LOGGER = logging.get_logger("treemotion._commands.motion.subword")
 
 local M = {}
 
@@ -972,7 +976,7 @@ end
 ---    dropped (`"skip"`) delimiter run with no other content; otherwise
 ---    `node`'s full span if nothing else splits it.
 ---
-function M.split(node)
+local function _split(node)
     local start_row, start_col = node:start()
     local end_row, end_col = node:end_()
     local text = vim.treesitter.get_node_text(node, 0)
@@ -1018,6 +1022,21 @@ function M.split(node)
         "small",
         comment_marker_characters
     )
+end
+
+--- Split `node`'s text into sub-word units, per `commands.motion.small` --
+--- logging wrapper around `_split`.
+---
+---@param node TSNode Any leaf (see `_commands.motion.leaf`).
+---@return treemotion.SubwordUnit[] # See `_split`'s docstring.
+---
+function M.split(node)
+    local units = _split(node)
+    local row, column = node:start()
+
+    _LOGGER:fmt_debug("split(%s at %s:%s) -> %s unit(s).", node:type(), row, column, #units)
+
+    return units
 end
 
 --- Break the run from `start_node` to `end_node` into maximal stretches of
@@ -1161,7 +1180,7 @@ end
 ---    (`"skip"`) delimiter run with no other content -- same as `M.split`, see `_split_text`'s docstring;
 ---    otherwise the run's full (trimmed) span if nothing else splits it.
 ---
-function M.split_run(start_node, end_node)
+local function _split_run(start_node, end_node)
     local start_row, start_col = start_node:start()
     local end_row, end_col = end_node:end_()
 
@@ -1185,6 +1204,31 @@ function M.split_run(start_node, end_node)
     for _, segment in ipairs(_run_segments(start_node, end_node)) do
         vim.list_extend(units, _split_run_segment(segment, "big", comment_marker_characters))
     end
+
+    return units
+end
+
+--- Split the contiguous run from `start_node` to `end_node`'s text into
+--- sub-word units, per `commands.motion.big` -- logging wrapper around `_split_run`.
+---
+---@param start_node TSNode The run's first leaf (e.g. `leaf.run_start(node)`).
+---@param end_node TSNode The run's last leaf (e.g. `leaf.run_end(node)`).
+---@return treemotion.SubwordUnit[] # See `_split_run`'s docstring.
+---
+function M.split_run(start_node, end_node)
+    local units = _split_run(start_node, end_node)
+    local start_row, start_col = start_node:start()
+    local end_row, end_col = end_node:end_()
+
+    _LOGGER:fmt_debug(
+        "split_run(%s at %s:%s -> %s:%s) -> %s unit(s).",
+        start_node:type(),
+        start_row,
+        start_col,
+        end_row,
+        end_col,
+        #units
+    )
 
     return units
 end
