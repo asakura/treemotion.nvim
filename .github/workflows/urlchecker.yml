@@ -60,6 +60,7 @@ jobs:
         urlchecker check \
           --branch main \
           --subfolder lua \
+          --exclude-patterns "https://host/path" \
           --no-print \
           --file-types .json,.lua,.md,.txt,.vim,.yml \
           --retry-count 1 \
