@@ -146,6 +146,20 @@ describe("default", function()
         _assert_good({ commands = { motion = { comment_markers = { lua = {} } } } })
     end)
 
+    it("works with a #commands.motion.insignificant_characters table with several languages", function()
+        _assert_good({
+            commands = {
+                motion = {
+                    insignificant_characters = { lua = { ";" }, python = { ":" } },
+                },
+            },
+        })
+    end)
+
+    it("works with an #commands.motion.insignificant_characters table with an empty character list", function()
+        _assert_good({ commands = { motion = { insignificant_characters = { lua = {} } } } })
+    end)
+
     it("works with #commands.motion.small/big.backtick_identifiers set to either boolean", function()
         _assert_good({ commands = { motion = { small = { backtick_identifiers = true } } } })
         _assert_good({ commands = { motion = { small = { backtick_identifiers = false } } } })
@@ -231,6 +245,35 @@ describe("get_comment_markers", function()
     end)
 end)
 
+describe("get_insignificant_characters", function()
+    ---@type treemotion.ResolvedConfiguration
+    local _snapshot
+
+    before_each(function()
+        _snapshot = vim.deepcopy(configuration_.DATA)
+    end)
+
+    after_each(function()
+        configuration_.DATA = _snapshot
+    end)
+
+    it("returns nil for a language with no configured entry -- #_DEFAULTS ships empty", function()
+        -- Unlike `get_comment_markers`, there's no `_OPTIONAL_COMMENT_MARKERS`-style
+        -- auto-detected fallback here -- a parser being installed (Lua's
+        -- always is) makes no difference; only a user override does. See
+        -- `M.get_insignificant_characters`'s docstring.
+        assert.is_nil(configuration_.get_insignificant_characters("lua"))
+    end)
+
+    it("returns a user-configured #insignificant_characters override", function()
+        configuration_.merge_data({
+            commands = { motion = { insignificant_characters = { lua = { ";" } } } },
+        })
+
+        assert.same({ ";" }, configuration_.get_insignificant_characters("lua"))
+    end)
+end)
+
 ---@diagnostic disable: assign-type-mismatch
 ---@diagnostic disable: missing-fields
 describe("bad configuration - commands", function()
@@ -291,6 +334,31 @@ describe("bad configuration - commands", function()
                 issues[1],
                 "commands.motion.comment_markers: expected a table<string, string[]> "
                     .. "(treesitter language name -> comment-marker characters), got "
+            )
+        )
+    end)
+
+    it("happens with a bad type for #commands.motion.insignificant_characters", function()
+        _assert_bad({ commands = { motion = { insignificant_characters = "aaa" } } }, {
+            "commands.motion.insignificant_characters: expected a table<string, string[]> "
+                .. "(treesitter language name -> insignificant leaf texts), got aaa",
+        })
+    end)
+
+    it("happens with a bad shape for #commands.motion.insignificant_characters", function()
+        -- Same reasoning as the identical `comment_markers` test above: the
+        -- bad value is a *table*, so only the message's stable prefix is
+        -- checked here, not an exact match.
+        local issues = health.get_issues(configuration_.resolve_data({
+            commands = { motion = { insignificant_characters = { lua = "aaa" } } },
+        }))
+
+        assert.same(1, #issues)
+        assert.is_true(
+            vim.startswith(
+                issues[1],
+                "commands.motion.insignificant_characters: expected a table<string, string[]> "
+                    .. "(treesitter language name -> insignificant leaf texts), got "
             )
         )
     end)
@@ -454,6 +522,26 @@ describe("health.check", function()
         assert.same({
             'No treesitter parser named "not_a_real_language" is installed, '
                 .. "so `comment_markers.not_a_real_language` has no effect until one is.",
+        }, mock_vim.get_vim_health_warnings())
+    end)
+
+    it(
+        "doesn't warn about a user #commands.motion.insignificant_characters language with an installed parser",
+        function()
+            health.check({ commands = { motion = { insignificant_characters = { lua = { ";" } } } } })
+
+            assert.same({}, mock_vim.get_vim_health_warnings())
+        end
+    )
+
+    it("warns about a user #commands.motion.insignificant_characters language with no installed parser", function()
+        health.check({
+            commands = { motion = { insignificant_characters = { not_a_real_language = { ";" } } } },
+        })
+
+        assert.same({
+            'No treesitter parser named "not_a_real_language" is installed, '
+                .. "so `insignificant_characters.not_a_real_language` has no effect until one is.",
         }, mock_vim.get_vim_health_warnings())
     end)
 

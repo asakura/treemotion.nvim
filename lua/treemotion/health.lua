@@ -199,6 +199,33 @@ local function _get_command_issues(data)
         return true
     end, "a table<string, string[]> (treesitter language name -> comment-marker characters)")
 
+    _append_validated(output, "commands.motion.insignificant_characters", function()
+        return tabler.get_value(data, { "commands", "motion", "insignificant_characters" })
+    end, function(value)
+        if value == nil then
+            -- This value is optional so it's fine if it is not defined.
+            return true
+        end
+
+        if type(value) ~= "table" then
+            return false
+        end
+
+        for language, characters in pairs(value) do
+            if type(language) ~= "string" or type(characters) ~= "table" then
+                return false
+            end
+
+            for _, character in ipairs(characters) do
+                if type(character) ~= "string" then
+                    return false
+                end
+            end
+        end
+
+        return true
+    end, "a table<string, string[]> (treesitter language name -> insignificant leaf texts)")
+
     do
         local message = _get_boolean_issue(
             "commands.motion.big.enabled",
@@ -443,6 +470,56 @@ local function _check_comment_markers(raw)
     end
 end
 
+--- Warn (never error) if a `commands.motion.insignificant_characters` key
+--- the *user* configured names a treesitter language with no installed
+--- parser.
+---
+--- Mirrors `_check_comment_markers` exactly -- see its docstring for the
+--- general shape. The one difference: there are no shipped defaults or
+--- `_OPTIONAL_COMMENT_MARKERS`-style auto-detected fallback to exempt here in
+--- the first place, since `insignificant_characters` ships empty and is
+--- opt-in only (see its docstring in `types.lua`) -- every entry this
+--- function ever sees came from the user, so there's nothing to distinguish
+--- "shipped" from "user-configured" the way `_check_comment_markers` has to.
+---
+---@param raw treemotion.Configuration The user's own configuration, unresolved.
+---
+local function _check_insignificant_characters(raw)
+    local characters = tabler.get_value(raw, { "commands", "motion", "insignificant_characters" })
+
+    if type(characters) ~= "table" or vim.tbl_isempty(characters) then
+        return
+    end
+
+    local languages = vim.tbl_keys(characters)
+    table.sort(languages)
+
+    local missing = {}
+
+    for _, language in ipairs(languages) do
+        if type(language) == "string" and not vim.treesitter.language.add(language) then
+            table.insert(missing, language)
+        end
+    end
+
+    if vim.tbl_isempty(missing) then
+        return
+    end
+
+    vim.health.start("Insignificant characters")
+
+    for _, language in ipairs(missing) do
+        vim.health.warn(
+            string.format(
+                'No treesitter parser named "%s" is installed, so '
+                    .. "`insignificant_characters.%s` has no effect until one is.",
+                language,
+                language
+            )
+        )
+    end
+end
+
 --- Make sure `data` will work for `treemotion`.
 ---
 ---@param data treemotion.Configuration? All extra customizations for this plugin.
@@ -464,6 +541,7 @@ function M.check(data)
 
     _check_motion()
     _check_comment_markers(data or vim.g.treemotion_configuration or {})
+    _check_insignificant_characters(data or vim.g.treemotion_configuration or {})
 end
 
 return M

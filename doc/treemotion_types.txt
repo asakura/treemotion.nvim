@@ -79,6 +79,25 @@ Fields ~
        configuration needed, as soon as their treesitter parser is installed
        -- see `_OPTIONAL_COMMENT_MARKERS` in `configuration.lua` for the full
        list and `configuration.get_comment_markers` for the resolution order.
+    {insignificant_characters} table<`(string)`, `(string)`[]>?
+       Leaf-level tokens (e.g. `";"`, `"{"`, `"}"`, `"["`, `"]"`) that
+       `w`/`e`/`b`/`ge`/`W`/`E`/`B`/`gE` treat as entirely invisible, keyed by
+       treesitter language name -- same per-language-name convention as
+       `comment_markers`. A configured entry must match a leaf's **entire**
+       text exactly (not a substring it merely contains), so multi-character
+       tokens (`"->"`, `"::"`) work too, not just single characters. Only
+       applies to **code** leaves: a leaf tagged `@spell`/`@string` (prose, or
+       string content) never has any of its characters treated as
+       insignificant, since prose already does its own punctuation-is-a-word
+       splitting (`_split_prose_words`), deliberately mirroring how real Vim's
+       `w` treats punctuation as a landing stop in a text file -- the same
+       reason `.code`/`.prose` are configured separately everywhere else in
+       this type. The character itself is still real buffer text (`x`, `dd`,
+       highlighting, ... are all unaffected); only word-motion traversal
+       ignores it. Defaults to `{}` for every language -- unlike
+       `comment_markers`, this has no shipped or auto-detected defaults:
+       which punctuation counts as "insignificant" is a personal taste call,
+       not an objective fact about a grammar, so it's opt-in only.
 
 ------------------------------------------------------------------------------
 *treemotion.ConfigurationMotionGroup*

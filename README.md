@@ -381,6 +381,53 @@ tables rather than guessed at; add them yourself via
 `commands.motion.comment_markers` if you need them (see
 `Configuration` below).
 
+#### Insignificant characters
+
+Punctuation like `.`, `=`, `{`, `}`, `;`, `[`, `]` is usually its own leaf,
+so `w`/`e`/`b`/`ge` stop on it just like any other leaf by default -- real
+treesitter-driven motion, but noisier than skimming past it entirely.
+`commands.motion.insignificant_characters`, keyed by treesitter language
+name (same convention as `comment_markers`), lists leaf texts that should be
+invisible to word motions instead:
+
+```lua
+commands = {
+    motion = {
+        insignificant_characters = {
+            lua = { ";" },
+        },
+    },
+},
+```
+
+With that set, `w`/`b` glide straight past a `;` leaf to the next/previous
+real leaf, the same way a `comment_marker_case = "skip"` run already isn't a
+landing stop. It's still real buffer text -- `x`, `dd`, highlighting, and
+everything else are unaffected; only word-motion traversal ignores it. An
+entry has to match a leaf's **entire** text exactly, not merely appear
+inside it, so a multi-character token (`"->"`, `"::"`) works too, not just a
+single character.
+
+This applies to **code** leaves only -- a leaf tagged `@spell`/`@string`
+(prose, or string content) never has any of its characters treated as
+insignificant, since prose already does its own punctuation-is-a-word
+splitting (see `Comments and prose` above). A `;` inside a comment or string
+still stops `w` as normal.
+
+Unlike `comment_markers`, this ships with **no** defaults at all -- comment
+syntax is an objective fact about a grammar, but which punctuation counts as
+"insignificant" is a personal taste call (some setups want `w` to stop on
+`{`/`}` to jump between blocks), so it's opt-in only. `:checkhealth treemotion` warns the same way `comment_markers` does if a language you add
+here has no treesitter parser installed.
+
+`W`/`E`/`B`/`gE` (below) respect the same setting too: an insignificant
+leaf that would otherwise form its own isolated run (e.g. `foo ; bar`, with
+whitespace on both sides of `;`) is no longer its own stop either. A run
+that mixes an insignificant leaf with others and no whitespace (`foo;bar`)
+is unaffected either way -- it was already one stop before this setting
+existed, since `W`/`E`/`B`/`gE` never stopped on punctuation glued to its
+neighbors in the first place.
+
 ### `W` / `E` / `B` / `gE` (WORD motions)
 
 Move one contiguous _run_ of leaves at a time -- a run is a maximal
@@ -433,6 +480,11 @@ works as expected:
                     query = { ";" },
                     lua = { "-" },
                 },
+                -- Leaf-level tokens that are invisible to word motions
+                -- entirely, per treesitter language, for code leaves only
+                -- (prose is never affected). Ships empty -- opt-in only,
+                -- unlike `comment_markers` above.
+                insignificant_characters = {},
                 -- `w`/`e`/`b`/`ge`: sub-word splitting within one leaf.
                 small = {
                     -- Whether a backtick-enclosed single word within prose

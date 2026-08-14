@@ -42,6 +42,7 @@ local _DEFAULTS = {
                 query = { ";" },
                 lua = { "-" },
             },
+            insignificant_characters = {},
             small = {
                 backtick_identifiers = true,
                 code = {
@@ -311,6 +312,25 @@ function M.get_comment_markers(language)
     end
 
     return nil
+end
+
+--- Look up `language`'s insignificant leaf texts -- leaf-level tokens (e.g.
+--- `";"`, `"{"`, `"}"`) that `w`/`e`/`b`/`ge`/`W`/`E`/`B`/`gE` treat as
+--- invisible for **code** leaves (see `_commands.motion.subword`'s
+--- `_is_insignificant` for why prose is exempt).
+---
+--- Unlike `M.get_comment_markers`, there's no `_OPTIONAL_COMMENT_MARKERS`-style
+--- auto-detected fallback here -- which punctuation counts as "insignificant"
+--- is a personal taste call, not an objective fact about a grammar the way
+--- comment syntax is, so this is opt-in only, via `commands.motion.insignificant_characters`.
+---
+---@param language string A treesitter language name.
+---@return string[]?
+---
+function M.get_insignificant_characters(language)
+    M.initialize_data_if_needed()
+
+    return M.DATA.commands.motion.insignificant_characters[language]
 end
 
 --- Merge `data` into the current configuration, in-place.

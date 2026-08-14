@@ -576,6 +576,74 @@ local function _current_language()
     return parser:lang()
 end
 
+--- Whether `node` should be treated as invisible to `w`/`e`/`b`/`ge` (and, via
+--- `M.is_insignificant`, `W`/`E`/`B`/`gE`) entirely -- a leaf-level token
+--- (`;`, `{`, `}`, ...) the user has configured as insignificant for its
+--- language, via `commands.motion.insignificant_characters`.
+---
+--- Code leaves only: prose (`@spell`-/`@string`-tagged, see `_is_prose`)
+--- keeps every character significant, since prose already does its own
+--- punctuation-is-a-word splitting (`_split_prose_words`), deliberately
+--- mirroring how real Vim's `w` treats punctuation as a landing stop in a
+--- text file -- the same reason `.code`/`.prose` are configured separately
+--- everywhere else in this module. Deliberately not injection-aware, same as
+--- every other language-resolution point in this module (see
+--- `_current_language`'s docstring).
+---
+--- `pcall` guards `get_node_text`: `bigword.lua`'s `_run_is_insignificant`
+--- calls this for every leaf in a candidate run *before* `M.split_run` ever
+--- runs, so a read that would otherwise only ever fail inside
+--- `_split_run_segment`'s own already-guarded call (a leaf's `:end_()`
+--- sitting one row past the buffer's last line, the same rare case
+--- `_has_non_blank_between` in `leaf.lua` guards too) can now fail here
+--- first instead. Treating a failed read as "not insignificant" is exactly
+--- right, not just a safe fallback: unreadable text can never match a
+--- configured entry anyway, so this just reaches the same answer
+--- `_split_run_segment`'s fallback already would have.
+---
+---@param node TSNode Any leaf (see `_commands.motion.leaf`).
+---@return boolean
+---
+local function _is_insignificant(node)
+    if _is_prose(node) then
+        return false
+    end
+
+    local language = _current_language()
+    local characters = language and configuration.get_insignificant_characters(language)
+
+    if not characters then
+        return false
+    end
+
+    local ok, text = pcall(vim.treesitter.get_node_text, node, 0)
+
+    if not ok then
+        return false
+    end
+
+    for _, character in ipairs(characters) do
+        if character == text then
+            return true
+        end
+    end
+
+    return false
+end
+
+--- Whether `node` should be treated as invisible to word motions entirely --
+--- public wrapper around `_is_insignificant`, for `_commands.motion.bigword`
+--- to skip a `W`/`E`/`B`/`gE` run made up entirely of insignificant leaves
+--- (an isolated `;` with whitespace on both sides, say) -- see its
+--- `_first_nonempty_split`.
+---
+---@param node TSNode Any leaf (see `_commands.motion.leaf`).
+---@return boolean
+---
+function M.is_insignificant(node)
+    return _is_insignificant(node)
+end
+
 --- Look up how `char` should be treated, per `kebab_case`/`snake_case`/`comment_marker_case`.
 ---
 ---@param char string A single character.
@@ -971,12 +1039,16 @@ end
 --- already skips punctuation runs collapsed into a single stop elsewhere.
 ---
 ---@param node TSNode Any leaf (see `_commands.motion.leaf`).
----@return treemotion.SubwordUnit[] # Empty when `node` is entirely a
----    punctuation-run continuation of the leaf before it, or entirely a
----    dropped (`"skip"`) delimiter run with no other content; otherwise
----    `node`'s full span if nothing else splits it.
+---@return treemotion.SubwordUnit[] # Empty when `node` is `_is_insignificant`,
+---    entirely a punctuation-run continuation of the leaf before it, or
+---    entirely a dropped (`"skip"`) delimiter run with no other content;
+---    otherwise `node`'s full span if nothing else splits it.
 ---
 local function _split(node)
+    if _is_insignificant(node) then
+        return {}
+    end
+
     local start_row, start_col = node:start()
     local end_row, end_col = node:end_()
     local text = vim.treesitter.get_node_text(node, 0)
