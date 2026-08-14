@@ -62,13 +62,22 @@ local function _append_validated(array, name, value_creator, expected, message)
     end
 end
 
---- Check if `data` is a boolean under `key`.
+--- Check if `data` satisfies `predicate` under `key`, treating `nil` as
+--- always valid (every checked configuration value is optional).
+---
+--- Shared scaffold behind `_get_boolean_issue`/`_get_positive_integer_issue`/
+--- `_get_enum_issue`: those three only ever differed in which `predicate`
+--- they ran and what `expected` string they reported, never in the
+--- `pcall(vim.validate, ...)` wrapping or the optional-`nil` short-circuit
+--- around it.
 ---
 ---@param key string The configuration value that we are checking.
 ---@param data any The object to validate.
+---@param predicate fun(value: any): boolean The check to run when `data` isn't `nil`.
+---@param expected string Human-readable description of what `data` should have been, shown when it doesn't match.
 ---@return string? # The found error message, if any.
 ---
-local function _get_boolean_issue(key, data)
+local function _get_typed_issue(key, data, predicate, expected)
     local success, message = pcall(vim.validate, {
         [key] = {
             data,
@@ -78,83 +87,7 @@ local function _get_boolean_issue(key, data)
                     return true
                 end
 
-                return type(value) == "boolean"
-            end,
-            -- TODO: `lua-language-server`'s type stubs only describe the
-            -- newer (0.11+) `vim.validate` signature, so this deprecated
-            -- table-spec call is flagged as a type mismatch even though
-            -- it's valid at runtime on Neovim 0.10. Remove this
-            -- suppression once this call is switched to the newer
-            -- `vim.validate(name, value, validator, optional, message)`
-            -- signature.
-            ---@diagnostic disable-next-line: assign-type-mismatch
-            "a boolean",
-        },
-    })
-
-    if success then
-        return nil
-    end
-
-    return message
-end
-
---- Check if `data` is a positive integer under `key`.
----
----@param key string The configuration value that we are checking.
----@param data any The object to validate.
----@return string? # The found error message, if any.
----
-local function _get_positive_integer_issue(key, data)
-    local success, message = pcall(vim.validate, {
-        [key] = {
-            data,
-            function(value)
-                if value == nil then
-                    -- This value is optional so it's fine it if is not defined.
-                    return true
-                end
-
-                return type(value) == "number" and value > 0 and value == math.floor(value)
-            end,
-            -- TODO: `lua-language-server`'s type stubs only describe the
-            -- newer (0.11+) `vim.validate` signature, so this deprecated
-            -- table-spec call is flagged as a type mismatch even though
-            -- it's valid at runtime on Neovim 0.10. Remove this
-            -- suppression once this call is switched to the newer
-            -- `vim.validate(name, value, validator, optional, message)`
-            -- signature.
-            ---@diagnostic disable-next-line: assign-type-mismatch
-            "a positive integer",
-        },
-    })
-
-    if success then
-        return nil
-    end
-
-    return message
-end
-
---- Check if `data` is one of `choices` under `key`.
----
----@param key string The configuration value that we are checking.
----@param data any The object to validate.
----@param choices string[] Every value `data` is allowed to be.
----@param expected string Human-readable description of `choices`, shown when `data` doesn't match.
----@return string? # The found error message, if any.
----
-local function _get_enum_issue(key, data, choices, expected)
-    local success, message = pcall(vim.validate, {
-        [key] = {
-            data,
-            function(value)
-                if value == nil then
-                    -- This value is optional so it's fine it if is not defined.
-                    return true
-                end
-
-                return vim.tbl_contains(choices, value)
+                return predicate(value)
             end,
             -- TODO: `lua-language-server`'s type stubs only describe the
             -- newer (0.11+) `vim.validate` signature, so this deprecated
@@ -173,6 +106,44 @@ local function _get_enum_issue(key, data, choices, expected)
     end
 
     return message
+end
+
+--- Check if `data` is a boolean under `key`.
+---
+---@param key string The configuration value that we are checking.
+---@param data any The object to validate.
+---@return string? # The found error message, if any.
+---
+local function _get_boolean_issue(key, data)
+    return _get_typed_issue(key, data, function(value)
+        return type(value) == "boolean"
+    end, "a boolean")
+end
+
+--- Check if `data` is a positive integer under `key`.
+---
+---@param key string The configuration value that we are checking.
+---@param data any The object to validate.
+---@return string? # The found error message, if any.
+---
+local function _get_positive_integer_issue(key, data)
+    return _get_typed_issue(key, data, function(value)
+        return type(value) == "number" and value > 0 and value == math.floor(value)
+    end, "a positive integer")
+end
+
+--- Check if `data` is one of `choices` under `key`.
+---
+---@param key string The configuration value that we are checking.
+---@param data any The object to validate.
+---@param choices string[] Every value `data` is allowed to be.
+---@param expected string Human-readable description of `choices`, shown when `data` doesn't match.
+---@return string? # The found error message, if any.
+---
+local function _get_enum_issue(key, data, choices, expected)
+    return _get_typed_issue(key, data, function(value)
+        return vim.tbl_contains(choices, value)
+    end, expected)
 end
 
 --- Check all "commands" values for issues.
