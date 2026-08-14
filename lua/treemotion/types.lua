@@ -158,12 +158,12 @@
 ---    tested against the hash/digest heuristic: it counts as opaque -- one
 ---    unit, never case- or delimiter-split internally -- if it's at least
 ---    this long and either entirely hex digits, or drawn from the base64
----    alphabet (`%w`, `+`, `/`) with both an uppercase and a lowercase
----    letter somewhere in it. This is a pure heuristic (charset + length),
----    not a list of known algorithms, so it also matches things that merely
----    look hash-shaped. Defaults to `20` -- comfortably under a 40-character
----    sha1 hex digest or a 44-character base64 sha256 digest, comfortably
----    over an ordinary identifier or word.
+---    alphabet (`%w`, `+`, `/`) with an uppercase letter, a lowercase
+---    letter, and a digit all somewhere in it. This is a pure heuristic
+---    (charset + length), not a list of known algorithms, so it also
+---    matches things that merely look hash-shaped. Defaults to `20` --
+---    comfortably under a 40-character sha1 hex digest or a 44-character
+---    base64 sha256 digest, comfortably over an ordinary identifier or word.
 
 ---@class treemotion.ConfigurationGoodnightMoon
 ---    The default values when a user calls `:TreeMotion goodnight-moon`.
