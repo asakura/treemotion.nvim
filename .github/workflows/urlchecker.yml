@@ -94,6 +94,7 @@ jobs:
         urlchecker check \
           --branch main \
           --subfolder spec \
+          --exclude-patterns "http://example.com/a/b-c,https://example.com/a/b" \
           --no-print \
           --file-types .json,.lua,.md,.txt,.vim,.yml \
           --retry-count 1 \
