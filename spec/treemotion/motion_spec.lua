@@ -988,13 +988,19 @@ describe("motion API - commands.motion.big (W/E/B/gE sub-word splitting)", funct
         local original_get_text = vim.api.nvim_buf_get_text
 
         ---@diagnostic disable-next-line: undefined-field
+        -- `...` (not a named `opts` parameter) is deliberate: `nvim_buf_get_text`'s
+        -- trailing `opts` is optional, and some callers omit it rather than pass
+        -- `{}`. Naming it `opts` would bind a plain omitted argument to `nil`, and
+        -- re-forwarding that `nil` positionally is a real 6th argument -- not the
+        -- same as the call never having one -- which the real implementation
+        -- rejects. Forwarding `...` preserves the caller's exact argument count.
         local get_text_stub = stub(vim.api, "nvim_buf_get_text").invokes(
-            function(buffer, start_row, start_col, end_row, end_col, opts)
+            function(buffer, start_row, start_col, end_row, end_col, ...)
                 if buffer == 0 and start_row == 0 and start_col == 7 and end_row == 0 and end_col == 10 then
                     error("Index out of bounds", 0)
                 end
 
-                return original_get_text(buffer, start_row, start_col, end_row, end_col, opts)
+                return original_get_text(buffer, start_row, start_col, end_row, end_col, ...)
             end
         )
 
