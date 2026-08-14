@@ -7,27 +7,46 @@ Notable changes since TreeMotion 0 (in development)
 NEW FEATURES                                     *treemotion-new-features*
 
 - `w`/`e`/`b`/`ge` now step through naming-convention sub-words inside a
-  treesitter leaf too, e.g. `fooBar-bazQux` is four stops: `foo`, `Bar`,
-  `baz`, `Qux`. Comments and string content (or any other `@spell`- or
-  `@string`-tagged span) are treated as prose instead, splitting into words
-  on whitespace first, the way real Vim's `w` does in a text file.
-  Controlled separately for code and prose by
-  `commands.motion.subword.code` / `.prose`, each with `camel_case` /
-  `.pascal_case` (boolean) and `kebab_case` / `.snake_case` /
-  `.comment_marker_case` (`"none"` | `"skip"` | `"stop"`, controlling
-  whether `-` / `_` next to real identifier content / a run of
-  comment-opener punctuation, or a bare `-`/`_` run like Lua's `--`, splits
-  at all and whether the delimiter itself becomes its own stop).
-  Comment-opener punctuation is configured per treesitter language via
-  `commands.motion.subword.comment_markers` (defaults include Python/Bash
-  `#`, C/Rust `/`, LaTeX `%`, Vim `"`, treesitter query `;`, Lua `-` -- a
-  language with no entry has none at all, so `comment_marker_case` is a
-  no-op there until configured; `-`/`_` follow this same per-language rule
-  as every other marker character, so a bare run of either falls back to
-  `kebab_case`/`snake_case` in any language that hasn't listed it). `:checkhealth treemotion` warns if a language **you**
-  added to `comment_markers` has no treesitter parser installed, but stays
-  silent about the shipped defaults, since most setups won't have every one
-  of those installed. `W`/`E`/`B`/`gE` are unaffected.
+  treesitter leaf, e.g. `fooBar-bazQux` is four stops: `foo`, `Bar`, `baz`,
+  `Qux`. Comments and string content (or any other `@spell`- or
+  `@string`-tagged span) are treated as prose instead, splitting into words on
+  whitespace first, the way real Vim's `w` does in a text file.
+
+- Sub-word splitting is configured separately for code and prose via
+  `commands.motion.small.code` / `.prose`. Each has `camel_case` /
+  `.pascal_case` (boolean) and `kebab_case` / `.snake_case` / `.colon_case` /
+  `.slash_case` / `.comment_marker_case` (`"none"` | `"skip"` | `"stop"`),
+  controlling whether `-` / `_` / `:` / `/` next to real identifier content,
+  or a run of comment-opener punctuation like Lua's `--`, splits at all and
+  whether the delimiter itself becomes its own stop.
+
+- `colon_case` / `slash_case` default to `"skip"` in prose, so a structured
+  token -- a `github:owner/repo` reference, a URL, a filesystem path -- reads
+  as one unit instead of fragmenting at every `:` / `/`.
+
+- A run that looks like an opaque hash or digest (a hex string, or a
+  mixed-case base64-alphabet string, at least `opaque_token_min_length`
+  characters long -- default `20`) is kept as one unit too, never split on its
+  internal case transitions. A trailing `=` (base64 padding) is folded into
+  the same unit.
+
+- Comment-opener punctuation is configured per treesitter language via
+  `commands.motion.comment_markers` (defaults include Python/Bash `#`, C/Rust
+  `/`, LaTeX `%`, Vim `"`, treesitter query `;`, Lua `-`). A language with no
+  entry has none at all, so `comment_marker_case` is a no-op there until
+  configured. A bare `-`/`_` run follows this same per-language rule, falling
+  back to `kebab_case`/`snake_case` in any language that hasn't listed it.
+  `:checkhealth treemotion` warns if a language **you** added to
+  `comment_markers` has no treesitter parser installed, but stays silent about
+  the shipped defaults, since most setups won't have every one of those
+  installed.
+
+- `W`/`E`/`B`/`gE` gained the same sub-word splitting, opt-in via
+  `commands.motion.big.enabled = true` (default `false`, which is exactly
+  today's behavior -- a whole run of contiguous leaves is always one stop,
+  ignoring case/delimiters entirely). Once enabled, `commands.motion.big.code`
+  / `.prose` -- the same shape as `commands.motion.small`'s above -- control
+  splitting within each run.
 
 
 ===============================================================================
