@@ -35,22 +35,14 @@
 ---    Customize the `w`/`e`/`b`/`ge` sub-word splitting behavior.
 
 ---@class treemotion.ConfigurationMotion
----    Customize the `w`/`e`/`b`/`ge` sub-word splitting behavior.
----@field subword treemotion.ConfigurationMotionSubword?
+---    Customize the `w`/`e`/`b`/`ge`/`W`/`E`/`B`/`gE` sub-word splitting behavior.
+---@field small treemotion.ConfigurationMotionGroup?
 ---    Which naming conventions `w`/`e`/`b`/`ge` additionally split leaves on.
----    `W`/`E`/`B`/`gE` are unaffected -- they ignore case entirely, the same
----    way real Vim's `W` ignores punctuation.
-
----@class treemotion.ConfigurationMotionSubword
----    Sub-word splitting rules, configured separately for "code" leaves
----    (identifiers, ...) and "prose" leaves (comments, string content, or
----    any other span a treesitter query marks `@spell` or `@string` --
----    string content counts as prose too, since it just as often holds free
----    text -- a description, an error message, a URL -- as it does an
----    identifier-like slug; see `_is_prose_capture` in `subword.lua`).
----    Splitting a prose leaf first divides it into individual words (on
----    whitespace/punctuation, like real Vim's `w` in a text file) before
----    either ruleset ever runs; code leaves skip straight to these rules.
+---@field big treemotion.ConfigurationMotionGroup?
+---    Which naming conventions `W`/`E`/`B`/`gE` additionally split runs on.
+---    Only takes effect once `enabled = true` -- by default `W`/`E`/`B`/`gE`
+---    ignore case/delimiters entirely, the same way real Vim's `W` ignores
+---    punctuation inside a WORD.
 ---@field comment_markers table<string, string[]>?
 ---    Which single characters count as comment-marker punctuation
 ---    (`comment_marker_case`'s target), keyed by treesitter language name
@@ -76,6 +68,25 @@
 ---    configuration needed, as soon as their treesitter parser is installed
 ---    -- see `_OPTIONAL_COMMENT_MARKERS` in `configuration.lua` for the full
 ---    list and `configuration.get_comment_markers` for the resolution order.
+
+---@class treemotion.ConfigurationMotionGroup
+---    Sub-word splitting rules for one motion family (`small` = `w`/`e`/`b`/`ge`,
+---    `big` = `W`/`E`/`B`/`gE`), configured separately for "code" leaves
+---    (identifiers, ...) and "prose" leaves (comments, string content, or
+---    any other span a treesitter query marks `@spell` or `@string` --
+---    string content counts as prose too, since it just as often holds free
+---    text -- a description, an error message, a URL -- as it does an
+---    identifier-like slug; see `_is_prose_capture` in `subword.lua`).
+---    Splitting a prose leaf/run first divides it into individual words (on
+---    whitespace/punctuation, like real Vim's `w` in a text file) before
+---    either ruleset ever runs; code leaves skip straight to these rules.
+---@field enabled boolean?
+---    `big` only (`small` never reads this field): whether `W`/`E`/`B`/`gE`
+---    consult `code`/`prose`/`backtick_identifiers` at all. Defaults to
+---    `false`, which is byte-for-byte today's behavior -- a run is always one
+---    stop, ignoring case/delimiters entirely, the same way real Vim's `W`
+---    ignores punctuation inside a WORD. Set to `true` to opt `W`/`E`/`B`/`gE`
+---    into real case/delimiter-aware sub-splitting within each run.
 ---@field backtick_identifiers boolean?
 ---    Whether a backtick-enclosed span within prose that's exactly one Vim
 ---    word (`` `fooBar` ``, `` `foo-bar` `` -- not `` `foo bar` `` or an
@@ -128,6 +139,31 @@
 ---    already do next to real identifier content. This one setting still
 ---    applies uniformly across languages; only *which characters* count as a
 ---    marker in the first place is per-language, via `comment_markers`.
+---@field colon_case treemotion.SubwordDelimiterMode?
+---    How to handle `:` next to real identifier content, same semantics as
+---    `kebab_case`/`snake_case`. Exists so structured tokens that use `:` as
+---    a separator -- a `github:owner/repo` reference, a URL's `https:` --
+---    don't force a landing stop on it. Defaults to `"skip"` for `prose`
+---    (ignored, so those references read as intended) and `"none"` for
+---    `code` (real identifiers essentially never contain a literal `:`, so
+---    this is inert there by default).
+---@field slash_case treemotion.SubwordDelimiterMode?
+---    How to handle `/` next to real identifier content, same semantics as
+---    `kebab_case`/`snake_case`. Exists for the same reason as `colon_case`
+---    -- URLs (`https://host/path`) and filesystem paths (`/a/b/c`,
+---    `./a/b/c`) use `/` as a separator, not a landing stop. Same defaults as
+---    `colon_case`: `"skip"` for `prose`, `"none"` for `code`.
+---@field opaque_token_min_length integer?
+---    Minimum length (after stripping trailing `=` padding) for a run to be
+---    tested against the hash/digest heuristic: it counts as opaque -- one
+---    unit, never case- or delimiter-split internally -- if it's at least
+---    this long and either entirely hex digits, or drawn from the base64
+---    alphabet (`%w`, `+`, `/`) with both an uppercase and a lowercase
+---    letter somewhere in it. This is a pure heuristic (charset + length),
+---    not a list of known algorithms, so it also matches things that merely
+---    look hash-shaped. Defaults to `20` -- comfortably under a 40-character
+---    sha1 hex digest or a 44-character base64 sha256 digest, comfortably
+---    over an ordinary identifier or word.
 
 ---@class treemotion.ConfigurationGoodnightMoon
 ---    The default values when a user calls `:TreeMotion goodnight-moon`.

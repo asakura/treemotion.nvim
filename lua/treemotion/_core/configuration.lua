@@ -29,34 +29,64 @@ local _DEFAULTS = {
             say = { ["repeat"] = 1, style = say_constant.Keyword.style.lowercase },
         },
         motion = {
-            subword = {
-                comment_markers = {
-                    c = { "/" },
-                    cpp = { "/" },
-                    rust = { "/" },
-                    python = { "#" },
-                    bash = { "#" },
-                    sh = { "#" },
-                    latex = { "%" },
-                    tex = { "%" },
-                    vim = { '"' },
-                    query = { ";" },
-                    lua = { "-" },
-                },
+            comment_markers = {
+                c = { "/" },
+                cpp = { "/" },
+                rust = { "/" },
+                python = { "#" },
+                bash = { "#" },
+                sh = { "#" },
+                latex = { "%" },
+                tex = { "%" },
+                vim = { '"' },
+                query = { ";" },
+                lua = { "-" },
+            },
+            small = {
                 backtick_identifiers = true,
                 code = {
                     camel_case = true,
                     pascal_case = true,
                     kebab_case = motion_constant.DelimiterMode.skip,
                     snake_case = motion_constant.DelimiterMode.skip,
+                    colon_case = motion_constant.DelimiterMode.none,
+                    slash_case = motion_constant.DelimiterMode.none,
                     comment_marker_case = motion_constant.DelimiterMode.stop,
+                    opaque_token_min_length = 20,
                 },
                 prose = {
                     camel_case = true,
                     pascal_case = true,
                     kebab_case = motion_constant.DelimiterMode.stop,
                     snake_case = motion_constant.DelimiterMode.none,
+                    colon_case = motion_constant.DelimiterMode.skip,
+                    slash_case = motion_constant.DelimiterMode.skip,
                     comment_marker_case = motion_constant.DelimiterMode.stop,
+                    opaque_token_min_length = 20,
+                },
+            },
+            big = {
+                enabled = false,
+                backtick_identifiers = true,
+                code = {
+                    camel_case = false,
+                    pascal_case = false,
+                    kebab_case = motion_constant.DelimiterMode.none,
+                    snake_case = motion_constant.DelimiterMode.none,
+                    colon_case = motion_constant.DelimiterMode.none,
+                    slash_case = motion_constant.DelimiterMode.none,
+                    comment_marker_case = motion_constant.DelimiterMode.none,
+                    opaque_token_min_length = 20,
+                },
+                prose = {
+                    camel_case = false,
+                    pascal_case = false,
+                    kebab_case = motion_constant.DelimiterMode.none,
+                    snake_case = motion_constant.DelimiterMode.none,
+                    colon_case = motion_constant.DelimiterMode.none,
+                    slash_case = motion_constant.DelimiterMode.none,
+                    comment_marker_case = motion_constant.DelimiterMode.none,
+                    opaque_token_min_length = 20,
                 },
             },
         },
@@ -268,7 +298,7 @@ end
 function M.get_comment_markers(language)
     M.initialize_data_if_needed()
 
-    local shipped = M.DATA.commands.motion.subword.comment_markers[language]
+    local shipped = M.DATA.commands.motion.comment_markers[language]
 
     if shipped then
         return shipped
