@@ -553,7 +553,7 @@ end
 
 local _N_RANDOM_WALKS = 5
 
-describe("motion API - w/b, e/ge, W/B, E/gE mirror round-trips, across configurations and grammars", function()
+describe("motion API - w/b, e/ge, W/B, E/gE mirror round-trips, across configurations and grammars #slow", function()
     after_each(_reset_configuration)
 
     for _, fixture in ipairs(_FIXTURES) do
@@ -608,7 +608,7 @@ describe("motion API - w/b, e/ge, W/B, E/gE mirror round-trips, across configura
     end
 end)
 
-describe("motion API - w/b, e/ge, W/B, E/gE mirror round-trips with #count, across grammars", function()
+describe("motion API - w/b, e/ge, W/B, E/gE mirror round-trips with #count, across grammars #slow", function()
     after_each(_reset_configuration)
 
     --- Verify one `count`-sized jump round-trips, without ever picking a

@@ -278,7 +278,7 @@
 
         runCoverage = # bash
           ''
-            ${luaCoverageEnv}/bin/busted --coverage .
+            ${luaCoverageEnv}/bin/busted --coverage --exclude-tags=slow .
           '';
 
         minCoveragePercent = 90.00;
