@@ -132,8 +132,37 @@ word instead, independently of `kebab_case`/`snake_case` (which govern
 `-`/`_` next to a real letter or digit, e.g. `hello-world`, and keep
 governing even a bare `-`/`_` run in any language that hasn't listed that
 character as a comment marker -- see below). See
-`commands.motion.subword.code` / `.prose` under `Configuration` to control
+`commands.motion.small.code` / `.prose` under `Configuration` to control
 `comment_marker_case` itself per context.
+
+#### Structured prose tokens
+
+`:` and `/` never produce their own landing stop or block a word run within
+prose -- `colon_case`/`slash_case` both default to `"skip"` there -- so a
+reference like `github:NixOS/nixpkgs`, a URL (`https://host/path`), or a
+filesystem path (`/a/b/c`, `./a/b/c`) stays readable as one structured token
+instead of fragmenting at every `:`/`/`. (`code`'s `colon_case`/`slash_case`
+default to `"none"` instead, since real identifiers essentially never
+contain a literal `:`/`/` -- inert there by default.)
+
+A run that looks like an opaque hash or digest -- a hex string, or a
+base64-alphabet string with both an uppercase and a lowercase letter, at
+least `opaque_token_min_length` characters long (default `20`, comfortably
+under a 40-character sha1 hex digest or a 44-character base64 sha256
+digest) -- is treated as one unit and never split internally on case, e.g.
+`A8YgMXtKnd9nSsRClkfz8cUbKHIUTRN2vudge6EfSgU` stays whole instead of
+fragmenting at every case transition. This is a pure charset-and-length
+heuristic, not a list of known algorithms, so it also matches things that
+merely look hash-shaped. A trailing `=` (base64 padding) is folded into the
+same unit rather than becoming its own tiny stop.
+
+**Known caveat:** `kebab_case` still governs `-`, and prose's default for it
+is `"stop"` (deliberate, for ordinary hyphenated English compounds like
+"well-known"). That means `github:NixOS/nixpkgs/nixos-unstable` splits into
+`github`, `Nix`, `OS`, `nixpkgs`, `nixos`, `-`, `unstable` out of the box --
+the `-` in `nixos-unstable` (and in a `sha256-...` prefix) still lands as
+its own stop. Set `kebab_case = "skip"` for prose if you want hyphens
+ignored the same way `:`/`/` already are.
 
 #### Backtick-enclosed identifiers
 
@@ -146,13 +175,13 @@ already isn't. A backtick pair that isn't exactly one word (multiple words,
 e.g. `` `foo bar` ``, or an empty pair with nothing between them) is left as
 ordinary prose text, backticks included, with no behavior change.
 
-This is on by default; set `commands.motion.subword.backtick_identifiers = false`.
+This is on by default; set `commands.motion.small.backtick_identifiers = false`.
 
 #### Comment-marker characters
 
 Which characters count as comment-marker punctuation -- `-`/`_` included,
 exactly like every other character -- is configured per treesitter
-language, via `commands.motion.subword.comment_markers` (see
+language, via `commands.motion.comment_markers` (see
 `Configuration` below). A language with no entry has no comment-marker
 characters at all, so `comment_marker_case` is a no-op there until you add
 one. This is deliberate, not an oversight, since the same punctuation means
@@ -349,15 +378,25 @@ Markup/template languages with block-only or multi-character comment
 delimiters (HTML, XML, JSON, Jinja/Twig/Liquid, Markdown, reStructuredText)
 and dozens of very niche grammars are deliberately excluded from both
 tables rather than guessed at; add them yourself via
-`commands.motion.subword.comment_markers` if you need them (see
+`commands.motion.comment_markers` if you need them (see
 `Configuration` below).
 
 ### `W` / `E` / `B` / `gE` (WORD motions)
 
 Move one contiguous _run_ of leaves at a time -- a run is a maximal
 sequence of leaves with no whitespace between them, mirroring how Vim's
-real `W` ignores punctuation inside a WORD while `w` stops on it. These
-ignore sub-words entirely, the same way real `W` ignores punctuation.
+real `W` ignores punctuation inside a WORD while `w` stops on it. By
+default these ignore sub-words entirely, the same way real `W` ignores
+punctuation -- a whole run is always one stop.
+
+Set `commands.motion.big.enabled = true` to opt in to real,
+case/delimiter-aware sub-splitting within each run too, configured via
+`commands.motion.big.code` / `.prose` -- the same shape as `commands.motion.small`'s
+(see `Comments and prose`, `Structured prose tokens`, and
+`Backtick-enclosed identifiers` above; everything documented there applies
+here too, just scoped to a whole run of leaves instead of one leaf).
+`enabled = false` (the default) is exactly today's behavior, byte-for-byte;
+none of `commands.motion.big`'s other fields have any effect until you flip it.
 
 ## Configuration
 
@@ -377,47 +416,92 @@ works as expected:
                 say = { ["repeat"] = 1, style = "lowercase" },
             },
             motion = {
-                subword = {
-                    -- Which single characters count as comment-marker
-                    -- punctuation, per treesitter language. A language with
-                    -- no entry has none at all -- add your own to extend this
-                    -- list.
-                    comment_markers = {
-                        c = { "/" },
-                        cpp = { "/" },
-                        rust = { "/" },
-                        python = { "#" },
-                        bash = { "#" },
-                        sh = { "#" },
-                        latex = { "%" },
-                        tex = { "%" },
-                        vim = { '"' },
-                        query = { ";" },
-                        lua = { "-" },
-                    },
+                -- Which single characters count as comment-marker
+                -- punctuation, per treesitter language. A language with
+                -- no entry has none at all -- add your own to extend this
+                -- list. Shared by both `small` and `big` below.
+                comment_markers = {
+                    c = { "/" },
+                    cpp = { "/" },
+                    rust = { "/" },
+                    python = { "#" },
+                    bash = { "#" },
+                    sh = { "#" },
+                    latex = { "%" },
+                    tex = { "%" },
+                    vim = { '"' },
+                    query = { ";" },
+                    lua = { "-" },
+                },
+                -- `w`/`e`/`b`/`ge`: sub-word splitting within one leaf.
+                small = {
                     -- Whether a backtick-enclosed single word within prose
                     -- (`` `fooBar` ``) is treated as a code identifier, with
                     -- the backticks themselves never landing stops.
                     backtick_identifiers = true,
                     -- Identifiers and similar: `-`/`_` divide but are never
-                    -- landed on themselves.
+                    -- landed on themselves; `:`/`/` essentially never appear
+                    -- in real identifiers, so they're inert here by default.
                     code = {
                         camel_case = true,
                         pascal_case = true,
                         kebab_case = "skip",
                         snake_case = "skip",
+                        colon_case = "none",
+                        slash_case = "none",
                         comment_marker_case = "stop",
+                        -- Minimum length (after stripping trailing `=`
+                        -- padding) for a hex/base64-alphabet run to be
+                        -- treated as an opaque hash/digest -- one unit,
+                        -- never split on its internal case transitions.
+                        opaque_token_min_length = 20,
                     },
                     -- Comments, string content, or any other `@spell`-/`@string`-
                     -- tagged span: mirrors real Vim's own `iskeyword` in a text
                     -- file, where `-` is punctuation (its own stop) but `_` is a
-                    -- keyword character (doesn't split at all).
+                    -- keyword character (doesn't split at all). `:`/`/` are
+                    -- ignored entirely by default, so structured tokens like
+                    -- `github:owner/repo`, a URL, or a filesystem path read as
+                    -- one unit instead of fragmenting at every `:`/`/`.
                     prose = {
                         camel_case = true,
                         pascal_case = true,
                         kebab_case = "stop",
                         snake_case = "none",
+                        colon_case = "skip",
+                        slash_case = "skip",
                         comment_marker_case = "stop",
+                        opaque_token_min_length = 20,
+                    },
+                },
+                -- `W`/`E`/`B`/`gE`: sub-word splitting within a whole run of
+                -- contiguous leaves. `enabled = false` (the default) is
+                -- exactly today's behavior -- a run is always one stop,
+                -- ignoring case/delimiters entirely; none of this group's
+                -- other fields have any effect until you flip it to `true`.
+                -- The `code`/`prose` shape is identical to `small`'s above.
+                big = {
+                    enabled = false,
+                    backtick_identifiers = true,
+                    code = {
+                        camel_case = false,
+                        pascal_case = false,
+                        kebab_case = "none",
+                        snake_case = "none",
+                        colon_case = "none",
+                        slash_case = "none",
+                        comment_marker_case = "none",
+                        opaque_token_min_length = 20,
+                    },
+                    prose = {
+                        camel_case = false,
+                        pascal_case = false,
+                        kebab_case = "none",
+                        snake_case = "none",
+                        colon_case = "none",
+                        slash_case = "none",
+                        comment_marker_case = "none",
+                        opaque_token_min_length = 20,
                     },
                 },
             },
