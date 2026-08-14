@@ -11,17 +11,18 @@
 --- Each shape is implemented twice, over two different notions of "word":
 --- `w`/`e`/`b`/`ge` move between sub-word units -- individual treesitter
 --- leaves, optionally split further by naming convention (camelCase,
---- kebab-case, ...) per `_commands.motion.subword`, via
+--- kebab-case, ...) per `commands.motion.small`, via
 --- `_commands.motion.word`. `W`/`E`/`B`/`gE` move between contiguous *runs*
---- of whole leaves (see `_commands.motion.leaf`'s module docstring) and
---- ignore case entirely, the same way real Vim's `W` ignores punctuation
---- inside a WORD. The `W`-family functions are written generically, taking
---- `run_start`/`run_end` as parameters, so `_commands.motion.leaf`'s
---- leaf/run logic can be plugged straight in; the `w`-family functions call
---- `_commands.motion.word` directly instead, since sub-word splitting needs
---- more than just "expand this leaf to its run".
+--- of whole leaves (see `_commands.motion.leaf`'s module docstring),
+--- optionally split the same way per `commands.motion.big` (only once
+--- `.enabled = true`; by default a run ignores case entirely, the same way
+--- real Vim's `W` ignores punctuation inside a WORD), via
+--- `_commands.motion.bigword`. The two families are symmetric, one level
+--- apart: `_move_word_*` steps `_commands.motion.word` units,
+--- `_move_bigword_*` steps `_commands.motion.bigword` units.
 
 local leaf = require("treemotion._commands.motion.leaf")
+local bigword = require("treemotion._commands.motion.bigword")
 local word = require("treemotion._commands.motion.word")
 
 local M = {}
@@ -32,7 +33,7 @@ local M = {}
 --- `nvim_win_set_cursor`'s 1-indexed row; the column needs no conversion,
 --- since both are already 0-indexed.
 ---
----@param node TSNode|treemotion.WordUnit Anything with a `:start()` -- a leaf or a sub-word unit.
+---@param node TSNode|treemotion.WordUnit|treemotion.BigWordUnit Anything with a `:start()` -- a leaf or unit.
 local function _set_cursor_to_start(node)
     local row, column = node:start()
 
@@ -45,7 +46,7 @@ end
 --- this subtracts 1 to land on the character itself -- clamped at 0 so an
 --- empty node can't push the column negative.
 ---
----@param node TSNode|treemotion.WordUnit Anything with an `:end_()` -- a leaf or a sub-word unit.
+---@param node TSNode|treemotion.WordUnit|treemotion.BigWordUnit Anything with an `:end_()` -- a leaf or unit.
 local function _set_cursor_to_end(node)
     local row, column = node:end_()
 
@@ -58,7 +59,7 @@ end
 --- just snap to the start of the current one -- mirroring how real Vim's
 --- `b` only skips the current word if the cursor is already at its start.
 ---
----@param node TSNode|treemotion.WordUnit
+---@param node TSNode|treemotion.WordUnit|treemotion.BigWordUnit
 ---@return boolean # `true` if the cursor already sits on `node`'s start.
 local function _is_cursor_at_start(node)
     local row, column = node:start()
@@ -73,7 +74,7 @@ end
 --- just snap to the end of the current one -- mirroring how real Vim's `e`
 --- only skips the current word if the cursor is already at its end.
 ---
----@param node TSNode|treemotion.WordUnit
+---@param node TSNode|treemotion.WordUnit|treemotion.BigWordUnit
 ---@return boolean # `true` if the cursor already sits on `node`'s (inclusive) end.
 local function _is_cursor_at_end(node)
     local row, column = node:end_()
@@ -91,9 +92,9 @@ end
 --- cursor was in a gap no unit covers (e.g. a blank line): in that case
 --- `node` is already the nearest unit in the direction they're moving, so
 --- unconditionally stepping to the *next*/*previous* one from there would
---- overshoot by one. See `_move_forward_to_start`/`_move_backward_to_end`.
+--- overshoot by one. See `_move_word_forward_to_start`/`_move_bigword_forward_to_start`.
 ---
----@param node TSNode|treemotion.WordUnit
+---@param node TSNode|treemotion.WordUnit|treemotion.BigWordUnit
 ---@return boolean # `true` if the cursor is inside `node`'s range, `false` for a gap `node` substitutes for.
 local function _is_cursor_inside(node)
     local start_row, start_column = node:start()
@@ -109,145 +110,6 @@ local function _is_cursor_inside(node)
     end
 
     return true
-end
-
---- Generic `w`/`W`-shape move: unconditionally advance to the start of the next unit.
----
---- Only `M.run_W` calls this -- `w` has its own sub-word-aware
---- `_move_word_forward_to_start` below. To find the next run: expand the
---- current leaf out to the *end* of its own run (so leaves already known to
---- belong to it are skipped over), take the leaf right after that, then
---- expand forward from there to the *start* of the next run. If the cursor
---- isn't actually inside `node` (see `_is_cursor_inside`), `node` was
---- already substituted for a gap -- i.e. it's already the next run's start
---- -- so land there directly instead of stepping past it.
----
----@param count integer How many runs to move over.
----@param run_end fun(node: TSNode): TSNode Expand a leaf to the end of its run.
----@param run_start fun(node: TSNode): TSNode Expand a leaf to the start of its run.
----
-local function _move_forward_to_start(count, run_end, run_start)
-    for _ = 1, count do
-        local node = leaf.current_leaf(true)
-
-        if not node then
-            return
-        end
-
-        if not _is_cursor_inside(node) then
-            _set_cursor_to_start(run_start(node))
-        else
-            local next_ = leaf.next_leaf(run_end(node))
-
-            if not next_ then
-                return
-            end
-
-            _set_cursor_to_start(run_start(next_))
-        end
-    end
-end
-
---- Generic `ge`/`gE`-shape move: unconditionally retreat to the end of the previous unit.
----
---- Only `M.run_gE` calls this -- `ge` has its own sub-word-aware
---- `_move_word_backward_to_end` below. Mirror image of
---- `_move_forward_to_start`: expand backward to the start of the current
---- run, step to the leaf before that, then expand backward from there to
---- the end of the previous run. Same gap substitution rule applies, mirrored.
----
----@param count integer How many runs to move over.
----@param run_start fun(node: TSNode): TSNode Expand a leaf to the start of its run.
----@param run_end fun(node: TSNode): TSNode Expand a leaf to the end of its run.
----
-local function _move_backward_to_end(count, run_start, run_end)
-    for _ = 1, count do
-        local node = leaf.current_leaf(false)
-
-        if not node then
-            return
-        end
-
-        if not _is_cursor_inside(node) then
-            _set_cursor_to_end(run_end(node))
-        else
-            local previous = leaf.previous_leaf(run_start(node))
-
-            if not previous then
-                return
-            end
-
-            _set_cursor_to_end(run_end(previous))
-        end
-    end
-end
-
---- Generic `e`/`E`-shape move: advance to the end of the current run, or the next one if already there.
----
---- Only `M.run_E` calls this -- `e` has its own sub-word-aware
---- `_move_word_forward_to_end` below. The `_is_cursor_at_end` check is what
---- distinguishes this from `_move_forward_to_start`: pressing `E`
---- repeatedly from the middle of a run lands on that run's own end before
---- ever advancing to the next one.
----
----@param count integer How many runs to move over.
----@param run_end fun(node: TSNode): TSNode Expand a leaf to the end of its run.
----
-local function _move_forward_to_end(count, run_end)
-    for _ = 1, count do
-        local node = leaf.current_leaf(true)
-
-        if not node then
-            return
-        end
-
-        local edge = run_end(node)
-
-        if _is_cursor_at_end(edge) then
-            local next_ = leaf.next_leaf(edge)
-
-            if not next_ then
-                return
-            end
-
-            edge = run_end(next_)
-        end
-
-        _set_cursor_to_end(edge)
-    end
-end
-
---- Generic `b`/`B`-shape move: retreat to the start of the current run, or the previous one if already there.
----
---- Only `M.run_B` calls this -- `b` has its own sub-word-aware
---- `_move_word_backward_to_start` below. Mirror image of
---- `_move_forward_to_end`.
----
----@param count integer How many runs to move over.
----@param run_start fun(node: TSNode): TSNode Expand a leaf to the start of its run.
----
-local function _move_backward_to_start(count, run_start)
-    for _ = 1, count do
-        local node = leaf.current_leaf(false)
-
-        if not node then
-            return
-        end
-
-        local edge = run_start(node)
-
-        if _is_cursor_at_start(edge) then
-            local previous = leaf.previous_leaf(edge)
-
-            if not previous then
-                return
-            end
-
-            edge = run_start(previous)
-        end
-
-        _set_cursor_to_start(edge)
-    end
 end
 
 --- `w`-shape move: unconditionally advance to the start of the next sub-word unit.
@@ -362,6 +224,123 @@ local function _move_word_backward_to_start(count)
     end
 end
 
+--- `W`-shape move: unconditionally advance to the start of the next run's sub-word unit.
+---
+--- Same shape as `_move_word_forward_to_start`, but stepping through
+--- `_commands.motion.bigword` units instead of `_commands.motion.word`
+--- ones, so a single run counts as more than one stop once
+--- `commands.motion.big.enabled` is `true` (it's exactly one stop by
+--- default, see `bigword.current_unit`/`subword.split_run`). Same gap
+--- substitution rule too -- see `_is_cursor_inside`.
+---
+---@param count integer How many units to move over.
+---
+local function _move_bigword_forward_to_start(count)
+    for _ = 1, count do
+        local unit = bigword.current_unit(true)
+
+        if not unit then
+            return
+        end
+
+        if not _is_cursor_inside(unit) then
+            _set_cursor_to_start(unit)
+        else
+            local next_ = bigword.next_unit(unit)
+
+            if not next_ then
+                return
+            end
+
+            _set_cursor_to_start(next_)
+        end
+    end
+end
+
+--- `gE`-shape move: unconditionally retreat to the end of the previous run's sub-word unit.
+---
+--- Same shape as `_move_word_backward_to_end`, but over
+--- `_commands.motion.bigword` units. Same gap substitution rule too -- see
+--- `_is_cursor_inside`.
+---
+---@param count integer How many units to move over.
+---
+local function _move_bigword_backward_to_end(count)
+    for _ = 1, count do
+        local unit = bigword.current_unit(false)
+
+        if not unit then
+            return
+        end
+
+        if not _is_cursor_inside(unit) then
+            _set_cursor_to_end(unit)
+        else
+            local previous = bigword.previous_unit(unit)
+
+            if not previous then
+                return
+            end
+
+            _set_cursor_to_end(previous)
+        end
+    end
+end
+
+--- `E`-shape move: advance to the end of the current or next run's sub-word unit.
+---
+--- Same shape as `_move_word_forward_to_end`, but over
+--- `_commands.motion.bigword` units.
+---
+---@param count integer How many units to move over.
+---
+local function _move_bigword_forward_to_end(count)
+    for _ = 1, count do
+        local unit = bigword.current_unit(true)
+
+        if not unit then
+            return
+        end
+
+        if _is_cursor_at_end(unit) then
+            unit = bigword.next_unit(unit)
+
+            if not unit then
+                return
+            end
+        end
+
+        _set_cursor_to_end(unit)
+    end
+end
+
+--- `B`-shape move: retreat to the start of the current or previous run's sub-word unit.
+---
+--- Same shape as `_move_word_backward_to_start`, but over
+--- `_commands.motion.bigword` units.
+---
+---@param count integer How many units to move over.
+---
+local function _move_bigword_backward_to_start(count)
+    for _ = 1, count do
+        local unit = bigword.current_unit(false)
+
+        if not unit then
+            return
+        end
+
+        if _is_cursor_at_start(unit) then
+            unit = bigword.previous_unit(unit)
+
+            if not unit then
+                return
+            end
+        end
+
+        _set_cursor_to_start(unit)
+    end
+end
+
 --- Move like `w`: to the start of the next sub-word unit.
 ---
 ---@param count number? A 1-or-more value. How many units to move over.
@@ -394,36 +373,40 @@ function M.run_b(count)
     _move_word_backward_to_start(count or 1)
 end
 
---- Move like `W`: to the start of the next run of contiguous treesitter leaves.
+--- Move like `W`: to the start of the next run of contiguous treesitter leaves
+--- (or its next sub-word unit, once `commands.motion.big.enabled = true`).
 ---
----@param count number? A 1-or-more value. How many runs to move over.
+---@param count number? A 1-or-more value. How many units to move over.
 ---
 function M.run_W(count)
-    _move_forward_to_start(count or 1, leaf.run_end, leaf.run_start)
+    _move_bigword_forward_to_start(count or 1)
 end
 
---- Move like `gE`: to the end of the previous run of contiguous treesitter leaves.
+--- Move like `gE`: to the end of the previous run of contiguous treesitter leaves
+--- (or its previous sub-word unit, once `commands.motion.big.enabled = true`).
 ---
----@param count number? A 1-or-more value. How many runs to move over.
+---@param count number? A 1-or-more value. How many units to move over.
 ---
 function M.run_gE(count)
-    _move_backward_to_end(count or 1, leaf.run_start, leaf.run_end)
+    _move_bigword_backward_to_end(count or 1)
 end
 
---- Move like `E`: to the end of the current or next run of contiguous treesitter leaves.
+--- Move like `E`: to the end of the current or next run of contiguous treesitter leaves
+--- (or its current/next sub-word unit, once `commands.motion.big.enabled = true`).
 ---
----@param count number? A 1-or-more value. How many runs to move over.
+---@param count number? A 1-or-more value. How many units to move over.
 ---
 function M.run_E(count)
-    _move_forward_to_end(count or 1, leaf.run_end)
+    _move_bigword_forward_to_end(count or 1)
 end
 
---- Move like `B`: to the start of the current or previous run of contiguous treesitter leaves.
+--- Move like `B`: to the start of the current or previous run of contiguous treesitter leaves
+--- (or its current/previous sub-word unit, once `commands.motion.big.enabled = true`).
 ---
----@param count number? A 1-or-more value. How many runs to move over.
+---@param count number? A 1-or-more value. How many units to move over.
 ---
 function M.run_B(count)
-    _move_backward_to_start(count or 1, leaf.run_start)
+    _move_bigword_backward_to_start(count or 1)
 end
 
 return M

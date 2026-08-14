@@ -1,4 +1,4 @@
---- Make sure `commands.motion.subword.prose.comment_marker_case` behaves the
+--- Make sure `commands.motion.small.prose.comment_marker_case` behaves the
 --- same way regardless of what a grammar's comment-opener punctuation looks
 --- like, or whether that punctuation is its own leaf (Lua's `--`, split from
 --- `comment_content`) or embedded in one larger leaf's text alongside the
@@ -134,7 +134,7 @@ local _FIXTURES = {
 describe("motion API - comment_marker_case, across grammars", function()
     after_each(function()
         treemotion.setup({
-            commands = { motion = { subword = { prose = { comment_marker_case = "stop" } } } },
+            commands = { motion = { small = { prose = { comment_marker_case = "stop" } } } },
         })
     end)
 
@@ -165,7 +165,7 @@ describe("motion API - comment_marker_case, across grammars", function()
             string.format('jumps straight past `%s` on every line when "skip"', fixture.marker),
             function()
                 treemotion.setup({
-                    commands = { motion = { subword = { prose = { comment_marker_case = "skip" } } } },
+                    commands = { motion = { small = { prose = { comment_marker_case = "skip" } } } },
                 })
 
                 -- From `foo`, straight to `bar` on the next line -- never

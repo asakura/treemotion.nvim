@@ -1,41 +1,49 @@
---- Split a single treesitter leaf's text into case-convention-aware sub-word units.
+--- Split a treesitter leaf's (`M.split`), or a whole run's (`M.split_run`),
+--- text into case-convention-aware sub-word units.
 ---
---- This only ever applies to `w`/`e`/`b`/`ge` (see `_commands.motion.word`) --
---- `W`/`E`/`B`/`gE` intentionally ignore case entirely, the same way real
---- Vim's `W` ignores punctuation inside a WORD.
+--- `M.split` backs `w`/`e`/`b`/`ge` (see `_commands.motion.word`), reading
+--- `commands.motion.small`. `M.split_run` backs `W`/`E`/`B`/`gE` (see
+--- `_commands.motion.bigword`), reading `commands.motion.big` -- but only
+--- once `commands.motion.big.enabled` is `true`; by default it always
+--- returns one unit spanning the whole run, ignoring case entirely, the
+--- same way real Vim's `W` ignores punctuation inside a WORD.
 ---
 --- Everything here is plain text/coordinate analysis -- no treesitter tree
 --- walking happens in this file, that's `_commands.motion.leaf`'s and
---- `_commands.motion.word`'s job; the treesitter features this file does use
---- are reading a leaf's highlight captures (`:help treesitter-highlight-spell`)
---- to tell "code" leaves (identifiers, ...) apart from "prose" leaves
---- (comments, string content, or whatever else a language's highlight query
---- marks `@spell` or `@string`, see `_is_prose_capture`), and reading the
---- attached parser's language name (`_current_language`) to look up that
---- language's comment-marker characters (`_comment_marker_characters`).
+--- `_commands.motion.word`'s/`_commands.motion.bigword`'s job; the
+--- treesitter features this file does use are reading a leaf's highlight
+--- captures (`:help treesitter-highlight-spell`) to tell "code" leaves
+--- (identifiers, ...) apart from "prose" leaves (comments, string content,
+--- or whatever else a language's highlight query marks `@spell` or
+--- `@string`, see `_is_prose_capture`), and reading the attached parser's
+--- language name (`_current_language`) to look up that language's
+--- comment-marker characters (`_comment_marker_characters`).
 ---
---- `M.split` is the entry point, and composes up to three passes:
---- `_split_prose_words` runs first, but *only* for prose-tagged leaves -- it
+--- `M.split`/`M.split_run` narrow their input down to eligible text, then
+--- both hand off to the shared `_split_text`, which composes up to three
+--- passes: `_prose_words` runs first, but *only* for prose-tagged text -- it
 --- divides prose into individual words the way real Vim's `w` divides a
---- text file (on whitespace and punctuation), since a comment or string
---- leaf's text has no other word boundaries in it at all. Code leaves skip
---- straight past this pass, treating their whole text as a single "word".
---- Every resulting word (one, for code) then goes through `_split_delimiters`
---- (dividing on `_`/`-`) and `_split_case` (dividing on camelCase/PascalCase
---- boundaries), using `commands.motion.subword.code` or `.prose`'s rules,
---- whichever matched. Each produced `treemotion.SubwordUnit` is just a
---- coordinate range, not a real tree node -- there's no parent/child/sibling
---- structure to a sub-word slice, only a start and an end.
+--- text file (on whitespace and punctuation), since comment/string/run text
+--- has no other word boundaries in it at all. Code text skips straight past
+--- this pass, treating the whole thing as a single "word". Every resulting
+--- word (one, for code) then goes through `_split_delimiters` (dividing on
+--- `_`/`-`/`:`/`/`) and, unless the chunk looks like an opaque hash/digest
+--- (`_looks_like_hash`), `_split_case` (dividing on camelCase/PascalCase
+--- boundaries) -- using `.code` or `.prose`'s rules, whichever matched.
+--- Each produced `treemotion.SubwordUnit` is just a coordinate range, not a
+--- real tree node -- there's no parent/child/sibling structure to a
+--- sub-word slice, only a start and an end.
 ---
---- When `commands.motion.subword.backtick_identifiers` is enabled (the
---- default), prose word-splitting gets one more wrinkle: a backtick-enclosed
---- span that's exactly one Vim word (`` `fooBar` ``, `` `foo-bar` ``, not
---- `` `foo bar` `` or `` `` ``) is pulled out and run through `.code`'s
---- rules instead of `.prose`'s, and the backticks themselves produce no
---- unit at all -- invisible to `w`/`b`/`e`/`ge`, the same way a `"skip"`
---- comment-marker run already is. See `_split_backtick_identifiers`.
+--- When `backtick_identifiers` is enabled (the default), prose word-splitting
+--- gets one more wrinkle: a backtick-enclosed span that's exactly one Vim
+--- word (`` `fooBar` ``, `` `foo-bar` ``, not `` `foo bar` `` or `` `` ``)
+--- is pulled out and run through `.code`'s rules instead of `.prose`'s, and
+--- the backticks themselves produce no unit at all -- invisible to
+--- `w`/`b`/`e`/`ge`, the same way a `"skip"` comment-marker run already is.
+--- See `_split_backtick_identifiers`.
 
 local configuration = require("treemotion._core.configuration")
+local leaf = require("treemotion._commands.motion.leaf")
 local motion_constant = require("treemotion._commands.motion.constant")
 
 local M = {}
@@ -130,61 +138,37 @@ local function _is_prose(node)
     return false
 end
 
---- Read the user's `subword` splitting configuration for `is_prose`'s context.
+--- Read the user's splitting configuration for `is_prose`'s context, within
+--- `group` ("small" for `w`/`e`/`b`/`ge`, "big" for `W`/`E`/`B`/`gE`).
 ---
----@param is_prose boolean Whether to read `commands.motion.subword.prose` or `.code`.
----@return boolean # camel_case
----@return boolean # pascal_case
----@return treemotion.SubwordDelimiterMode # kebab_case
----@return treemotion.SubwordDelimiterMode # snake_case
----@return treemotion.SubwordDelimiterMode # comment_marker_case
+---@param is_prose boolean Whether to read `.prose` or `.code`.
+---@param group "small"|"big" Which motion family's configuration to read.
+---@return treemotion.ConfigurationMotionSubwordRules
 ---
-local function _options(is_prose)
-    -- `assert()`: `commands.motion.subword.code`/`.prose` are optional in
-    -- the LuaCATS types (they double as valid partial user-override input),
-    -- but `configuration._DEFAULTS` always fills both in, so
-    -- `resolve_data()`'s result always has them.
-    local subword = assert(configuration.resolve_data().commands.motion.subword)
-    local rules = assert(is_prose and subword.prose or subword.code)
+local function _rules(is_prose, group)
+    -- `assert()`: `commands.motion.small`/`.big` and their `.code`/`.prose`
+    -- are optional in the LuaCATS types (they double as valid partial
+    -- user-override input), but `configuration._DEFAULTS` always fills all
+    -- of them in, so `resolve_data()`'s result always has them.
+    local motion_group = assert(configuration.resolve_data().commands.motion[group])
 
-    return rules.camel_case, rules.pascal_case, rules.kebab_case, rules.snake_case, rules.comment_marker_case
+    return assert(is_prose and motion_group.prose or motion_group.code)
 end
 
---- Same as `_options`, but as one table instead of five parallel return
---- values -- needed wherever the result might have to be cached in a local
---- and reused later (see `M.split`'s backtick-identifier handling), since a
---- plain multi-return can't be stored without immediately unpacking it into
---- five more locals anyway.
+--- Whether `commands.motion[group].backtick_identifiers` is enabled.
 ---
----@param is_prose boolean Whether to read `commands.motion.subword.prose` or `.code`.
----@return {camel_case: boolean, pascal_case: boolean, kebab_case: treemotion.SubwordDelimiterMode,
----    snake_case: treemotion.SubwordDelimiterMode, comment_marker_case: treemotion.SubwordDelimiterMode}
----
-local function _rules(is_prose)
-    local camel_case, pascal_case, kebab_case, snake_case, comment_marker_case = _options(is_prose)
-
-    return {
-        camel_case = camel_case,
-        pascal_case = pascal_case,
-        kebab_case = kebab_case,
-        snake_case = snake_case,
-        comment_marker_case = comment_marker_case,
-    }
-end
-
---- Whether `commands.motion.subword.backtick_identifiers` is enabled.
----
+---@param group "small"|"big" Which motion family's configuration to read.
 ---@return boolean
 ---
-local function _backtick_identifiers_enabled()
-    -- `assert()`: see `_options`'s identical use above -- `commands.motion.subword`
+local function _backtick_identifiers_enabled(group)
+    -- `assert()`: see `_rules`'s identical use above -- `commands.motion[group]`
     -- is optional in the LuaCATS types, but `configuration._DEFAULTS` always
     -- fills it in, so `resolve_data()`'s result always has it. Don't `assert()`
-    -- the boolean field itself, though (unlike `_options`' table fields) --
-    -- `false` is a legitimate value here, and `assert(false)` would raise.
-    local subword = assert(configuration.resolve_data().commands.motion.subword)
+    -- the boolean field itself, though (unlike `_rules`' table) -- `false` is
+    -- a legitimate value here, and `assert(false)` would raise.
+    local motion_group = assert(configuration.resolve_data().commands.motion[group])
 
-    return subword.backtick_identifiers
+    return motion_group.backtick_identifiers
 end
 
 --- Classify one character the way real Vim's `w` classifies it in a text file.
@@ -195,13 +179,16 @@ end
 --- that one "everything else" class, so a run like `?!` is a single word,
 --- not two.
 ---
---- `-` is deliberately grouped into `"word"` here too, even though real
---- Vim's default `'iskeyword'` excludes it: `_split_delimiters` is the
---- single place that decides what happens to a `-`/`_` it finds *within* a
---- word, via `kebab_case`/`snake_case`. If this function split `-` off as
---- its own run instead, `"none"` mode could never put it back together --
---- the split would already have happened a layer up, before that setting
---- was even consulted.
+--- `-`/`:`/`/` are deliberately grouped into `"word"` here too, even though
+--- real Vim's default `'iskeyword'` excludes them: `_split_delimiters` is
+--- the single place that decides what happens to a `-`/`_`/`:`/`/` it finds
+--- *within* a word, via `kebab_case`/`snake_case`/`colon_case`/`slash_case`.
+--- If this function split them off as their own run instead, `"none"` mode
+--- could never put them back together -- the split would already have
+--- happened a layer up, before that setting was even consulted. Grouping
+--- `:`/`/` this way is also what keeps a structured token like
+--- `github:NixOS/nixpkgs` or a URL/path from being fragmented at every `:`/`/`
+--- before `colon_case`/`slash_case` ever get a say.
 ---
 ---@param char string A single character.
 ---@return "blank"|"word"|"other"
@@ -209,7 +196,7 @@ end
 local function _char_class(char)
     if char:match("%s") then
         return "blank"
-    elseif char:match("[%w_%-]") then
+    elseif char:match("[%w_%-:/]") then
         return "word"
     end
 
@@ -334,33 +321,122 @@ local function _split_backtick_identifiers(text)
     return segments
 end
 
+--- Whether `text` looks like an opaque hash/digest -- a run this plugin
+--- should treat as one unit and never case-split internally, e.g. a sha1 hex
+--- digest or a base64-encoded sha256 (`sha256-A8Yg...SgU=`).
+---
+--- Pure heuristic (charset + minimum length), not a hardcoded list of known
+--- algorithms -- deliberately, so it also matches things that merely happen
+--- to look hash-shaped. Trailing `=` (base64 padding) is stripped before the
+--- length/charset check runs, but doesn't itself have to be hex/base64.
+---
+--- The base64-shaped branch also requires at least one digit somewhere in
+--- `text`: without that, "at least `min_length` characters, purely
+--- alphanumeric, with both an uppercase and a lowercase letter" matches
+--- virtually any real-world camelCase/PascalCase identifier of that length
+--- too (`handleSubmitButtonClick`, `getUserAuthenticationToken`, ...), not
+--- just genuine digests -- a random base64 run of `min_length`+ characters
+--- is overwhelmingly likely to contain at least one digit (each character
+--- has a 10/64 chance of being one), while an ordinary hand-written
+--- identifier of that length usually has none at all. The pure-hex branch
+--- doesn't need this: its alphabet (`%x`) already includes `0`-`9`.
+---
+---@param text string A candidate run (e.g. one `_split_delimiters` chunk).
+---@param min_length integer Minimum length, after stripping `=` padding, to
+---    even consider `text` (see `opaque_token_min_length`'s docstring in
+---    `types.lua`).
+---@return boolean
+---
+local function _looks_like_hash(text, min_length)
+    local stripped = text:gsub("=+$", "")
+
+    if #stripped < min_length then
+        return false
+    end
+
+    if stripped:match("^%x+$") then
+        return true
+    end
+
+    return stripped:match("^[%w+/]+$") ~= nil
+        and stripped:match("%u") ~= nil
+        and stripped:match("%l") ~= nil
+        and stripped:match("%d") ~= nil
+end
+
+--- Merge a trailing all-`=` word into the word right before it, when the
+--- combined span passes `_looks_like_hash` -- so `sha256-A8Yg...SgU` and a
+--- separate `=` word (produced by `_split_prose_words`, since `=` isn't in
+--- `_char_class`'s `"word"` class) become one word before delimiter/case
+--- splitting ever sees either half.
+---
+---@param words {text: string, offset: integer, is_identifier: boolean?}[]
+---    `_split_prose_words`' (or the backtick-identifier-aware equivalent's) output.
+---@param min_length integer See `_looks_like_hash`.
+---@return {text: string, offset: integer, is_identifier: boolean?}[]
+---
+local function _merge_opaque_padding(words, min_length)
+    if #words < 2 then
+        return words
+    end
+
+    local merged = {}
+    local index = 1
+
+    while index <= #words do
+        local word = words[index]
+        local next_word = words[index + 1]
+
+        if next_word and not word.is_identifier and next_word.text:match("^=+$") then
+            local adjacent = word.offset + #word.text == next_word.offset
+            local combined = word.text .. next_word.text
+
+            if adjacent and _looks_like_hash(combined, min_length) then
+                table.insert(merged, { text = combined, offset = word.offset })
+                index = index + 2
+            else
+                table.insert(merged, word)
+                index = index + 1
+            end
+        else
+            table.insert(merged, word)
+            index = index + 1
+        end
+    end
+
+    return merged
+end
+
 --- Split a prose leaf's `text` into words, the same shape `_split_prose_words`
 --- returns, except each word also carries whether it's a backtick-enclosed
 --- identifier (see `_split_backtick_identifiers`) for `M.split` to apply
 --- `.code`'s rules to instead of `.prose`'s.
 ---
 ---@param text string A prose leaf's full text (see `M.split`).
----@param backtick_identifiers boolean Whether `commands.motion.subword.backtick_identifiers` is enabled.
+---@param backtick_identifiers boolean Whether `commands.motion[group].backtick_identifiers` is enabled.
+---@param opaque_token_min_length integer See `_looks_like_hash`.
 ---@return {text: string, offset: integer, is_identifier: boolean?}[]
 ---
-local function _prose_words(text, backtick_identifiers)
+local function _prose_words(text, backtick_identifiers, opaque_token_min_length)
+    local words
+
     if not backtick_identifiers then
-        return _split_prose_words(text)
-    end
+        words = _split_prose_words(text)
+    else
+        words = {}
 
-    local words = {}
-
-    for _, segment in ipairs(_split_backtick_identifiers(text)) do
-        if segment.kind == "identifier" then
-            table.insert(words, { text = segment.text, offset = segment.offset, is_identifier = true })
-        else
-            for _, word in ipairs(_split_prose_words(segment.text)) do
-                table.insert(words, { text = word.text, offset = segment.offset + word.offset - 1 })
+        for _, segment in ipairs(_split_backtick_identifiers(text)) do
+            if segment.kind == "identifier" then
+                table.insert(words, { text = segment.text, offset = segment.offset, is_identifier = true })
+            else
+                for _, word in ipairs(_split_prose_words(segment.text)) do
+                    table.insert(words, { text = word.text, offset = segment.offset + word.offset - 1 })
+                end
             end
         end
     end
 
-    return words
+    return _merge_opaque_padding(words, opaque_token_min_length)
 end
 
 --- Find every column in `text` where a new camelCase/PascalCase word starts.
@@ -439,7 +515,7 @@ end
 --- statement-terminator leaves in every *other* language that happens to
 --- reuse the same character for something unrelated -- so a character only
 --- ever gets `comment_marker_case` treatment in the languages
---- `commands.motion.subword.comment_markers` actually lists it for (see
+--- `commands.motion.comment_markers` actually lists it for (see
 --- that field's docstring in `types.lua`). A language with no entry at all
 --- has no comment-marker characters, so `comment_marker_case` is silently a
 --- no-op there until the user configures one -- consistent with this
@@ -501,16 +577,30 @@ end
 ---@param char string A single character.
 ---@param kebab_case treemotion.SubwordDelimiterMode How to treat `-`.
 ---@param snake_case treemotion.SubwordDelimiterMode How to treat `_`.
+---@param colon_case treemotion.SubwordDelimiterMode How to treat `:`.
+---@param slash_case treemotion.SubwordDelimiterMode How to treat `/`.
 ---@param comment_marker_case treemotion.SubwordDelimiterMode How to treat `comment_marker_characters`.
 ---@param comment_marker_characters table<string, true> This language's comment-marker punctuation (see
 ---    `_comment_marker_characters`).
----@return treemotion.SubwordDelimiterMode # `"none"` for any character that isn't covered by one of the three above.
+---@return treemotion.SubwordDelimiterMode # `"none"` for any character that isn't covered by one of the above.
 ---
-local function _delimiter_mode(char, kebab_case, snake_case, comment_marker_case, comment_marker_characters)
+local function _delimiter_mode(
+    char,
+    kebab_case,
+    snake_case,
+    colon_case,
+    slash_case,
+    comment_marker_case,
+    comment_marker_characters
+)
     if char == "-" then
         return kebab_case
     elseif char == "_" then
         return snake_case
+    elseif char == ":" then
+        return colon_case
+    elseif char == "/" then
+        return slash_case
     elseif comment_marker_characters[char] then
         return comment_marker_case
     end
@@ -555,13 +645,23 @@ end
 ---@param text string A word to split (a whole leaf's text, for code; one `_split_prose_words` word, for prose).
 ---@param kebab_case treemotion.SubwordDelimiterMode How to treat `-` next to real identifier content.
 ---@param snake_case treemotion.SubwordDelimiterMode How to treat `_` next to real identifier content.
+---@param colon_case treemotion.SubwordDelimiterMode How to treat `:` next to real identifier content.
+---@param slash_case treemotion.SubwordDelimiterMode How to treat `/` next to real identifier content.
 ---@param comment_marker_case treemotion.SubwordDelimiterMode How to treat `comment_marker_characters`, or
----    `text`-wide `-`/`_` runs.
+---    `text`-wide `-`/`_`/`:`/`/` runs.
 ---@param comment_marker_characters table<string, true> This language's comment-marker punctuation (see
 ---    `_comment_marker_characters`).
 ---@return {text: string, offset: integer}[] # Each chunk and its 1-indexed start column in `text`.
 ---
-local function _split_delimiters(text, kebab_case, snake_case, comment_marker_case, comment_marker_characters)
+local function _split_delimiters(
+    text,
+    kebab_case,
+    snake_case,
+    colon_case,
+    slash_case,
+    comment_marker_case,
+    comment_marker_characters
+)
     if not text:find("%w") then
         if comment_marker_characters["-"] then
             kebab_case = comment_marker_case
@@ -569,6 +669,14 @@ local function _split_delimiters(text, kebab_case, snake_case, comment_marker_ca
 
         if comment_marker_characters["_"] then
             snake_case = comment_marker_case
+        end
+
+        if comment_marker_characters[":"] then
+            colon_case = comment_marker_case
+        end
+
+        if comment_marker_characters["/"] then
+            slash_case = comment_marker_case
         end
     end
 
@@ -581,6 +689,8 @@ local function _split_delimiters(text, kebab_case, snake_case, comment_marker_ca
             text:sub(index, index),
             kebab_case,
             snake_case,
+            colon_case,
+            slash_case,
             comment_marker_case,
             comment_marker_characters
         )
@@ -600,6 +710,8 @@ local function _split_delimiters(text, kebab_case, snake_case, comment_marker_ca
                         text:sub(run_end + 1, run_end + 1),
                         kebab_case,
                         snake_case,
+                        colon_case,
+                        slash_case,
                         comment_marker_case,
                         comment_marker_characters
                     )
@@ -732,46 +844,127 @@ local function _leading_continuation_length(node, text)
     return length
 end
 
---- Split `node`'s text into sub-word units, per the user's `subword` configuration.
+--- Shared tail of `M.split`/`M.split_run`: `text` -> words -> per-word
+--- delimiter/case split -> `treemotion.SubwordUnit[]`.
 ---
---- Composes up to three passes: for prose (`@spell`- or `@string`-tagged)
---- leaves only, `_split_prose_words` first divides the text into individual words; code
---- leaves treat their whole text as a single word instead, since a normal
---- token never contains embedded blanks. Every word then goes through
---- `_split_delimiters` (dividing on `_`/`-`) and `_split_case` (dividing on
---- camelCase/PascalCase boundaries), in that order. Two running offsets --
---- `word.offset` from the outer pass, `delimited.offset`/chunk length from
---- the inner ones -- compose into each unit's absolute buffer column.
+--- For prose (`@spell`- or `@string`-tagged) text only, `_prose_words` first
+--- divides `text` into individual words; code text is treated as a single
+--- word instead, since a normal token never contains embedded blanks. Every
+--- word then goes through `_split_delimiters` (dividing on `_`/`-`/`:`/`/`)
+--- and, unless the resulting chunk looks like an opaque hash/digest (see
+--- `_looks_like_hash`), `_split_case` (dividing on camelCase/PascalCase
+--- boundaries). A chunk that *does* look like a hash skips `_split_case`
+--- entirely -- it's one unit no matter its internal case transitions. Two
+--- running offsets -- `word.offset` from the outer pass, `delimited.offset`/
+--- chunk length from the inner ones -- compose into each unit's absolute
+--- buffer column, both relative to `start_col`.
 ---
---- Before any of that, two passes narrow `node` down to the text that's
---- actually eligible to split. `_single_row_span` first collapses a
---- multi-row `node` down to one row when the only reason it spans rows is a
---- trailing run of blank characters (tree-sitter-rust's `doc_comment`, see
---- its docstring) -- genuinely multi-row content (a long string) is left
---- alone and falls back to one whole-leaf unit, same as always. Then
---- `_leading_continuation_length` strips off (and shifts past) any leading
---- characters that are really the tail of the previous leaf's delimiter run
---- -- see its docstring. When that continuation consumes `node` in its
---- entirety (tree-sitter-rust's lone `/` `outer_doc_comment_marker` leaf,
---- for `///` doc comments), `node` has no content of its own left to become
---- a unit, so this returns an empty list instead of the usual whole-leaf
---- fallback -- `_commands.motion.word` treats that as "no stop here",
---- skipping straight to the next/previous leaf, the same way it already
---- skips punctuation runs collapsed into a single stop elsewhere.
+--- If `text` produces no words at all (e.g. an all-whitespace prose
+--- comment), this falls back to one unit spanning `start_row`/`start_col`
+--- to `end_row`/`end_col` -- nothing for any delimiter setting to have acted
+--- on, so there's nothing to split. One more empty case falls out of
+--- `_split_delimiters` itself, though, and does *not* get that fallback:
+--- text that's *entirely* a `comment_marker_case = "skip"` run has real
+--- content -- unlike all-whitespace text -- but every bit of it is a marker
+--- `_split_delimiters` was told to drop, so `words` is non-empty while the
+--- returned units end up empty anyway. That's `"skip"` doing exactly what
+--- it says -- forcing a landing stop back in for it would silently override
+--- the user's own setting.
 ---
---- One more empty case falls out of `_split_delimiters` itself: a leaf
---- that's *entirely* a `comment_marker_case = "skip"` run (Lua's `--`
---- opener as its own leaf, not just a piece of a bigger `comment_content`)
---- has real content -- unlike an all-blank prose leaf -- but every bit of
---- it is a marker `_split_delimiters` was told to drop, so `words` is
---- non-empty while `units` ends up empty anyway. That's `"skip"` doing
---- exactly what it says -- forcing a landing stop back in for it would
---- silently override the user's own setting -- so this returns `units`
---- as-is (possibly empty) rather than falling back to a whole-leaf unit;
---- only a leaf with *no words at all* (`#words == 0`, e.g. an
---- all-whitespace comment, nothing for `comment_marker_case` to have ever
---- acted on) still gets that fallback, since there both `_split_prose_words`
---- and `_split_delimiters` genuinely found nothing to work with.
+---@param text string The text to split (already narrowed to what's eligible -- see `M.split`/`M.split_run`).
+---@param start_row integer `text`'s row in the buffer (0-indexed).
+---@param start_col integer `text`'s first column in the buffer (0-indexed).
+---@param end_row integer The row to fall back to if `text` produces no words at all.
+---@param end_col integer The column to fall back to if `text` produces no words at all.
+---@param is_prose boolean Whether to read `.prose` or `.code` from `commands.motion[group]`.
+---@param rules treemotion.ConfigurationMotionSubwordRules `_rules(is_prose, group)`'s result.
+---@param group "small"|"big" Which motion family's configuration to read (for backtick identifiers,
+---    and for resolving `.code`'s rules when a backtick-identifier word is encountered in prose).
+---@param comment_marker_characters table<string, true> This language's comment-marker punctuation (see
+---    `_comment_marker_characters`).
+---@return treemotion.SubwordUnit[]
+---
+local function _split_text(
+    text,
+    start_row,
+    start_col,
+    end_row,
+    end_col,
+    is_prose,
+    rules,
+    group,
+    comment_marker_characters
+)
+    local words = is_prose and _prose_words(text, _backtick_identifiers_enabled(group), rules.opaque_token_min_length)
+        or { { text = text, offset = 1 } }
+
+    if #words == 0 then
+        return { _new_unit(start_row, start_col, end_row, end_col) }
+    end
+
+    -- Fetched lazily, at most once, only if a backtick-identifier word is
+    -- actually encountered below -- most prose leaves have none, and
+    -- `_rules(false, group)` is an extra `resolve_data()` walk not worth
+    -- paying for on every prose leaf regardless.
+    local identifier_rules
+
+    local units = {}
+
+    for _, word in ipairs(words) do
+        local word_column = start_col + word.offset - 1
+        local word_rules = rules
+
+        if word.is_identifier then
+            identifier_rules = identifier_rules or _rules(false, group)
+            word_rules = identifier_rules
+        end
+
+        for _, delimited in
+            ipairs(
+                _split_delimiters(
+                    word.text,
+                    word_rules.kebab_case,
+                    word_rules.snake_case,
+                    word_rules.colon_case,
+                    word_rules.slash_case,
+                    word_rules.comment_marker_case,
+                    comment_marker_characters
+                )
+            )
+        do
+            local column = word_column + delimited.offset - 1
+
+            if _looks_like_hash(delimited.text, word_rules.opaque_token_min_length) then
+                table.insert(units, _new_unit(start_row, column, start_row, column + #delimited.text))
+            else
+                for _, chunk in ipairs(_split_case(delimited.text, word_rules.camel_case, word_rules.pascal_case)) do
+                    table.insert(units, _new_unit(start_row, column, start_row, column + #chunk))
+                    column = column + #chunk
+                end
+            end
+        end
+    end
+
+    return units
+end
+
+--- Split `node`'s text into sub-word units, per `commands.motion.small`.
+---
+--- Two passes narrow `node` down to the text that's actually eligible to
+--- split, before handing off to `_split_text`. `_single_row_span` first
+--- collapses a multi-row `node` down to one row when the only reason it
+--- spans rows is a trailing run of blank characters (tree-sitter-rust's
+--- `doc_comment`, see its docstring) -- genuinely multi-row content (a long
+--- string) is left alone and falls back to one whole-leaf unit, same as
+--- always. Then `_leading_continuation_length` strips off (and shifts past)
+--- any leading characters that are really the tail of the previous leaf's
+--- delimiter run -- see its docstring. When that continuation consumes
+--- `node` in its entirety (tree-sitter-rust's lone `/` `outer_doc_comment_marker`
+--- leaf, for `///` doc comments), `node` has no content of its own left to
+--- become a unit, so this returns an empty list instead of the usual
+--- whole-leaf fallback -- `_commands.motion.word` treats that as "no stop
+--- here", skipping straight to the next/previous leaf, the same way it
+--- already skips punctuation runs collapsed into a single stop elsewhere.
 ---
 ---@param node TSNode Any leaf (see `_commands.motion.leaf`).
 ---@return treemotion.SubwordUnit[] # Empty when `node` is entirely a
@@ -811,53 +1004,186 @@ function M.split(node)
     end
 
     local is_prose = _is_prose(node)
-    local rules = _rules(is_prose)
+    local rules = _rules(is_prose, "small")
     local comment_marker_characters = _comment_marker_characters(_current_language())
-    local words = is_prose and _prose_words(text, _backtick_identifiers_enabled()) or { { text = text, offset = 1 } }
 
-    if #words == 0 then
-        -- No real content at all (e.g. an all-whitespace prose comment) --
-        -- nothing for any delimiter setting to have acted on, so fall back
-        -- to one unit spanning the whole leaf, the same way a leaf with no
-        -- delimiters in it at all would.
+    return _split_text(
+        text,
+        start_row,
+        text_start_col,
+        end_row,
+        end_col,
+        is_prose,
+        rules,
+        "small",
+        comment_marker_characters
+    )
+end
+
+--- Break the run from `start_node` to `end_node` into maximal stretches of
+--- leaves that all share the same `_is_prose` classification.
+---
+--- A contiguous run (see `_commands.motion.leaf`'s `is_contiguous`) can mix
+--- a code leaf with a prose/string leaf right next to it with no whitespace
+--- in between -- e.g. Lua's sugar call syntax `foo"bar"` parses as an
+--- `identifier` leaf (code) immediately followed by a `"`/`string_content`/`"`
+--- trio (all `@string`-tagged, i.e. prose per `_is_prose_capture`). Splitting
+--- the run's text as one undifferentiated blob would apply whichever leaf
+--- happens to come first's rules to the whole thing, bleeding `.code`'s
+--- `camel_case`/`opaque_token_min_length` (or `.prose`'s) into content that
+--- should have used the other. Grouping by classification first, and
+--- splitting each stretch with its own rules, keeps that boundary exact
+--- while still treating same-classification leaves as one merged span the
+--- way `M.split_run` always has.
+---
+---@param start_node TSNode The run's first leaf.
+---@param end_node TSNode The run's last leaf.
+---@return {is_prose: boolean, start_row: integer, start_col: integer, end_row: integer, end_col: integer}[]
+---
+local function _run_segments(start_node, end_node)
+    local end_row, end_col = end_node:end_()
+    local segments = {}
+    local node = start_node
+
+    while true do
+        local is_prose = _is_prose(node)
+        local segment_start_row, segment_start_col = node:start()
+        local segment_end_row, segment_end_col = node:end_()
+
+        while segment_end_row ~= end_row or segment_end_col ~= end_col do
+            local next_node = assert(leaf.next_leaf(node))
+
+            if _is_prose(next_node) ~= is_prose then
+                node = next_node
+
+                break
+            end
+
+            node = next_node
+            segment_end_row, segment_end_col = node:end_()
+        end
+
+        table.insert(segments, {
+            is_prose = is_prose,
+            start_row = segment_start_row,
+            start_col = segment_start_col,
+            end_row = segment_end_row,
+            end_col = segment_end_col,
+        })
+
+        if segment_end_row == end_row and segment_end_col == end_col then
+            return segments
+        end
+    end
+end
+
+--- Split one `_run_segments` segment into sub-word units.
+---
+--- `pcall` guards `nvim_buf_get_text` the same way `_commands.motion.leaf`'s
+--- `_has_non_blank_between` already guards its own identical call: a leaf's
+--- `:end_()` can sit one row past the buffer's last line (a root node
+--- covering an implicit trailing newline is the common case), which isn't a
+--- valid range to read. `M.split` never hits this because it reads leaf text
+--- via `vim.treesitter.get_node_text`, whose internal `buf_range_get_text`
+--- special-cases `end_col == 0` before ever calling `nvim_buf_get_text` --
+--- there's no equivalent to reach for here, since a run spans multiple
+--- leaves and has no single `TSNode` of its own. Falling back to one
+--- whole-segment unit on failure matches every other "can't split this"
+--- fallback in this file (a genuinely multi-row span, a `text` with no words
+--- in it, ...).
+---
+---@param segment {is_prose: boolean, start_row: integer, start_col: integer, end_row: integer, end_col: integer}
+---@param group "small"|"big"
+---@param comment_marker_characters table<string, true>
+---@return treemotion.SubwordUnit[]
+---
+local function _split_run_segment(segment, group, comment_marker_characters)
+    local start_row, start_col = segment.start_row, segment.start_col
+    local end_row, end_col = segment.end_row, segment.end_col
+
+    local ok, lines = pcall(vim.api.nvim_buf_get_text, 0, start_row, start_col, end_row, end_col, {})
+
+    if not ok then
         return { _new_unit(start_row, start_col, end_row, end_col) }
     end
 
-    -- Fetched lazily, at most once, only if a backtick-identifier word is
-    -- actually encountered below -- most prose leaves have none, and
-    -- `_rules(false)` is an extra `resolve_data()` walk not worth paying for
-    -- on every prose leaf regardless.
-    local identifier_rules
+    local text = table.concat(lines, "\n")
+    local trimmed = text:gsub("%s+$", "")
 
+    if trimmed:find("\n") then
+        -- Genuinely multi-row content; sub-word splitting only makes sense
+        -- within a single line.
+        return { _new_unit(start_row, start_col, end_row, end_col) }
+    end
+
+    local trimmed_end_col = start_col + #trimmed
+    local rules = _rules(segment.is_prose, group)
+
+    return _split_text(
+        trimmed,
+        start_row,
+        start_col,
+        start_row,
+        trimmed_end_col,
+        segment.is_prose,
+        rules,
+        group,
+        comment_marker_characters
+    )
+end
+
+--- Split the contiguous run from `start_node` to `end_node`'s text into
+--- sub-word units, per `commands.motion.big` -- the `W`/`E`/`B`/`gE`
+--- counterpart to `M.split`.
+---
+--- A run's leaves are contiguous by construction (see `_commands.motion.leaf`'s
+--- `is_contiguous`), so the raw buffer text from `start_node`'s start to
+--- `end_node`'s end is already exactly the run's text -- no leaf-boundary
+--- artifact-stitching like `_leading_continuation_length` is needed the way
+--- `M.split` needs it for a single leaf. `_run_segments` first divides the
+--- run into same-classification (code vs. prose, see its docstring)
+--- stretches; each stretch is then handled by `_split_run_segment`, which
+--- trims trailing blank characters the same way `_single_row_span` trims a
+--- leaf (a run can end in one, the same trailing-terminator grammar quirk
+--- `_single_row_span`'s docstring covers), falling back to one whole-segment
+--- unit for genuinely multi-row content left after trimming, same as
+--- `M.split` does for a multi-row leaf.
+---
+--- When `commands.motion.big.enabled` is `false` (the default), this always
+--- returns one whole-run unit -- the exact behavior `W`/`E`/`B`/`gE`
+--- had before this feature existed, ignoring case/delimiters entirely.
+--- Setting it to `true` opts into real splitting, reading
+--- `commands.motion.big.code`/`.prose` instead of `.small`'s.
+---
+---@param start_node TSNode The run's first leaf (e.g. `leaf.run_start(node)`).
+---@param end_node TSNode The run's last leaf (e.g. `leaf.run_end(node)`).
+---@return treemotion.SubwordUnit[] # Empty when `enabled` is `true` and the whole run is a dropped
+---    (`"skip"`) delimiter run with no other content -- same as `M.split`, see `_split_text`'s docstring;
+---    otherwise the run's full (trimmed) span if nothing else splits it.
+---
+function M.split_run(start_node, end_node)
+    local start_row, start_col = start_node:start()
+    local end_row, end_col = end_node:end_()
+
+    if not configuration.resolve_data().commands.motion.big.enabled then
+        -- Deliberately skips `_run_segments`/trimming entirely: that
+        -- machinery exists only to make real splitting land on sensible
+        -- boundaries, and applying it here too would change `W`/`E`/`B`/`gE`'s
+        -- landing column in the same rare trailing-terminator-grammar-quirk
+        -- case `_single_row_span` handles for `M.split` -- exactly the
+        -- byte-for-byte parity with pre-`enabled` behavior this default is
+        -- supposed to guarantee. So the disabled path returns the raw
+        -- `start_node`/`end_node` span untouched, identical to what
+        -- `_commands.motion.runner` used to compute directly from
+        -- `leaf.run_start`/`leaf.run_end` before this function existed.
+        return { _new_unit(start_row, start_col, end_row, end_col) }
+    end
+
+    local comment_marker_characters = _comment_marker_characters(_current_language())
     local units = {}
 
-    for _, word in ipairs(words) do
-        local word_column = text_start_col + word.offset - 1
-        local word_rules = rules
-
-        if word.is_identifier then
-            identifier_rules = identifier_rules or _rules(false)
-            word_rules = identifier_rules
-        end
-
-        for _, delimited in
-            ipairs(
-                _split_delimiters(
-                    word.text,
-                    word_rules.kebab_case,
-                    word_rules.snake_case,
-                    word_rules.comment_marker_case,
-                    comment_marker_characters
-                )
-            )
-        do
-            local column = word_column + delimited.offset - 1
-
-            for _, chunk in ipairs(_split_case(delimited.text, word_rules.camel_case, word_rules.pascal_case)) do
-                table.insert(units, _new_unit(start_row, column, start_row, column + #chunk))
-                column = column + #chunk
-            end
-        end
+    for _, segment in ipairs(_run_segments(start_node, end_node)) do
+        vim.list_extend(units, _split_run_segment(segment, "big", comment_marker_characters))
     end
 
     return units
