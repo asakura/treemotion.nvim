@@ -99,6 +99,43 @@ local function _get_boolean_issue(key, data)
     return message
 end
 
+--- Check if `data` is a positive integer under `key`.
+---
+---@param key string The configuration value that we are checking.
+---@param data any The object to validate.
+---@return string? # The found error message, if any.
+---
+local function _get_positive_integer_issue(key, data)
+    local success, message = pcall(vim.validate, {
+        [key] = {
+            data,
+            function(value)
+                if value == nil then
+                    -- This value is optional so it's fine it if is not defined.
+                    return true
+                end
+
+                return type(value) == "number" and value > 0 and value == math.floor(value)
+            end,
+            -- TODO: `lua-language-server`'s type stubs only describe the
+            -- newer (0.11+) `vim.validate` signature, so this deprecated
+            -- table-spec call is flagged as a type mismatch even though
+            -- it's valid at runtime on Neovim 0.10. Remove this
+            -- suppression once this call is switched to the newer
+            -- `vim.validate(name, value, validator, optional, message)`
+            -- signature.
+            ---@diagnostic disable-next-line: assign-type-mismatch
+            "a positive integer",
+        },
+    })
+
+    if success then
+        return nil
+    end
+
+    return message
+end
+
 --- Check if `data` is one of `choices` under `key`.
 ---
 ---@param key string The configuration value that we are checking.
@@ -164,8 +201,8 @@ local function _get_command_issues(data)
         return vim.tbl_contains(choices, value)
     end, '"lowercase" or "uppercase"')
 
-    _append_validated(output, "commands.motion.subword.comment_markers", function()
-        return tabler.get_value(data, { "commands", "motion", "subword", "comment_markers" })
+    _append_validated(output, "commands.motion.comment_markers", function()
+        return tabler.get_value(data, { "commands", "motion", "comment_markers" })
     end, function(value)
         if value == nil then
             -- This value is optional so it's fine if it is not defined.
@@ -193,8 +230,8 @@ local function _get_command_issues(data)
 
     do
         local message = _get_boolean_issue(
-            "commands.motion.subword.backtick_identifiers",
-            tabler.get_value(data, { "commands", "motion", "subword", "backtick_identifiers" })
+            "commands.motion.big.enabled",
+            tabler.get_value(data, { "commands", "motion", "big", "enabled" })
         )
 
         if message ~= nil then
@@ -202,11 +239,11 @@ local function _get_command_issues(data)
         end
     end
 
-    for _, context in ipairs({ "code", "prose" }) do
-        for _, field in ipairs({ "camel_case", "pascal_case" }) do
+    for _, group in ipairs({ "small", "big" }) do
+        do
             local message = _get_boolean_issue(
-                "commands.motion.subword." .. context .. "." .. field,
-                tabler.get_value(data, { "commands", "motion", "subword", context, field })
+                "commands.motion." .. group .. ".backtick_identifiers",
+                tabler.get_value(data, { "commands", "motion", group, "backtick_identifiers" })
             )
 
             if message ~= nil then
@@ -214,16 +251,40 @@ local function _get_command_issues(data)
             end
         end
 
-        for _, field in ipairs({ "kebab_case", "snake_case", "comment_marker_case" }) do
-            local message = _get_enum_issue(
-                "commands.motion.subword." .. context .. "." .. field,
-                tabler.get_value(data, { "commands", "motion", "subword", context, field }),
-                vim.tbl_keys(motion_constant.DelimiterMode),
-                '"none" or "skip" or "stop"'
-            )
+        for _, context in ipairs({ "code", "prose" }) do
+            for _, field in ipairs({ "camel_case", "pascal_case" }) do
+                local message = _get_boolean_issue(
+                    "commands.motion." .. group .. "." .. context .. "." .. field,
+                    tabler.get_value(data, { "commands", "motion", group, context, field })
+                )
 
-            if message ~= nil then
-                table.insert(output, message)
+                if message ~= nil then
+                    table.insert(output, message)
+                end
+            end
+
+            for _, field in ipairs({ "kebab_case", "snake_case", "colon_case", "slash_case", "comment_marker_case" }) do
+                local message = _get_enum_issue(
+                    "commands.motion." .. group .. "." .. context .. "." .. field,
+                    tabler.get_value(data, { "commands", "motion", group, context, field }),
+                    vim.tbl_keys(motion_constant.DelimiterMode),
+                    '"none" or "skip" or "stop"'
+                )
+
+                if message ~= nil then
+                    table.insert(output, message)
+                end
+            end
+
+            do
+                local message = _get_positive_integer_issue(
+                    "commands.motion." .. group .. "." .. context .. ".opaque_token_min_length",
+                    tabler.get_value(data, { "commands", "motion", group, context, "opaque_token_min_length" })
+                )
+
+                if message ~= nil then
+                    table.insert(output, message)
+                end
             end
         end
     end
@@ -350,7 +411,7 @@ local function _check_motion()
     end
 end
 
---- Warn (never error) if a `commands.motion.subword.comment_markers` key
+--- Warn (never error) if a `commands.motion.comment_markers` key
 --- the *user* configured names a treesitter language with no installed
 --- parser.
 ---
@@ -377,7 +438,7 @@ end
 ---@param raw treemotion.Configuration The user's own configuration, unresolved.
 ---
 local function _check_comment_markers(raw)
-    local markers = tabler.get_value(raw, { "commands", "motion", "subword", "comment_markers" })
+    local markers = tabler.get_value(raw, { "commands", "motion", "comment_markers" })
 
     if type(markers) ~= "table" or vim.tbl_isempty(markers) then
         return
