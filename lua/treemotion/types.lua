@@ -6,6 +6,16 @@
 
 ---@alias treemotion.HintKind "word_boundaries" | "motions" | "none"
 
+---@alias treemotion.InsignificantCharacterList string[] | table<string, boolean>
+---    One language's `insignificant_characters` entry. Usually a plain
+---    `string[]` (a full replacement list, e.g. `{ ";" }`) -- but a string
+---    key mapped to `false` (e.g. `{ [";"] = false }`, optionally alongside
+---    ordinary string elements to add) instead patches
+---    `_OPTIONAL_INSIGNIFICANT_CHARACTERS`/`_DEFAULTS`, negating just that
+---    one character rather than replacing the language's whole list. See
+---    `configuration.get_insignificant_characters`'s docstring for the full
+---    resolution order.
+
 ---@class treemotion.Configuration
 ---    The user's customizations for this plugin.
 ---@field commands treemotion.ConfigurationCommands?
@@ -68,7 +78,7 @@
 ---    configuration needed, as soon as their treesitter parser is installed
 ---    -- see `_OPTIONAL_COMMENT_MARKERS` in `configuration.lua` for the full
 ---    list and `configuration.get_comment_markers` for the resolution order.
----@field insignificant_characters table<string, string[]>?
+---@field insignificant_characters table<string, treemotion.InsignificantCharacterList>?
 ---    Leaf-level tokens (e.g. `";"`, `"{"`, `"}"`, `"["`, `"]"`) that
 ---    `w`/`e`/`b`/`ge`/`W`/`E`/`B`/`gE` treat as entirely invisible, keyed by
 ---    treesitter language name -- same per-language-name convention as
@@ -84,9 +94,20 @@
 ---    this type. The character itself is still real buffer text (`x`, `dd`,
 ---    highlighting, ... are all unaffected); only word-motion traversal
 ---    ignores it. Defaults to `{}` for every language -- unlike
----    `comment_markers`, this has no shipped or auto-detected defaults:
----    which punctuation counts as "insignificant" is a personal taste call,
----    not an objective fact about a grammar, so it's opt-in only.
+---    `comment_markers`, which punctuation counts as "insignificant" is
+---    mostly a personal taste call, not an objective fact about a grammar,
+---    so this is opt-in only for the vast majority of languages. A small,
+---    curated set of near-universal exceptions (e.g. Nix's structural
+---    `{`/`}`/`[`/`]` and statement-ending `;`) is still auto-detected once
+---    that language's treesitter parser is installed, same resolution order
+---    as `comment_markers` -- see `_OPTIONAL_INSIGNIFICANT_CHARACTERS` in
+---    `configuration.lua` for the full list and
+---    `configuration.get_insignificant_characters` for the resolution order.
+---    A per-language entry's value is usually a plain `string[]`, which fully
+---    replaces any shipped/auto-detected list for that language -- but see
+---    `treemotion.InsignificantCharacterList` for how to instead negate just
+---    one character (e.g. keep Nix's `{`/`}`/`[`/`]` but drop `;`) without
+---    restating the rest.
 
 ---@class treemotion.ConfigurationMotionGroup
 ---    Sub-word splitting rules for one motion family (`small` = `w`/`e`/`b`/`ge`,

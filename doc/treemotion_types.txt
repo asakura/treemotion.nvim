@@ -79,7 +79,15 @@ Fields ~
        configuration needed, as soon as their treesitter parser is installed
        -- see `_OPTIONAL_COMMENT_MARKERS` in `configuration.lua` for the full
        list and `configuration.get_comment_markers` for the resolution order.
-    {insignificant_characters} table<`(string)`, `(string)`[]>?
+    {in|s|ignific|a|nt_|ch|a|r|a|cter||s|} t|a|ble<`(|s|tring)`, (`(|s|tring)`[] | t|a|ble<`(|s|tring)`, `(boole|a|n)`>
+   |One| |l|a|ngu|a|ge|'|s| `in|s|ignific|a|nt_|ch|a|r|a|cter||s|` |entry.| U|s|u|a|lly |a| |pl|a|in|
+   ``(|s|tring)`[]` (|a| |full| |repl|a|cement| li|s|t, |e.g.| `{ ";" }`) -- |but| |a| `(|s|tring)`
+   |key| |m|a|pped| |to| `f|a|l|s|e` (|e.g.| `{ [";"] = f|a|l|s|e }`, |option|a|lly| |a|long|s|ide
+   |ordin|a|ry| `(|s|tring)` element|s| |to| ||a|dd|) in|s|te|a|d p|a|tche|s|
+   `_OPTIONAL_INSIGNIFICANT_CHARACTERS`/`_DEFAULTS`, |neg|a|ting| ju|s|t |th|a|t|
+   |one| |ch|a|r|a|cter| r|a||the|r |th|a|n| |repl|a|cing| |the| |l|a|ngu|a|ge|'|s| |whole| li|s|t. |See|
+   `configur|a|tion.get_in|s|ignific|a|nt_|ch|a|r|a|cter||s|`'|s| doc`(|s|tring)` |for| |the| |full|
+   re|s|olution |order.|)>?
        Leaf-level tokens (e.g. `";"`, `"{"`, `"}"`, `"["`, `"]"`) that
        `w`/`e`/`b`/`ge`/`W`/`E`/`B`/`gE` treat as entirely invisible, keyed by
        treesitter language name -- same per-language-name convention as
@@ -95,9 +103,20 @@ Fields ~
        this type. The character itself is still real buffer text (`x`, `dd`,
        highlighting, ... are all unaffected); only word-motion traversal
        ignores it. Defaults to `{}` for every language -- unlike
-       `comment_markers`, this has no shipped or auto-detected defaults:
-       which punctuation counts as "insignificant" is a personal taste call,
-       not an objective fact about a grammar, so it's opt-in only.
+       `comment_markers`, which punctuation counts as "insignificant" is
+       mostly a personal taste call, not an objective fact about a grammar,
+       so this is opt-in only for the vast majority of languages. A small,
+       curated set of near-universal exceptions (e.g. Nix's structural
+       `{`/`}`/`[`/`]` and statement-ending `;`) is still auto-detected once
+       that language's treesitter parser is installed, same resolution order
+       as `comment_markers` -- see `_OPTIONAL_INSIGNIFICANT_CHARACTERS` in
+       `configuration.lua` for the full list and
+       `configuration.get_insignificant_characters` for the resolution order.
+       A per-language entry's value is usually a plain `string[]`, which fully
+       replaces any shipped/auto-detected list for that language -- but see
+       `treemotion.InsignificantCharacterList` for how to instead negate just
+       one character (e.g. keep Nix's `{`/`}`/`[`/`]` but drop `;`) without
+       restating the rest.
 
 ------------------------------------------------------------------------------
 *treemotion.ConfigurationMotionGroup*

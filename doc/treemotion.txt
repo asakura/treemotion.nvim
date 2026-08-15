@@ -1,4 +1,4 @@
-*treemotion.txt*        For Neovim >= 0.8.0        Last change: 2026 August 14
+*treemotion.txt*        For Neovim >= 0.8.0        Last change: 2026 August 15
 
 ==============================================================================
 Table of Contents                               *treemotion-table-of-contents*
@@ -434,12 +434,45 @@ insignificant, since prose already does its own punctuation-is-a-word splitting
 (see `Comments and prose` above). A `;` inside a comment or string still stops
 `w` as normal.
 
-Unlike `comment_markers`, this ships with **no** defaults at all – comment
-syntax is an objective fact about a grammar, but which punctuation counts as
-"insignificant" is a personal taste call (some setups want `w` to stop on
-`{`/`}` to jump between blocks), so it’s opt-in only. `:checkhealth
-treemotion` warns the same way `comment_markers` does if a language you add
-here has no treesitter parser installed.
+Unlike `comment_markers`, this ships with **no** defaults for almost every
+language – comment syntax is an objective fact about a grammar, but which
+punctuation counts as "insignificant" is a personal taste call (some setups
+want `w` to stop on `{`/`}` to jump between blocks), so it’s opt-in only.
+`:checkhealth treemotion` warns the same way `comment_markers` does if a
+language you add here has no treesitter parser installed.
+
+The one exception is a small, curated set of near-universal cases, resolved the
+same way `comment_markers`’ own auto-detected languages are (see above):
+auto-detected once that language’s treesitter parser is installed, with no
+configuration needed. Nix’s own string delimiters (`"`, `''`) are
+deliberately excluded even though they’re leaves too – `tree-sitter-nix`
+tags both `@string`, so they’re already prose, exempt from this setting in
+the first place (see above).
+
+  Language   {   }   [   ]   ;
+  ---------- --- --- --- --- ---
+  nix        ✓   ✓   ✓   ✓   ✓
+A user-configured `insignificant_characters` entry for a language normally
+overrides this table entirely, same as `comment_markers`. To keep most of an
+auto-detected (or shipped) list but drop just one character, map it to `false`
+instead of writing out a full replacement list – a plain Lua `nil` can’t
+survive as a table value (`:help vim.NIL`), so `false` is the explicit "remove
+this one" marker:
+
+>lua
+    commands = {
+        motion = {
+            insignificant_characters = {
+                -- Keeps Nix's auto-detected `{`/`}`/`[`/`]`, drops only `;`.
+                nix = { [";"] = false },
+            },
+        },
+    },
+<
+
+A `false` entry can be combined with ordinary string elements in the same
+table, e.g. `nix = { ",", [";"] = false }` drops `;` and adds `,` on top of
+the rest of the auto-detected list.
 
 `W`/`E`/`B`/`gE` (below) respect the same setting too: an insignificant leaf
 that would otherwise form its own isolated run (e.g. `foo ; bar`, with

@@ -245,6 +245,30 @@ local _OPTIONAL_COMMENT_MARKERS = {
     matlab = { "%" },
 }
 
+--- Additional treesitter language -> insignificant-leaf-text entries beyond
+--- `_DEFAULTS` (which ships empty), activated automatically (see
+--- `M.get_insignificant_characters`) only when that language's parser is
+--- actually installed. Mirrors `_OPTIONAL_COMMENT_MARKERS` in shape and
+--- resolution order, but deliberately much smaller: unlike comment syntax,
+--- which punctuation counts as "insignificant" is a personal taste call, not
+--- an objective fact about a grammar (see `M.get_insignificant_characters`'s
+--- docstring), so entries only belong here once they're a near-universal
+--- call for that language, not a guess. In Nix, `;` only ever terminates a
+--- `let`/attribute-set binding, never starts an expression, and `{`/`}`/`[`/`]`
+--- are pure structural delimiters with no meaning of their own -- all four
+--- are noise at every occurrence, the same reasoning README's own
+--- `insignificant_characters` example gives for Lua's `;`. Nix's own string
+--- delimiters (`"`, `''`) are deliberately excluded: `tree-sitter-nix`'s
+--- `queries/highlights.scm` already tags both `@string`, so `_is_prose`
+--- already treats them as prose leaves, which `commands.motion.insignificant_characters`
+--- never applies to in the first place (see `M.get_insignificant_characters`'s
+--- docstring) -- listing them here would be dead configuration.
+---
+---@type table<string, string[]>
+local _OPTIONAL_INSIGNIFICANT_CHARACTERS = {
+    nix = { "{", "}", "[", "]", ";" },
+}
+
 --- Setup `treemotion` for the first time, if needed.
 function M.initialize_data_if_needed()
     if vim.g.loaded_treemotion then
@@ -314,15 +338,83 @@ function M.get_comment_markers(language)
     return nil
 end
 
+--- Whether `list` (a raw `commands.motion.insignificant_characters[language]`
+--- override) negates at least one character rather than being a plain
+--- `string[]` full replacement.
+---
+--- A Lua table literal can't hold a real `nil` value (`:help vim.NIL`
+--- explains why: `{"foo", nil}` collapses to `{"foo"}`, indistinguishable
+--- from never having the key at all), so there's no way for a user to write
+--- "drop just this one character from `_OPTIONAL_INSIGNIFICANT_CHARACTERS`
+--- (or a shipped default), keep the rest" as a real `nil`. `false` is the
+--- sentinel instead: an ordinary, assignable Lua value that survives fine as
+--- a table entry, e.g. `nix = { [";"] = false }` keeps `{`/`}`/`[`/`]` but
+--- drops `;`. `list[character] == false` (rather than merely falsy) is
+--- checked deliberately, so an absent key (`nil`, i.e. "no opinion") never
+--- gets confused with an explicit negation.
+---
+---@param list treemotion.InsignificantCharacterList
+---@return boolean
+---
+local function _has_negation(list)
+    for key, value in pairs(list) do
+        if type(key) == "string" and value == false then
+            return true
+        end
+    end
+
+    return false
+end
+
+--- Apply `patch` (a hybrid table -- see `_has_negation`) on top of `base` (an
+--- `_OPTIONAL_INSIGNIFICANT_CHARACTERS` entry, or `{}` if `language` has
+--- none): every character in `base` survives unless `patch` explicitly
+--- negates it (`[character] = false`), and every plain string `patch` lists
+--- in its own array part (`ipairs`-visible, same as any other
+--- `insignificant_characters` entry) is added on top, whether or not it was
+--- already in `base`.
+---
+---@param base string[]
+---@param patch treemotion.InsignificantCharacterList
+---@return string[]
+---
+local function _apply_negations(base, patch)
+    local result = {}
+
+    for _, character in ipairs(base) do
+        if patch[character] ~= false then
+            table.insert(result, character)
+        end
+    end
+
+    for _, character in ipairs(patch) do
+        if not vim.tbl_contains(result, character) then
+            table.insert(result, character)
+        end
+    end
+
+    return result
+end
+
 --- Look up `language`'s insignificant leaf texts -- leaf-level tokens (e.g.
 --- `";"`, `"{"`, `"}"`) that `w`/`e`/`b`/`ge`/`W`/`E`/`B`/`gE` treat as
 --- invisible for **code** leaves (see `_commands.motion.subword`'s
 --- `_is_insignificant` for why prose is exempt).
 ---
---- Unlike `M.get_comment_markers`, there's no `_OPTIONAL_COMMENT_MARKERS`-style
---- auto-detected fallback here -- which punctuation counts as "insignificant"
---- is a personal taste call, not an objective fact about a grammar the way
---- comment syntax is, so this is opt-in only, via `commands.motion.insignificant_characters`.
+--- Which punctuation counts as "insignificant" is mostly a personal taste
+--- call, not an objective fact about a grammar the way comment syntax is
+--- (see `_OPTIONAL_INSIGNIFICANT_CHARACTERS`'s docstring), so this stays
+--- opt-in via `commands.motion.insignificant_characters` for the vast
+--- majority of languages. `_OPTIONAL_INSIGNIFICANT_CHARACTERS` is the
+--- narrow, curated exception: entries there resolve the same way
+--- `M.get_comment_markers`'s `_OPTIONAL_COMMENT_MARKERS` fallback does, only
+--- once `vim.treesitter.language.add(language)` confirms the parser is
+--- actually installed -- unless the user's own override negates one of its
+--- characters (see `_has_negation`/`_apply_negations`), in which case the
+--- override is treated as a patch on top of it instead of a full
+--- replacement, and applies regardless of whether the parser check would
+--- have passed (the user typed the language name themselves, so there's no
+--- "auto-detected" ambiguity to gate on).
 ---
 ---@param language string A treesitter language name.
 ---@return string[]?
@@ -330,7 +422,23 @@ end
 function M.get_insignificant_characters(language)
     M.initialize_data_if_needed()
 
-    return M.DATA.commands.motion.insignificant_characters[language]
+    local user = M.DATA.commands.motion.insignificant_characters[language]
+
+    if user and _has_negation(user) then
+        return _apply_negations(_OPTIONAL_INSIGNIFICANT_CHARACTERS[language] or {}, user)
+    end
+
+    if user then
+        return user
+    end
+
+    local optional = _OPTIONAL_INSIGNIFICANT_CHARACTERS[language]
+
+    if optional and vim.treesitter.language.add(language) then
+        return optional
+    end
+
+    return nil
 end
 
 --- Merge `data` into the current configuration, in-place.

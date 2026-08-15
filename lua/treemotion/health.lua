@@ -199,32 +199,57 @@ local function _get_command_issues(data)
         return true
     end, "a table<string, string[]> (treesitter language name -> comment-marker characters)")
 
-    _append_validated(output, "commands.motion.insignificant_characters", function()
-        return tabler.get_value(data, { "commands", "motion", "insignificant_characters" })
-    end, function(value)
-        if value == nil then
-            -- This value is optional so it's fine if it is not defined.
-            return true
-        end
+    _append_validated(
+        output,
+        "commands.motion.insignificant_characters",
+        function()
+            return tabler.get_value(data, { "commands", "motion", "insignificant_characters" })
+        end,
+        function(value)
+            if value == nil then
+                -- This value is optional so it's fine if it is not defined.
+                return true
+            end
 
-        if type(value) ~= "table" then
-            return false
-        end
-
-        for language, characters in pairs(value) do
-            if type(language) ~= "string" or type(characters) ~= "table" then
+            if type(value) ~= "table" then
                 return false
             end
 
-            for _, character in ipairs(characters) do
-                if type(character) ~= "string" then
+            for language, characters in pairs(value) do
+                if type(language) ~= "string" or type(characters) ~= "table" then
                     return false
                 end
-            end
-        end
 
-        return true
-    end, "a table<string, string[]> (treesitter language name -> insignificant leaf texts)")
+                -- Unlike `comment_markers`, an entry here may be a hybrid table
+                -- (`treemotion.InsignificantCharacterList`): its array part
+                -- lists characters to add (`ipairs`-visible, string elements
+                -- only, same shape `comment_markers` validates), while a string
+                -- key mapped to `false` negates one character from
+                -- `_OPTIONAL_INSIGNIFICANT_CHARACTERS`/`_DEFAULTS` instead of
+                -- adding one -- see `configuration.get_insignificant_characters`'s
+                -- docstring. `pairs` (not `ipairs`) here so both parts get
+                -- checked; a string key must map to a boolean, an integer key
+                -- must map to a string, anything else (a non-sequential
+                -- integer key, a non-string/non-integer key) is invalid.
+                for key, item in pairs(characters) do
+                    if type(key) == "string" then
+                        if type(item) ~= "boolean" then
+                            return false
+                        end
+                    elseif type(key) == "number" then
+                        if type(item) ~= "string" then
+                            return false
+                        end
+                    else
+                        return false
+                    end
+                end
+            end
+
+            return true
+        end,
+        "a table<string, treemotion.InsignificantCharacterList> (treesitter language name -> insignificant leaf texts)"
+    )
 
     do
         local message = _get_boolean_issue(
@@ -475,12 +500,16 @@ end
 --- parser.
 ---
 --- Mirrors `_check_comment_markers` exactly -- see its docstring for the
---- general shape. The one difference: there are no shipped defaults or
---- `_OPTIONAL_COMMENT_MARKERS`-style auto-detected fallback to exempt here in
---- the first place, since `insignificant_characters` ships empty and is
---- opt-in only (see its docstring in `types.lua`) -- every entry this
---- function ever sees came from the user, so there's nothing to distinguish
---- "shipped" from "user-configured" the way `_check_comment_markers` has to.
+--- general shape, including why it's fine to ignore here too:
+--- `_OPTIONAL_INSIGNIFICANT_CHARACTERS` (`configuration.lua`) is already
+--- pre-gated by `vim.treesitter.language.add()` before
+--- `configuration.get_insignificant_characters` ever returns one of its
+--- entries, so -- like `_OPTIONAL_COMMENT_MARKERS` -- it's never in `raw`
+--- (this function only inspects the user's own unresolved override) and
+--- never has a "missing parser" case to warn about. Unlike
+--- `comment_markers`, though, `insignificant_characters`' shipped
+--- `_DEFAULTS` is empty, so in practice every warning this function ever
+--- produces traces back to a user-typed language name.
 ---
 ---@param raw treemotion.Configuration The user's own configuration, unresolved.
 ---

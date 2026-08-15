@@ -160,6 +160,20 @@ describe("default", function()
         _assert_good({ commands = { motion = { insignificant_characters = { lua = {} } } } })
     end)
 
+    it("works with a #commands.motion.insignificant_characters table that negates one character", function()
+        _assert_good({ commands = { motion = { insignificant_characters = { nix = { [";"] = false } } } } })
+    end)
+
+    it(
+        "works with a #commands.motion.insignificant_characters table that negates one "
+            .. "character and adds another in the same entry",
+        function()
+            _assert_good({
+                commands = { motion = { insignificant_characters = { nix = { ",", [";"] = false } } } },
+            })
+        end
+    )
+
     it("works with #commands.motion.small/big.backtick_identifiers set to either boolean", function()
         _assert_good({ commands = { motion = { small = { backtick_identifiers = true } } } })
         _assert_good({ commands = { motion = { small = { backtick_identifiers = false } } } })
@@ -257,17 +271,97 @@ describe("get_insignificant_characters", function()
         configuration_.DATA = _snapshot
     end)
 
-    it("returns nil for a language with no configured entry -- #_DEFAULTS ships empty", function()
-        -- Unlike `get_comment_markers`, there's no `_OPTIONAL_COMMENT_MARKERS`-style
-        -- auto-detected fallback here -- a parser being installed (Lua's
-        -- always is) makes no difference; only a user override does. See
-        -- `M.get_insignificant_characters`'s docstring.
-        assert.is_nil(configuration_.get_insignificant_characters("lua"))
-    end)
+    it(
+        "returns nil for a language with no configured entry and no #_OPTIONAL_INSIGNIFICANT_CHARACTERS entry",
+        function()
+            -- `lua` has no shipped `_DEFAULTS` entry and isn't in
+            -- `_OPTIONAL_INSIGNIFICANT_CHARACTERS` either, so a parser being
+            -- installed (Lua's always is) makes no difference here.
+            assert.is_nil(configuration_.get_insignificant_characters("lua"))
+        end
+    )
 
     it("returns a user-configured #insignificant_characters override", function()
         configuration_.merge_data({
             commands = { motion = { insignificant_characters = { lua = { ";" } } } },
+        })
+
+        assert.same({ ";" }, configuration_.get_insignificant_characters("lua"))
+    end)
+
+    it(
+        "prefers a user-configured #insignificant_characters override over the "
+            .. "_OPTIONAL_INSIGNIFICANT_CHARACTERS table",
+        function()
+            configuration_.merge_data({
+                commands = { motion = { insignificant_characters = { nix = { "," } } } },
+            })
+
+            assert.same({ "," }, configuration_.get_insignificant_characters("nix"))
+        end
+    )
+
+    it("resolves an #_OPTIONAL_INSIGNIFICANT_CHARACTERS entry when the language's parser is installed", function()
+        -- `nix` isn't one of Neovim's bundled grammars, but the
+        -- Nix-driven dev-shell/`nix run .#test` suite's
+        -- `treesitterAllGrammars` (see `flake.nix`) makes it available
+        -- there -- see `get_comment_markers`'s identical `toml` test for
+        -- why this is guarded with `pending(...)` rather than asserted
+        -- unconditionally.
+        if not vim.treesitter.language.add("nix") then
+            ---@diagnostic disable-next-line: missing-parameter
+            pending('no "nix" treesitter parser installed')
+
+            return
+        end
+
+        assert.same({ "{", "}", "[", "]", ";" }, configuration_.get_insignificant_characters("nix"))
+    end)
+
+    it(
+        "returns nil for an #_OPTIONAL_INSIGNIFICANT_CHARACTERS entry when the language's parser is not installed",
+        function()
+            ---@diagnostic disable-next-line: undefined-field
+            local add_stub = stub(vim.treesitter.language, "add").returns(false)
+
+            assert.is_nil(configuration_.get_insignificant_characters("nix"))
+
+            add_stub:revert()
+        end
+    )
+
+    it(
+        "patches an #_OPTIONAL_INSIGNIFICANT_CHARACTERS entry when the user's override negates "
+            .. "one character with `false`, keeping the rest",
+        function()
+            -- Deliberately doesn't gate on `vim.treesitter.language.add("nix")`
+            -- the way the plain auto-detected-resolution test above does: a
+            -- negating override is user-typed config, not an auto-detected
+            -- fallback, so it applies unconditionally -- see
+            -- `get_insignificant_characters`'s docstring.
+            configuration_.merge_data({
+                commands = { motion = { insignificant_characters = { nix = { [";"] = false } } } },
+            })
+
+            assert.same({ "{", "}", "[", "]" }, configuration_.get_insignificant_characters("nix"))
+        end
+    )
+
+    it("combines a `false` negation with an added character in the same override table", function()
+        configuration_.merge_data({
+            commands = { motion = { insignificant_characters = { nix = { ",", [";"] = false } } } },
+        })
+
+        local result = assert(configuration_.get_insignificant_characters("nix"))
+        table.sort(result)
+
+        -- Sorted by byte value: `,` (44) < `[` (91) < `]` (93) < `{` (123) < `}` (125).
+        assert.same({ ",", "[", "]", "{", "}" }, result)
+    end)
+
+    it("a negation against a language absent from #_OPTIONAL_INSIGNIFICANT_CHARACTERS has nothing to remove", function()
+        configuration_.merge_data({
+            commands = { motion = { insignificant_characters = { lua = { ";", [":"] = false } } } },
         })
 
         assert.same({ ";" }, configuration_.get_insignificant_characters("lua"))
@@ -340,8 +434,9 @@ describe("bad configuration - commands", function()
 
     it("happens with a bad type for #commands.motion.insignificant_characters", function()
         _assert_bad({ commands = { motion = { insignificant_characters = "aaa" } } }, {
-            "commands.motion.insignificant_characters: expected a table<string, string[]> "
-                .. "(treesitter language name -> insignificant leaf texts), got aaa",
+            "commands.motion.insignificant_characters: expected a table<string, "
+                .. "treemotion.InsignificantCharacterList> (treesitter language name -> "
+                .. "insignificant leaf texts), got aaa",
         })
     end)
 
@@ -357,8 +452,28 @@ describe("bad configuration - commands", function()
         assert.is_true(
             vim.startswith(
                 issues[1],
-                "commands.motion.insignificant_characters: expected a table<string, string[]> "
-                    .. "(treesitter language name -> insignificant leaf texts), got "
+                "commands.motion.insignificant_characters: expected a table<string, "
+                    .. "treemotion.InsignificantCharacterList> (treesitter language name -> "
+                    .. "insignificant leaf texts), got "
+            )
+        )
+    end)
+
+    it("happens with a bad type for a #commands.motion.insignificant_characters negation value", function()
+        -- A string key must map to a `boolean` (the negation sentinel);
+        -- anything else, like a string, is invalid -- see
+        -- `treemotion.InsignificantCharacterList`'s docstring.
+        local issues = health.get_issues(configuration_.resolve_data({
+            commands = { motion = { insignificant_characters = { nix = { [";"] = "aaa" } } } },
+        }))
+
+        assert.same(1, #issues)
+        assert.is_true(
+            vim.startswith(
+                issues[1],
+                "commands.motion.insignificant_characters: expected a table<string, "
+                    .. "treemotion.InsignificantCharacterList> (treesitter language name -> "
+                    .. "insignificant leaf texts), got "
             )
         )
     end)
