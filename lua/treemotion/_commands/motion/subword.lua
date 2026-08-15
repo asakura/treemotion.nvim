@@ -581,14 +581,39 @@ end
 --- (`;`, `{`, `}`, ...) the user has configured as insignificant for its
 --- language, via `commands.motion.insignificant_characters`.
 ---
---- Code leaves only: prose (`@spell`-/`@string`-tagged, see `_is_prose`)
---- keeps every character significant, since prose already does its own
---- punctuation-is-a-word splitting (`_split_prose_words`), deliberately
---- mirroring how real Vim's `w` treats punctuation as a landing stop in a
---- text file -- the same reason `.code`/`.prose` are configured separately
---- everywhere else in this module. Deliberately not injection-aware, same as
---- every other language-resolution point in this module (see
---- `_current_language`'s docstring).
+--- Code leaves only: a *named* prose leaf (`@spell`-/`@string`-tagged, see
+--- `_is_prose`) keeps every character significant, since prose already does
+--- its own punctuation-is-a-word splitting (`_split_prose_words`),
+--- deliberately mirroring how real Vim's `w` treats punctuation as a landing
+--- stop in a text file -- the same reason `.code`/`.prose` are configured
+--- separately everywhere else in this module.
+---
+--- `node:named()` gates that exemption, deliberately -- `:help
+--- TSNode:named()`: "Named nodes correspond to named rules in the grammar,
+--- whereas anonymous nodes correspond to string literals in the grammar."
+--- An *unnamed* leaf that's still `_is_prose` (Lua's `--` comment opener,
+--- captured via its parent `comment` node's `(comment) @comment @spell`
+--- span) is left alone here -- `comment_marker_case` already governs
+--- whether markers like that are a landing stop, and this function must
+--- keep calling them prose so `_split`/`_run_segments` route them through
+--- `.prose`'s rules, not `.code`'s. But an unnamed leaf whose *own* prose
+--- capture comes from a query pattern that targets it directly rather than
+--- from an ancestor's span (Nix's `"`/`''` string delimiters: confirmed
+--- against `tree-sitter-nix`'s `queries/highlights.scm`, `(string_expression
+--- "\"" @string)` captures the literal quote child for uniform coloring,
+--- while the actual text sits in a sibling, named `string_fragment`) has no
+--- real prose content of its own to protect -- it's a one-character
+--- structural delimiter that merely renders the same color as the string it
+--- wraps. Exempting `_is_prose` here (not in `_is_prose` itself, which stays
+--- untouched for `.code`/`.prose` rule selection) is what lets
+--- `insignificant_characters` reach it at all; without this, no
+--- configuration could ever hide a quote delimiter, since the code/prose
+--- gate came first. Not Nix-specific: any grammar whose highlight query
+--- paints an anonymous delimiter leaf the same color as the content it
+--- encloses hits the same thing.
+---
+--- Deliberately not injection-aware, same as every other language-resolution
+--- point in this module (see `_current_language`'s docstring).
 ---
 --- `pcall` guards `get_node_text`: `bigword.lua`'s `_run_is_insignificant`
 --- calls this for every leaf in a candidate run *before* `M.split_run` ever
@@ -605,7 +630,7 @@ end
 ---@return boolean
 ---
 local function _is_insignificant(node)
-    if _is_prose(node) then
+    if node:named() and _is_prose(node) then
         return false
     end
 

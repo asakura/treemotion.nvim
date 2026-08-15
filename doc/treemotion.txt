@@ -428,11 +428,17 @@ has to match a leaf’s **entire** text exactly, not merely appear inside it,
 so a multi-character token (`"->"`, `"::"`) works too, not just a single
 character.
 
-This applies to **code** leaves only – a leaf tagged `@spell`/`@string`
-(prose, or string content) never has any of its characters treated as
-insignificant, since prose already does its own punctuation-is-a-word splitting
-(see `Comments and prose` above). A `;` inside a comment or string still stops
-`w` as normal.
+This applies to **code** leaves only – a _named_ leaf tagged
+`@spell`/`@string` (prose, or string content) never has any of its characters
+treated as insignificant, since prose already does its own
+punctuation-is-a-word splitting (see `Comments and prose` above). A `;` inside
+a comment or string still stops `w` as normal. An _unnamed_ leaf – a fixed
+grammar token, like a string’s own quote delimiters, rather than a rule that
+captures real text – is fair game even when it’s `@string`/`@spell`-tagged
+too: highlight queries often paint a string’s quotes the same color as its
+content for a uniform look (`(string) @string` in Lua, `(string_expression "\""
+@string)` in Nix), but that’s a coloring choice, not a claim that the quote
+itself is prose.
 
 Unlike `comment_markers`, this ships with **no** defaults for almost every
 language – comment syntax is an objective fact about a grammar, but which
@@ -444,14 +450,11 @@ language you add here has no treesitter parser installed.
 The one exception is a small, curated set of near-universal cases, resolved the
 same way `comment_markers`’ own auto-detected languages are (see above):
 auto-detected once that language’s treesitter parser is installed, with no
-configuration needed. Nix’s own string delimiters (`"`, `''`) are
-deliberately excluded even though they’re leaves too – `tree-sitter-nix`
-tags both `@string`, so they’re already prose, exempt from this setting in
-the first place (see above).
+configuration needed.
 
-  Language   {   }   [   ]   ;
-  ---------- --- --- --- --- ---
-  nix        ✓   ✓   ✓   ✓   ✓
+  Language   {   }   [   ]   ;   "   ''
+  ---------- --- --- --- --- --- --- ----
+  nix        ✓   ✓   ✓   ✓   ✓   ✓   ✓
 A user-configured `insignificant_characters` entry for a language normally
 overrides this table entirely, same as `comment_markers`. To keep most of an
 auto-detected (or shipped) list but drop just one character, map it to `false`

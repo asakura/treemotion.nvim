@@ -257,16 +257,20 @@ local _OPTIONAL_COMMENT_MARKERS = {
 --- `let`/attribute-set binding, never starts an expression, and `{`/`}`/`[`/`]`
 --- are pure structural delimiters with no meaning of their own -- all four
 --- are noise at every occurrence, the same reasoning README's own
---- `insignificant_characters` example gives for Lua's `;`. Nix's own string
---- delimiters (`"`, `''`) are deliberately excluded: `tree-sitter-nix`'s
---- `queries/highlights.scm` already tags both `@string`, so `_is_prose`
---- already treats them as prose leaves, which `commands.motion.insignificant_characters`
---- never applies to in the first place (see `M.get_insignificant_characters`'s
---- docstring) -- listing them here would be dead configuration.
+--- `insignificant_characters` example gives for Lua's `;`. `"`/`''` (Nix's
+--- plain and indented string delimiters) belong here for the same reason:
+--- `subword.lua`'s `_is_prose` only counts *named* nodes as prose, and both
+--- delimiters parse as unnamed leaves distinct from the named
+--- `string_fragment` they wrap (`tree-sitter-nix`'s `queries/highlights.scm`
+--- paints all three `@string` for uniform coloring, but only the fragment is
+--- real text) -- so, unlike a language whose string quotes are the only
+--- node covering their span, these are ordinary code leaves as far as this
+--- feature is concerned, free of any of the actual string content's prose
+--- rules.
 ---
 ---@type table<string, string[]>
 local _OPTIONAL_INSIGNIFICANT_CHARACTERS = {
-    nix = { "{", "}", "[", "]", ";" },
+    nix = { "{", "}", "[", "]", ";", '"', "''" },
 }
 
 --- Setup `treemotion` for the first time, if needed.

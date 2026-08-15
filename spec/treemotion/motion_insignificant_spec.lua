@@ -1,7 +1,10 @@
 --- Make sure `commands.motion.insignificant_characters` makes a configured
 --- leaf-level token invisible to `w`/`e`/`b`/`ge`/`W`/`E`/`B`/`gE` for
---- **code** leaves only, never for prose (`@spell`-/`@string`-tagged) ones --
---- see `subword.lua`'s `_is_insignificant` docstring for why.
+--- **code** leaves only, never for a *named* prose (`@spell`-/`@string`-tagged)
+--- leaf -- an *unnamed* one (a string's own quote delimiters, captured
+--- `@string` via their parent `string` node rather than for any content of
+--- their own) is fair game, and can be configured away like any other code
+--- leaf -- see `subword.lua`'s `_is_insignificant` docstring for why.
 ---
 --- Fixtures stay Lua-specific, mirroring `motion_spec.lua`'s "subword
 --- configuration" block: this feature's mechanics (leaf text matching,
@@ -99,6 +102,24 @@ describe("motion API - insignificant_characters", function()
         _set_cursor(11) -- start of `foo`, inside the string
         treemotion.run_motion_w()
         assert.same(15, _get_cursor_column()) -- lands ON `;` -- prose keeps every character significant
+    end)
+
+    it("can hide a string's own quote delimiters, even though they're @string-tagged", function()
+        -- Unlike the `;` inside the string's content (previous test), the
+        -- quotes themselves (`"`) are unnamed leaves -- captured `@string`
+        -- only via their parent `string` node's own `(string) @string`,
+        -- never as content of their own -- so `_is_insignificant` doesn't
+        -- exempt them the way it exempts `string_content`.
+        treemotion.setup({ commands = { motion = { insignificant_characters = { lua = { '"' } } } } })
+        _initialize_buffer({ [[local s = "foo bar";]] })
+
+        _set_cursor(8) -- `=`
+        treemotion.run_motion_w()
+        assert.same(11, _get_cursor_column()) -- straight to `foo`, past the opening `"`
+
+        _set_cursor(15) -- start of `bar`
+        treemotion.run_motion_w()
+        assert.same(19, _get_cursor_column()) -- past `bar` and the closing `"` to `;`, itself unconfigured
     end)
 
     it("supports multi-character leaf text, not just single characters", function()
