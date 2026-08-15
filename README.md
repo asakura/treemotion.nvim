@@ -431,9 +431,9 @@ the same way `comment_markers`' own auto-detected languages are (see above):
 auto-detected once that language's treesitter parser is installed, with no
 configuration needed.
 
-| Language | `{` | `}` | `[` | `]` | `;` | `"` | `''` |
-| -------- | --- | --- | --- | --- | --- | --- | ---- |
-| `nix` | `✓` | `✓` | `✓` | `✓` | `✓` | `✓` | `✓` |
+| Language | `{` | `}` | `[` | `]` | `;` | `"` | `''` | `=` | `.` |
+| -------- | --- | --- | --- | --- | --- | --- | ---- | --- | --- |
+| `nix` | `✓` | `✓` | `✓` | `✓` | `✓` | `✓` | `✓` | `✓` | `✓` |
 
 A user-configured `insignificant_characters` entry for a language normally
 overrides this table entirely, same as `comment_markers`. To keep most of an

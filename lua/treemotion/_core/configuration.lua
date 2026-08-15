@@ -253,24 +253,18 @@ local _OPTIONAL_COMMENT_MARKERS = {
 --- which punctuation counts as "insignificant" is a personal taste call, not
 --- an objective fact about a grammar (see `M.get_insignificant_characters`'s
 --- docstring), so entries only belong here once they're a near-universal
---- call for that language, not a guess. In Nix, `;` only ever terminates a
---- `let`/attribute-set binding, never starts an expression, and `{`/`}`/`[`/`]`
---- are pure structural delimiters with no meaning of their own -- all four
---- are noise at every occurrence, the same reasoning README's own
---- `insignificant_characters` example gives for Lua's `;`. `"`/`''` (Nix's
---- plain and indented string delimiters) belong here for the same reason:
---- `subword.lua`'s `_is_prose` only counts *named* nodes as prose, and both
---- delimiters parse as unnamed leaves distinct from the named
---- `string_fragment` they wrap (`tree-sitter-nix`'s `queries/highlights.scm`
---- paints all three `@string` for uniform coloring, but only the fragment is
---- real text) -- so, unlike a language whose string quotes are the only
---- node covering their span, these are ordinary code leaves as far as this
---- feature is concerned, free of any of the actual string content's prose
---- rules.
+--- call for that language, not a guess.
+---
+--- Nix: `;`/`{`/`}`/`[`/`]`/`=`/`.` are pure structural punctuation with no
+--- other role (binding terminator, set/list delimiters, key-value and
+--- attrpath separators). `"`/`''` (string delimiters) qualify differently:
+--- they're unnamed leaves distinct from the named `string_fragment` they
+--- wrap, so `subword.lua`'s named-only `_is_prose` check never protects them
+--- as prose in the first place.
 ---
 ---@type table<string, string[]>
 local _OPTIONAL_INSIGNIFICANT_CHARACTERS = {
-    nix = { "{", "}", "[", "]", ";", '"', "''" },
+    nix = { "{", "}", "[", "]", ";", '"', "''", "=", "." },
 }
 
 --- Setup `treemotion` for the first time, if needed.

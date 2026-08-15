@@ -315,7 +315,10 @@ describe("get_insignificant_characters", function()
             return
         end
 
-        assert.same({ "{", "}", "[", "]", ";", '"', "''" }, configuration_.get_insignificant_characters("nix"))
+        assert.same(
+            { "{", "}", "[", "]", ";", '"', "''", "=", "." },
+            configuration_.get_insignificant_characters("nix")
+        )
     end)
 
     it(
@@ -343,7 +346,7 @@ describe("get_insignificant_characters", function()
                 commands = { motion = { insignificant_characters = { nix = { [";"] = false } } } },
             })
 
-            assert.same({ "{", "}", "[", "]", '"', "''" }, configuration_.get_insignificant_characters("nix"))
+            assert.same({ "{", "}", "[", "]", '"', "''", "=", "." }, configuration_.get_insignificant_characters("nix"))
         end
     )
 
@@ -355,8 +358,9 @@ describe("get_insignificant_characters", function()
         local result = assert(configuration_.get_insignificant_characters("nix"))
         table.sort(result)
 
-        -- Sorted by byte value: `"` (34) < `''` (39) < `,` (44) < `[` (91) < `]` (93) < `{` (123) < `}` (125).
-        assert.same({ '"', "''", ",", "[", "]", "{", "}" }, result)
+        -- Sorted by byte value: `"` (34) < `''` (39) < `,` (44) < `.` (46) < `=` (61) < `[` (91)
+        -- < `]` (93) < `{` (123) < `}` (125).
+        assert.same({ '"', "''", ",", ".", "=", "[", "]", "{", "}" }, result)
     end)
 
     it("a negation against a language absent from #_OPTIONAL_INSIGNIFICANT_CHARACTERS has nothing to remove", function()
