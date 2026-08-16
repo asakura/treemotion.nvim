@@ -1,22 +1,25 @@
 # Profiling the remaining `_commands.motion.leaf`/`runner` hot spots
 
-Status: **two fixed, one measured and rejected.** Follow-on to
+Status: **three fixed, two measured and rejected.** Follow-on to
 `notes/injection-parse-performance.md`, which covered `parser:parse()`'s own
-cost. This note covers three *other* candidate hot spots identified by
-reading `leaf.lua`/`word.lua`/`bigword.lua`/`runner.lua`: the `count`-loop
-shape in `runner.lua`, `_has_uncovered_text`'s per-child buffer reads, and
-`_injection_at`'s linear region scan. All three were profiled with a
-purpose-built benchmark (real `treemotion.run_motion_*`/`leaf.*`/`word.*`
-calls against synthetic buffers, not microbenchmarks of code in isolation)
-before touching any code, so the fixes below are backed by measurement, not
-just the architectural reasoning that first flagged them.
+cost. This note covers five candidate hot spots identified by reading
+`leaf.lua`/`word.lua`/`bigword.lua`/`subword.lua`/`runner.lua`/
+`configuration.lua`: the `count`-loop shape in `runner.lua`,
+`_has_uncovered_text`'s per-child buffer reads, `_injection_at`'s linear
+region scan, `configuration.resolve_data()`'s unconditional deep-copy, and
+`subword.lua`'s `_is_prose` being called twice per leaf split. All five were
+profiled with a purpose-built benchmark (real `treemotion.run_motion_*`/
+`leaf.*`/`word.*`/`configuration.*` calls against synthetic buffers, not
+microbenchmarks of code in isolation) before touching any code, so the fixes
+below are backed by measurement, not just the architectural reasoning that
+first flagged them.
 
 Benchmark harness: `nvim --headless -u NONE -U NONE -N -i NONE --cmd "set
-rtp+=<treesitterAllGrammars store path>" -l bench.lua [a|b|c]` against a
+rtp+=<treesitterAllGrammars store path>" -l bench.lua [a|b|c|d|e]` against a
 throwaway `bench.lua` (not committed -- see "Reproducing this" below for the
 buffer-construction details needed to rebuild it), same headless-Neovim
 methodology `notes/injection-parse-performance.md` used. Full `nix run
-.#test` (1266 tests) passes after both fixes, plus `stylua`/`luacheck`/
+.#test` (1266 tests) passes after all three fixes, plus `stylua`/`luacheck`/
 `llscheck` clean.
 
 ## Hot spot 1: `runner.lua`'s `count`-loop re-resolves from the cursor every iteration -- measured, not a real cost
@@ -155,15 +158,80 @@ a disjoint span of that language's one parse -- so pieces from different
 combined-injection groups can be compared in the same sorted order without
 risk of the floor search picking the wrong group's piece for a given point.
 
+## Hot spot 4: `configuration.resolve_data()` deep-copies the whole config tree on every call -- real but small, fixed anyway
+
+**Where:** `configuration.lua`'s `M.resolve_data()` called
+`vim.tbl_deep_extend("force", M.DATA, data or {})` unconditionally, even
+when `data` is `nil` -- the *only* way `_commands.motion.subword` ever calls
+it (`_rules`, `_backtick_identifiers_enabled`, `_split_run`'s `.enabled`
+check -- confirmed by grepping every call site: `health.lua`'s is the one
+caller that ever passes a real override). Merging `M.DATA` with `{}` under
+`"force"` produces a value equal to `M.DATA` itself, just a freshly (and,
+for every nested `commands.motion.*` table, recursively) deep-copied one --
+so every one of those calls was paying for a full config-tree copy to get
+back data that was already sitting there.
+
+**Measured** (20,000 direct `resolve_data()` calls, plus a real 300-step
+`word.next_unit()` walk over the same 190-fence markdown document scenarios
+A/C use):
+
+| | before | after |
+|---|---|---|
+| 20,000 x `resolve_data()` | 0.000491 ms/call | 0.000048 ms/call (**10.2x**) |
+| 300-step word walk | 0.0261 ms/step | 0.0248-0.0313 ms/step (noise) |
+
+The direct per-call cost dropped a real, consistent ~10x. The end-to-end
+word-walk number, though, didn't move outside its own run-to-run noise band
+(three post-fix runs: 0.0285, 0.0248, 0.0313 ms/step, bracketing the
+pre-fix 0.0261) -- `resolve_data()` is only called once or twice per leaf
+*boundary crossing* (not every step; most subword steps are a cheap `_index`
+bump with no config lookup at all), and even at the old, slower per-call
+cost its total share of the walk was on the order of 5%, too small to
+separate from noise at this sample size. **Fixed anyway**: the change is a
+two-line, zero-risk correctness-preserving optimization (skip the copy,
+return `M.DATA` directly, since every no-override caller only reads it --
+see the docstring for why that's safe), it measurably eliminates real,
+repeated allocation and GC pressure regardless of whether that shows up in
+wall-clock noise at this buffer size, and there's no plausible scenario
+where doing *less* work here could regress anything. Not the kind of fix
+that would be worth the same risk/complexity tradeoff as hot spots 2/3 if it
+required restructuring, but this one is strictly cheaper code, not more
+complex code, so the small/unproven win is still worth taking.
+
+## Hot spot 5: `subword._is_prose`'s duplicate call per leaf split -- measured, not a real cost
+
+**Hypothesis going in:** `subword.lua`'s `_split(node)` calls
+`_is_insignificant(node)` first (which itself calls `_is_prose(node)` for
+any *named* leaf), then, further down, calls `_is_prose(node)` a *second*
+time on the same node to pick `.code`/`.prose` rules -- an apparently
+wasteful duplicate `vim.treesitter.get_captures_at_pos()` call on every
+split of every named leaf, the same "redundant work on repeat visits" shape
+that made hot spot 2 a real, measured win.
+
+**Measured:** false. `get_captures_at_pos()` itself is cheap
+(0.000075 ms/call, direct benchmark, 20,000 calls), and instrumenting the
+real function during the same 300-step word walk used above shows it's only
+actually invoked 439 times total (1.46 calls/step on average -- lower than
+"2 per leaf split" because most steps don't cross a leaf boundary at all).
+439 calls x 0.000075 ms is about 0.03 ms out of a ~7-9 ms walk -- under 0.5%
+of total time. **No change made** -- unlike `_has_uncovered_text` (hot spot
+2), whose uncached cost scaled with node width and reached tens of
+milliseconds on a single call, `get_captures_at_pos()`'s cost never leaves
+the noise floor at any realistic call volume this code path produces, so
+there's nothing here for a cache to meaningfully save.
+
 ## Reproducing this
 
-The benchmark buffers: Scenario A/C reuse
+The benchmark buffers: Scenario A/C/D reuse
 `notes/injection-parse-performance.md`'s synthetic-Markdown-with-Rust-fences
 shape (prose lines interspersed with `` ```rust `` fences containing a small
 function). Scenario B is a single-line `local t = { field_1 = 1, field_2 =
 2, ... }` with `N` fields, walked via `leaf.first_leaf()` on the
-`table_constructor` node found by a manual tree search. All scenarios force
-a full `parser:parse(true)` immediately after buffer creation so the
+`table_constructor` node found by a manual tree search. Scenario E reuses
+scenario A/C's markdown document, querying `get_captures_at_pos` directly
+at a fixed position and, separately, wrapping the real function to count
+calls made during a real 300-step `word.next_unit()` walk. All scenarios
+force a full `parser:parse(true)` immediately after buffer creation so the
 measurement is traversal cost, not cold-parse cost (that's
 `injection-parse-performance.md`'s question, not this one's). Timing via
 `vim.uv.hrtime()`.

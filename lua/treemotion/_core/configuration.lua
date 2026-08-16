@@ -293,13 +293,29 @@ end
 
 --- Merge `data` with the user's current configuration.
 ---
+--- Skips `vim.tbl_deep_extend` entirely when `data` is `nil`/empty: merging
+--- `M.DATA` with nothing produces a value equal to `M.DATA` itself, just a
+--- freshly (and, for `commands.motion`'s nested tables, repeatedly) deep-copied
+--- one -- pure waste on the only way `_commands.motion.subword` ever calls
+--- this (no override, several times per leaf/run split, i.e. several times
+--- per motion step). `M.DATA` is safe to hand back directly here: every
+--- no-override caller only reads it (`_commands.motion.subword`'s `_rules`/
+--- `_backtick_identifiers_enabled`/`_split_run`), and the one caller that
+--- does mutate configuration (`M.merge_data`) reassigns `M.DATA` wholesale
+--- rather than mutating the table in place, so an old reference already
+--- handed out is never surprised by a later merge.
+---
 ---@param data treemotion.Configuration? All extra customizations for this plugin.
 ---@return treemotion.ResolvedConfiguration # The configuration with 100% filled out values.
 ---
 function M.resolve_data(data)
     M.initialize_data_if_needed()
 
-    return vim.tbl_deep_extend("force", M.DATA, data or {})
+    if not data or next(data) == nil then
+        return M.DATA
+    end
+
+    return vim.tbl_deep_extend("force", M.DATA, data)
 end
 
 --- Look up `language`'s comment-marker characters, whether shipped/user-configured
