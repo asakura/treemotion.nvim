@@ -114,27 +114,67 @@ end
 --- gap (a blank line) is always blank between children; real leftover
 --- content (Rust's comment text) never is.
 ---
+--- `_has_uncovered_text` result cache, weak-keyed by node identity.
+---
+--- `_is_leaf`/`M.first_leaf`/`M.last_leaf` (via `_is_leaf`) and `M.current_leaf`'s
+--- settle-upward loop all call `_has_uncovered_text` on the *same* node
+--- every time a walk re-descends into (or re-settles on) it -- e.g. `gg`/`G`
+--- repeatedly re-entering the same wide node from outside, or several
+--- separate motions each landing near it. Uncached, the cost is
+--- O(node's own child count) `nvim_buf_get_text` calls every single time,
+--- since most grammars put every sibling of a wide construct (a large
+--- object/table/array literal's fields, say) as *direct* children of one
+--- node -- confirmed to scale linearly and repeat in full on every call,
+--- with no warm-up speedup, against a synthetic Lua table with thousands of
+--- fields (a first `M.first_leaf` descent into a 15000-field table's
+--- `table_constructor` cost ~32ms, unchanged across repeated calls).
+---
+--- Weak-keyed on the `TSNode` itself, not `node:id()`: repeated queries for
+--- the same underlying tree-sitter node return the *same* Lua object
+--- (confirmed directly -- `root:child(0) == root:child(0)` is `true`, not
+--- just `:equal()`), so this is safe to key on identity the same way
+--- `_tree_to_ltree` above keys on `TSTree` identity -- a stale entry can
+--- never be observed, since a node whose underlying tree was replaced by a
+--- reparse is a different, unreachable object, garbage-collected away
+--- rather than silently answering for content that no longer exists there.
+local _uncovered_text_cache = setmetatable({}, { __mode = "k" })
+
 ---@param node TSNode
 ---@return boolean
 ---
 local function _has_uncovered_text(node)
+    local cached = _uncovered_text_cache[node]
+
+    if cached ~= nil then
+        return cached
+    end
+
     local row, column = node:start()
     local count = node:child_count()
+    local result = false
 
     for index = 0, count - 1 do
         local child = assert(node:child(index))
         local child_row, child_column = child:start()
 
         if _has_non_blank_between(row, column, child_row, child_column) then
-            return true
+            result = true
+
+            break
         end
 
         row, column = child:end_()
     end
 
-    local end_row, end_column = node:end_()
+    if not result then
+        local end_row, end_column = node:end_()
 
-    return _has_non_blank_between(row, column, end_row, end_column)
+        result = _has_non_blank_between(row, column, end_row, end_column)
+    end
+
+    _uncovered_text_cache[node] = result
+
+    return result
 end
 
 --- Whether `node` should be treated as a leaf -- either a real childless
@@ -300,6 +340,96 @@ local function _merge_contiguous(regions)
     return merged
 end
 
+--- `_sorted_pieces` result cache, weak-keyed by the `included_regions()`
+--- table's own identity.
+---
+--- `LanguageTree:included_regions()` (`vim/treesitter/languagetree.lua`,
+--- not part of this repo) returns `self._regions` directly, not a copy --
+--- and every path that can actually change what regions mean
+--- (`set_included_regions`, called on injection discovery; `_edit`, called
+--- on every buffer edit) unconditionally reassigns `self._regions` to a
+--- *new* table, even when the new content happens to be identical to the
+--- old. So keying on that table's identity is exactly as safe as
+--- `_tree_to_ltree`/`_uncovered_text_cache` above keying on `TSTree`/`TSNode`
+--- identity: a stale entry can never be read back, because the table it
+--- would be stale *for* no longer exists (it's simply not the table
+--- `included_regions()` returns anymore, and gets garbage-collected once
+--- nothing else holds it).
+local _sorted_pieces_cache = setmetatable({}, { __mode = "k" })
+
+--- Every piece across every one of `ltree`'s `included_regions()` groups
+--- (see `_merge_contiguous`), flattened into one array sorted by start
+--- position -- what `_piece_at`/`_injection_at` binary-search instead of
+--- linearly scanning.
+---
+--- A flat sort across groups is safe for both callers' purposes even though
+--- `_merge_contiguous` only ever merges *within* one group: regions
+--- belonging to the same `LanguageTree` never overlap (each represents a
+--- disjoint span of the one parse this `ltree` produces), so pieces from
+--- different groups can't collide once mixed into the same sorted order --
+--- unlike within a group, there's no adjacency to merge across groups
+--- either, since separate groups are separate logical injected instances
+--- (see this module's docstring on `injection.combined`).
+---
+---@param ltree vim.treesitter.LanguageTree
+---@return integer[][]
+local function _sorted_pieces(ltree)
+    local regions = ltree:included_regions()
+    local cached = _sorted_pieces_cache[regions]
+
+    if cached then
+        return cached
+    end
+
+    local pieces = {}
+
+    for _, group in ipairs(regions) do
+        for _, piece in ipairs(_merge_contiguous(group)) do
+            table.insert(pieces, piece)
+        end
+    end
+
+    table.sort(pieces, function(a, b)
+        return a[1] < b[1] or (a[1] == b[1] and a[2] < b[2])
+    end)
+
+    _sorted_pieces_cache[regions] = pieces
+
+    return pieces
+end
+
+--- The rightmost index in `pieces` (see `_sorted_pieces`) whose start is
+--- at-or-before `row`/`column`, or `0` if every piece starts later.
+---
+--- The one primitive `_piece_at`/`_injection_at` share to avoid a linear
+--- scan over every injected region in a language -- see `_sorted_pieces`'s
+--- docstring for why an injection-heavy buffer makes that scan a real,
+--- measured cost (O(total regions in the language) on every single node a
+--- leaf-walk touches, not just ones near an injection).
+---
+---@param pieces integer[][]
+---@param row integer
+---@param column integer
+---@return integer
+local function _floor_index(pieces, row, column)
+    local low, high = 1, #pieces
+    local result = 0
+
+    while low <= high do
+        local mid = math.floor((low + high) / 2)
+        local piece = pieces[mid]
+
+        if piece[1] < row or (piece[1] == row and piece[2] <= column) then
+            result = mid
+            low = mid + 1
+        else
+            high = mid - 1
+        end
+    end
+
+    return result
+end
+
 --- The specific stitched sub-range of `ltree`'s `included_regions()` that
 --- contains `row`/`column` -- one atomic run of injected source text, e.g.
 --- one line of a Nix indented string between two `${...}` interpolations.
@@ -310,9 +440,17 @@ end
 --- several disjoint pieces), so comparing raw coordinates against each piece
 --- here is enough to tell them apart -- the same way `is_contiguous` already
 --- compares raw coordinates to tell leaves apart from runs. Pieces come from
---- `_merge_contiguous`, not `included_regions()` directly -- see its
---- docstring for why a raw, unmerged region can be narrower than the real
---- gapless run of source it belongs to.
+--- `_sorted_pieces` (in turn from `_merge_contiguous`), not
+--- `included_regions()` directly -- see their docstrings for why a raw,
+--- unmerged region can be narrower than the real gapless run of source it
+--- belongs to, and why a sorted, cached array replaces a linear scan here.
+---
+--- The piece containing `row`/`column`, if any, is always the one at
+--- `_floor_index` -- pieces never overlap within one `ltree` (see
+--- `_sorted_pieces`), so no piece starting later than the floor could
+--- contain an earlier point, and no piece starting earlier than the floor
+--- could still be open at `row`/`column` without the floor search having
+--- preferred it instead.
 ---
 ---@param ltree vim.treesitter.LanguageTree
 ---@param row integer
@@ -320,15 +458,18 @@ end
 ---@return integer[]? # `{start_row, start_column, start_byte, end_row, end_column, end_byte}`, or
 ---    `nil` if `row`/`column` isn't covered by `ltree` at all.
 local function _piece_at(ltree, row, column)
-    for _, regions in ipairs(ltree:included_regions()) do
-        for _, region in ipairs(_merge_contiguous(regions)) do
-            local after_start = row > region[1] or (row == region[1] and column >= region[2])
-            local before_end = row < region[4] or (row == region[4] and column < region[5])
+    local pieces = _sorted_pieces(ltree)
+    local index = _floor_index(pieces, row, column)
 
-            if after_start and before_end then
-                return region
-            end
-        end
+    if index == 0 then
+        return nil
+    end
+
+    local piece = pieces[index]
+    local before_end = row < piece[4] or (row == piece[4] and column < piece[5])
+
+    if before_end then
+        return piece
     end
 
     return nil
@@ -479,10 +620,18 @@ local _ANNOTATION_ONLY_LANGUAGES = {
 --- alone isn't enough to filter those out, and why this also checks the
 --- injected language's name against that list.
 ---
---- Matched against `_merge_contiguous(regions)`, not `regions` directly --
---- see its docstring for why a grammar can split one logical injected span
---- (`node`'s own single, unsplit range) into several gapless regions, which
---- a match against the raw regions could never succeed against.
+--- Matched against `_sorted_pieces(child)`, not `child:included_regions()`
+--- directly -- see `_merge_contiguous`'s docstring for why a grammar can
+--- split one logical injected span (`node`'s own single, unsplit range)
+--- into several gapless regions, which a match against the raw regions
+--- could never succeed against, and `_sorted_pieces`'s docstring for why a
+--- binary search over a cached, sorted array replaces what used to be a
+--- linear scan over every region of every child language -- confirmed to
+--- matter in practice, not just in theory: a fixed-size, fixed-position
+--- walk measurably slows down as unrelated injection count grows elsewhere
+--- in the *same* document (0.055 ms/step at 190 fences, 0.286 ms/step at
+--- 2000, over the same first 300 steps in both), even though the walk
+--- itself never gets any longer or touches more content.
 ---
 --- Parses lazily, not upfront: `ltree:parse(...)` at `node`'s own start,
 --- narrowed to one column (the same boundary-quirk-avoiding shape
@@ -528,13 +677,29 @@ local function _injection_at(node)
 
     for _, child in pairs(ltree:children()) do
         if not _ANNOTATION_ONLY_LANGUAGES[child:lang()] then
-            for _, regions in ipairs(child:included_regions()) do
-                for _, piece in ipairs(_merge_contiguous(regions)) do
-                    if piece[1] == row1 and piece[2] == column1 and piece[4] == row2 and piece[5] == column2 then
-                        child:parse(true)
-                        return child, piece
-                    end
+            local pieces = _sorted_pieces(child)
+            local index = _floor_index(pieces, row1, column1)
+
+            -- `_floor_index` finds the rightmost piece starting at-or-before
+            -- `row1`/`column1`, which is only a candidate match if its start
+            -- is *exactly* `row1`/`column1` -- walk backward while ties on
+            -- that exact start remain, since two pieces from different
+            -- groups could in principle share a start without sharing an
+            -- end (see `_sorted_pieces`'s docstring on why cross-group
+            -- pieces are safe to compare this way at all).
+            while index >= 1 do
+                local piece = pieces[index]
+
+                if piece[1] ~= row1 or piece[2] ~= column1 then
+                    break
                 end
+
+                if piece[4] == row2 and piece[5] == column2 then
+                    child:parse(true)
+                    return child, piece
+                end
+
+                index = index - 1
             end
         end
     end
