@@ -156,4 +156,81 @@ describe("motion API - crossing an injection nested inside another injection", f
             assert.same(column, actual)
         end
     end)
+
+    -- Regression test for `notes/injection-parse-performance.md`'s Attempt
+    -- 1: `LanguageTree:parse()`'s own intersects-{range} check silently
+    -- fails to parse an injected region when given a *zero-width* range
+    -- sitting exactly on that region's start boundary (confirmed against
+    -- `root:parse({1, 0, 1, 0})` on this exact fixture -- child ltree
+    -- exists but `#ltree:trees() == 0`, i.e. never actually parsed).
+    -- `_current_leaf` (`leaf.lua`) currently avoids this by calling
+    -- `parser:parse(true)`, not a narrow range, so this test passes today
+    -- -- its purpose is to fail loudly if a future change narrows that call
+    -- to a zero-width (or otherwise sub-one-column) range without also
+    -- fixing the underlying boundary quirk, since a cursor landing on the
+    -- very first character of injected content is a routine case (`gg`,
+    -- `f`, or any motion landing on an injection's first leaf), not a rare
+    -- edge case.
+    _nested_it("#w resolves the injected leaf when the cursor starts exactly at its region's first column", function()
+        grammar.set_cursor(1, 0)
+        treemotion.run_motion_w()
+
+        local row, column = grammar.get_cursor()
+        assert.same({ 1, 3 }, { row, column })
+    end)
+end)
+
+describe("motion API - a fenced code block's content reported as several regions", function()
+    -- `:help treesitter-language-injections` describes an injected region as
+    -- a single contiguous span, but tree-sitter-markdown's own line-oriented
+    -- block parsing doesn't produce one of those for a multi-line fence --
+    -- confirmed directly against the fixture below: the injected `lua`
+    -- child's `included_regions()` is *two* one-line regions, `1,0`-`2,0`
+    -- and `2,0`-`3,0`, even though the host `code_fence_content` node's own
+    -- `:range()` is one clean `1,0`-`3,0` span covering both lines.
+    --
+    -- Before `_merge_contiguous` (`_commands.motion.leaf`), `_injection_at`'s
+    -- exact-range match compared a *single* region against a node's *whole*
+    -- span, so it could never succeed here -- the fenced block was never
+    -- recognized as an injection to descend into at all, and `w`/`e`/`b`
+    -- treated it as one opaque leaf, jumping clean over the second line
+    -- straight to the closing ` ``` ` delimiter. Reproduced on unmodified
+    -- `main` via this exact fixture (`git stash` + this test fails with `#w`
+    -- landing on the closing fence instead of stepping through both lines).
+    --
+    -- Uses `lua`, not e.g. `rust`, so this runs hermetically off Neovim's own
+    -- bundled grammars -- see this file's module docstring for why that
+    -- matters (`nix build .#treemotion-nvim`'s `checkPhase` has no
+    -- `treesitterAllGrammars`).
+    local function _multiline_it(description, body)
+        it(
+            description,
+            grammar.wrap(pending, {
+                filetype = "markdown",
+                lines = { "```lua", "local x = 1", "local y = 2", "```" },
+            }, body)
+        )
+    end
+
+    _multiline_it(
+        "#w steps across the fence's two-line region boundary instead of jumping to the closing delimiter",
+        function()
+            grammar.set_cursor(1, 0)
+
+            for _, position in ipairs({
+                { 1, 6 },
+                { 1, 8 },
+                { 1, 10 },
+                { 2, 0 },
+                { 2, 6 },
+                { 2, 8 },
+                { 2, 10 },
+                { 3, 0 },
+            }) do
+                treemotion.run_motion_w()
+                local row, column = grammar.get_cursor()
+                assert.same(position, { row, column })
+            end
+        end
+    )
 end)

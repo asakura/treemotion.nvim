@@ -239,6 +239,67 @@ local function _owning_ltree(node)
     return _tree_to_ltree[target]
 end
 
+--- Merge `regions` (one `included_regions()` group -- one logical injected
+--- instance) into maximal runs of regions that touch end-to-end, so a
+--- grammar's own internal splitting of one span into several regions isn't
+--- mistaken for a genuine gap between stitched pieces.
+---
+--- tree-sitter-markdown's line-oriented block parsing reports a single
+--- fenced code block's content as several separate one-line regions (e.g.
+--- `3,0-4,0`, `4,0-5,0`, `5,0-6,0`, `6,0-7,0` for a 4-line fence) even though
+--- the underlying source has no gap between them at all -- each region's end
+--- exactly equals the next one's start (confirmed against a real
+--- `` ```rust `` fence: `code_fence_content:range()` on the *host* side is
+--- one clean `3,0`-`7,0` span, but the injected child's own
+--- `included_regions()` splits that identical span into those four pieces).
+--- Left unmerged, `_piece_at`/`_within_piece` would treat every line
+--- boundary inside such a fence as if it were a real stitched-injection gap
+--- -- the same shape a genuine Nix indented-string split around `${...}`
+--- interpolations produces, where the gap really does contain host-language
+--- text -- forcing `next_leaf`/`previous_leaf` to climb back out to the host
+--- grammar at every line break instead of stepping across it, and leaving
+--- `_injection_at`'s exact-range match (against the host node's own single,
+--- unsplit range) unable to ever succeed. Regions with a genuine gap between
+--- them (nothing here touches end-to-end) are left as separate pieces,
+--- unchanged.
+---
+--- Sorts by start position first: `included_regions()` isn't documented to
+--- guarantee document order, and an out-of-order run would make the
+--- end-equals-next-start check above miss real adjacency.
+---
+--- Single-region groups (the overwhelming majority -- most injections, e.g.
+--- every non-combined one, never split into more than one region) skip the
+--- sort/copy/merge work entirely and return `regions` as-is, since this runs
+--- once per node `_injection_at` touches.
+---
+---@param regions integer[][]
+---@return integer[][]
+local function _merge_contiguous(regions)
+    if #regions <= 1 then
+        return regions
+    end
+
+    local sorted = vim.list_extend({}, regions)
+
+    table.sort(sorted, function(a, b)
+        return a[1] < b[1] or (a[1] == b[1] and a[2] < b[2])
+    end)
+
+    local merged = {}
+
+    for _, region in ipairs(sorted) do
+        local last = merged[#merged]
+
+        if last and last[4] == region[1] and last[5] == region[2] then
+            last[4], last[5], last[6] = region[4], region[5], region[6]
+        else
+            table.insert(merged, { region[1], region[2], region[3], region[4], region[5], region[6] })
+        end
+    end
+
+    return merged
+end
+
 --- The specific stitched sub-range of `ltree`'s `included_regions()` that
 --- contains `row`/`column` -- one atomic run of injected source text, e.g.
 --- one line of a Nix indented string between two `${...}` interpolations.
@@ -248,7 +309,10 @@ end
 --- treesitter-language-injections` works even for a combined tree spanning
 --- several disjoint pieces), so comparing raw coordinates against each piece
 --- here is enough to tell them apart -- the same way `is_contiguous` already
---- compares raw coordinates to tell leaves apart from runs.
+--- compares raw coordinates to tell leaves apart from runs. Pieces come from
+--- `_merge_contiguous`, not `included_regions()` directly -- see its
+--- docstring for why a raw, unmerged region can be narrower than the real
+--- gapless run of source it belongs to.
 ---
 ---@param ltree vim.treesitter.LanguageTree
 ---@param row integer
@@ -257,7 +321,7 @@ end
 ---    `nil` if `row`/`column` isn't covered by `ltree` at all.
 local function _piece_at(ltree, row, column)
     for _, regions in ipairs(ltree:included_regions()) do
-        for _, region in ipairs(regions) do
+        for _, region in ipairs(_merge_contiguous(regions)) do
             local after_start = row > region[1] or (row == region[1] and column >= region[2])
             local before_end = row < region[4] or (row == region[4] and column < region[5])
 
@@ -415,6 +479,40 @@ local _ANNOTATION_ONLY_LANGUAGES = {
 --- alone isn't enough to filter those out, and why this also checks the
 --- injected language's name against that list.
 ---
+--- Matched against `_merge_contiguous(regions)`, not `regions` directly --
+--- see its docstring for why a grammar can split one logical injected span
+--- (`node`'s own single, unsplit range) into several gapless regions, which
+--- a match against the raw regions could never succeed against.
+---
+--- Parses lazily, not upfront: `ltree:parse(...)` at `node`'s own start,
+--- narrowed to one column (the same boundary-quirk-avoiding shape
+--- `M.current_leaf` uses), discovers-and-parses whatever injected children
+--- exist at `node` right before checking them, since this is the one choke
+--- point every leaf-walk entry point (`first_leaf`/`last_leaf`/`_leaf_at`)
+--- already calls on every node it touches -- see `M.current_leaf`'s own
+--- comment on why a walk that reaches a not-yet-touched injected tree
+--- elsewhere in the buffer still gets it parsed here, lazily, rather than
+--- needing an upfront full-buffer parse to guarantee it's ready in advance.
+---
+--- Once a match is found, `child:parse(true)` commits that *entire* child
+--- language, not just the one matched piece: `LanguageTree:is_valid()`'s
+--- `_is_entirely_valid` fast path (an O(1) check instead of an O(region
+--- count) scan on every later `parse()`/`is_valid()` call against this
+--- child, including every later call this function makes for an unrelated
+--- node) only kicks in once *all* of a language's discovered regions are
+--- parsed -- so a language actually being walked (e.g. every `` ```rust ``
+--- fence in a Markdown buffer, once any one of them is entered) is worth
+--- paying for in full, once, while a language never entered at all (e.g.
+--- `markdown_inline` in a walk that stays inside code fences) still costs
+--- nothing. See `notes/injection-parse-performance.md` for the full
+--- benchmark history: this exact mechanism (Attempts 3/4) was a severe
+--- regression before `_merge_contiguous` existed, because a match could
+--- never succeed for a multi-region language like Markdown code fences, so
+--- `child:parse(true)` never fired and the fast path was never reached; once
+--- matching was fixed, the same mechanism measures even or slightly ahead of
+--- the eager baseline on long walks, and meaningfully ahead on cold-start
+--- and on touching not-yet-visited territory in an already-warm buffer.
+---
 ---@param node TSNode
 ---@return vim.treesitter.LanguageTree? child_ltree
 ---@return integer[]? piece
@@ -426,13 +524,15 @@ local function _injection_at(node)
     end
 
     local row1, column1, row2, column2 = node:range()
+    ltree:parse({ row1, column1, row1, column1 + 1 })
 
     for _, child in pairs(ltree:children()) do
         if not _ANNOTATION_ONLY_LANGUAGES[child:lang()] then
             for _, regions in ipairs(child:included_regions()) do
-                for _, region in ipairs(regions) do
-                    if region[1] == row1 and region[2] == column1 and region[4] == row2 and region[5] == column2 then
-                        return child, region
+                for _, piece in ipairs(_merge_contiguous(regions)) do
+                    if piece[1] == row1 and piece[2] == column1 and piece[4] == row2 and piece[5] == column2 then
+                        child:parse(true)
+                        return child, piece
                     end
                 end
             end
@@ -571,27 +671,25 @@ local function _current_leaf(forward)
 
     -- `get_node()` can return a stale/invalid node against an unparsed
     -- tree, so make sure the tree covering the cursor is up to date first.
-    -- `true` (not the default `false`/`nil`) is what actually parses
-    -- injected regions too, not just the root tree -- without it,
-    -- `_injection_at` below would never find anything, since no injected
-    -- tree would exist yet to search.
     --
-    -- Tried narrowing this to just the cursor's own range instead of a full
-    -- `true` parse (`:help LanguageTree:parse()` calls `true` "Can be
-    -- slow!"), but reverted it: confirmed two independent problems doing
-    -- so. First, `LanguageTree:parse()`'s own intersects-{range} check,
-    -- unlike `node_for_range()`'s, misses a zero-width range sitting
-    -- exactly on an injected region's start boundary, silently leaving that
-    -- region unparsed (reproduced against a cursor on the very first column
-    -- of an injected fence). Second, and more fundamentally, `next_leaf`/
-    -- `previous_leaf` never call `parse()` themselves -- `run_start`/
-    -- `run_end` can walk them into a completely different injected tree
-    -- elsewhere in the buffer than the one the cursor started in, and that
-    -- tree would never get parsed at all if this call only covered the
-    -- cursor's own narrow range. A full parse here is what lets every leaf
-    -- a walk might later reach already have real content, however far from
-    -- the cursor that leaf turns out to be.
-    parser:parse(true)
+    -- Only the root tree, at the cursor's own one-column-wide range, not a
+    -- full `true` parse (`:help LanguageTree:parse()` calls `true` "Can be
+    -- slow!") -- this used to call `parser:parse(true)` unconditionally, see
+    -- `notes/injection-parse-performance.md` for the two narrowing attempts
+    -- that were tried and reverted before this one, and why *this* one
+    -- avoids both problems: a *zero-width* range at an injected region's
+    -- exact start boundary is what `LanguageTree:parse()`'s intersects-check
+    -- silently mishandles, and a one-column-wide range sidesteps that; and
+    -- unlike those attempts, this one never depends on `next_leaf`/
+    -- `previous_leaf` reaching an as-yet-unparsed tree on their own --
+    -- `_injection_at` below (the single choke point every leaf-walk entry
+    -- point already calls on every node it touches, since an injection can
+    -- start at any depth) now does its own lazy, narrow `parse()` right
+    -- before checking whether a node matches, so a walk that climbs into a
+    -- completely different injected tree elsewhere in the buffer still gets
+    -- that tree parsed at the moment it's about to be trusted, not before.
+    local row, column = M.cursor_position()
+    parser:parse({ row, column, row, column + 1 })
 
     -- `include_anonymous` matters here: without it, `get_node()` only
     -- returns *named* nodes, so a cursor sitting on punctuation (which is
@@ -613,7 +711,6 @@ local function _current_leaf(forward)
         node = parent
     end
 
-    local row, column = M.cursor_position()
     local child_ltree, piece = _injection_at(node)
 
     if child_ltree then
