@@ -26,6 +26,7 @@
         "owner\\s*=\\s*\"(?<owner>[^\"]+)\";\\s*repo\\s*=\\s*\"(?<repo>[^\"]+)\";\\s*rev\\s*=\\s*\"(?<currentDigest>[0-9a-f]{40})\";"
       ],
       "datasourceTemplate": "git-refs",
+      "currentValueTemplate": "main",
       "depNameTemplate": "{{{owner}}}/{{{repo}}}",
       "packageNameTemplate": "https://github.com/{{{owner}}}/{{{repo}}}"
     }
