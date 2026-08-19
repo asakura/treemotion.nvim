@@ -126,40 +126,70 @@ end)
 
 describe("motion API - genuinely multi-row leaves, across grammars", function()
     -- A leaf that itself spans more than one row (not just a gap between
-    -- rows) must land as one single stop, not split at the row boundary.
+    -- rows) is still one single `leaf.lua`-level leaf, not split at the row
+    -- boundary -- but that's no longer the same thing as one single `w`/`b`
+    -- *stop*: both fixtures below are `@string`/`@spell`-tagged (see
+    -- `subword.lua`'s `_is_prose_capture`), i.e. prose by this plugin's own
+    -- classification, and `subword.split()` already divides a *single-row*
+    -- prose leaf word-by-word -- multi-row prose used to be the one place
+    -- that stopped short, collapsing into one giant unit purely because it
+    -- happened to span more than one row (see
+    -- `motion_markdown_paragraph_spec.lua` for the real-world case that
+    -- bug came from: a hard/soft-wrapped markdown paragraph). Now it's
+    -- split the same way single-row prose already was, consistently
+    -- crossing the row boundary instead of stopping at it.
 
     _it_per_grammar(
         { filetype = "lua", lines = { "local x = [[foo", "bar]]" } },
-        "#w/#b treat a multi-row long string as a single stop",
+        "#w/#b split a multi-row long string word-by-word, the same as a single-row one would",
         function()
             -- `local`(0,0) `x`(0,6) `=`(0,8) `[[`(0,10)
-            -- `string_content`(0,12 - 1,3, text `foo\nbar`) `]]`(1,3).
+            -- `string_content`(0,12 - 1,3, text `foo\nbar`, `@string`-tagged) `]]`(1,3).
             grammar.set_cursor(0, 10) -- start of `[[`
-            treemotion.run_motion_w()
-            assert.same({ 0, 12 }, { grammar.get_cursor() }) -- `string_content`'s start
-            treemotion.run_motion_w()
-            assert.same({ 1, 3 }, { grammar.get_cursor() }) -- straight to `]]`
+
+            local w_expected = { { 0, 12 }, { 1, 0 }, { 1, 3 } } -- `foo`, `bar`, `]]`
+            for _, position in ipairs(w_expected) do
+                treemotion.run_motion_w()
+                assert.same(position, { grammar.get_cursor() })
+            end
 
             grammar.set_cursor(1, 3) -- start of `]]`
-            treemotion.run_motion_b()
-            assert.same({ 0, 12 }, { grammar.get_cursor() })
+
+            local b_expected = { { 1, 0 }, { 0, 12 }, { 0, 10 } } -- `bar`, `foo`, `[[`
+            for _, position in ipairs(b_expected) do
+                treemotion.run_motion_b()
+                assert.same(position, { grammar.get_cursor() })
+            end
         end
     )
 
     _it_per_grammar(
         { filetype = "c", lines = { "int x = 1; /* foo", "bar */ int y = 2;" } },
-        "#w/#b treat a multi-row block comment as a single stop",
+        "#w/#b split a multi-row block comment word-by-word, the same as a single-row one would",
         function()
-            -- `;`(0,9) then one `comment` leaf spanning (0,11) - (1,6), then `int`(1,7).
+            -- `;`(0,9) then one `comment` leaf spanning (0,11) - (1,6),
+            -- `@spell`-tagged, then `int`(1,7). `/`/`*` each land as their
+            -- own bare punctuation stop either side of the comment's real
+            -- words -- see `motion_gap_spec.lua`'s `*text*` case (and
+            -- `_char_class`'s docstring) for why `/` and `*` fall into
+            -- different classes and so never merge into one run together.
             grammar.set_cursor(0, 9) -- start of `;`
-            treemotion.run_motion_w()
-            assert.same({ 0, 11 }, { grammar.get_cursor() }) -- comment's start, not split at the row break
-            treemotion.run_motion_w()
-            assert.same({ 1, 7 }, { grammar.get_cursor() }) -- straight to `int`, skipping the comment's body
+
+            local w_expected = { { 0, 11 }, { 0, 12 }, { 0, 14 }, { 1, 0 }, { 1, 4 }, { 1, 5 }, { 1, 7 } }
+            -- `/`, `*`, `foo`, `bar`, `*`, `/`, `int`
+            for _, position in ipairs(w_expected) do
+                treemotion.run_motion_w()
+                assert.same(position, { grammar.get_cursor() })
+            end
 
             grammar.set_cursor(1, 7) -- start of `int`
-            treemotion.run_motion_b()
-            assert.same({ 0, 11 }, { grammar.get_cursor() }) -- back to the comment's start
+
+            local b_expected = { { 1, 5 }, { 1, 4 }, { 1, 0 }, { 0, 14 }, { 0, 12 }, { 0, 11 } }
+            -- `/`, `*`, `bar`, `foo`, `*`, `/`
+            for _, position in ipairs(b_expected) do
+                treemotion.run_motion_b()
+                assert.same(position, { grammar.get_cursor() })
+            end
         end
     )
 end)
