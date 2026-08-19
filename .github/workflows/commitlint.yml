@@ -9,6 +9,10 @@ concurrency:
 
 jobs:
   commitlint:
+    # release-please's own PR commit ("chore(main): release X.Y.Z") is
+    # generated verbatim by googleapis/release-please-action and doesn't
+    # follow this repo's capitalization convention; skip linting it.
+    if: github.head_ref != 'release-please--branches--main'
     runs-on: ubuntu-latest
     name: Commitlint
     steps:
