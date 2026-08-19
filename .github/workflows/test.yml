@@ -53,7 +53,7 @@ jobs:
 
     steps:
     - name: Checkout
-      uses: actions/checkout@v6
+      uses: actions/checkout@v7
 
     - name: Setup MSVC
       # the 'luarocks/gh-actions-lua' step requires msvc to build PUC-Rio Lua
@@ -160,7 +160,7 @@ jobs:
 
     steps:
     - name: Checkout
-      uses: actions/checkout@v6
+      uses: actions/checkout@v7
 
     - name: Install Nix
       uses: DeterminateSystems/nix-installer-action@v22
