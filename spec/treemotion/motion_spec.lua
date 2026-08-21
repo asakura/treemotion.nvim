@@ -1015,6 +1015,68 @@ describe("motion API - commands.motion.big (W/E/B/gE sub-word splitting)", funct
 
         get_text_stub:revert()
     end)
+
+    it(
+        "#B retreats to the start of the sub-word before a blank gap, not the one after it, "
+            .. "once #big.enabled is true",
+        function()
+            treemotion.setup({ commands = { motion = { big = { enabled = true } } } })
+
+            vim.api.nvim_buf_set_lines(assert(_BUFFER), 0, -1, false, { "-- alpha beta" })
+            _set_cursor(8) -- the blank between `alpha` and `beta`
+
+            treemotion.run_motion_B()
+            assert.same(3, _get_cursor_column()) -- start of `alpha`
+        end
+    )
+end)
+
+describe("motion API - multi-byte (UTF-8) characters", function()
+    before_each(function()
+        _BUFFER = vim.api.nvim_create_buf(false, true)
+        vim.api.nvim_buf_set_lines(_BUFFER, 0, -1, false, { "-- hello \226\128\148 world" })
+        vim.api.nvim_set_current_buf(_BUFFER)
+        vim.treesitter.start(_BUFFER, "lua")
+    end)
+    after_each(_remove_buffer)
+
+    it("#e lands on a multi-byte trailing character's lead byte, not a continuation byte", function()
+        _set_cursor(0)
+
+        -- `--`, `hello`, `\226\128\148` (em dash, its own 3-byte unit -- must
+        -- land on byte 9, its lead byte, not byte 11, a continuation byte),
+        -- `world`, `world` (no more units).
+        local expected = { 1, 7, 9, 17, 17 }
+
+        for _, column in ipairs(expected) do
+            treemotion.run_motion_e()
+            assert.same(column, _get_cursor_column())
+        end
+    end)
+end)
+
+describe("motion API - blank gaps inside one leaf/run", function()
+    before_each(function()
+        _BUFFER = vim.api.nvim_create_buf(false, true)
+        vim.api.nvim_buf_set_lines(_BUFFER, 0, -1, false, { "-- alpha beta" })
+        vim.api.nvim_set_current_buf(_BUFFER)
+        vim.treesitter.start(_BUFFER, "lua")
+    end)
+    after_each(_remove_buffer)
+
+    it("#b retreats to the start of the word before a blank gap, not the word after it", function()
+        _set_cursor(8) -- the blank between `alpha` and `beta`
+
+        treemotion.run_motion_b()
+        assert.same(3, _get_cursor_column()) -- start of `alpha`
+    end)
+
+    it("#ge retreats to the end of the word before a blank gap, not the word after it", function()
+        _set_cursor(8) -- the blank between `alpha` and `beta`
+
+        treemotion.run_motion_ge()
+        assert.same(7, _get_cursor_column()) -- end of `alpha`
+    end)
 end)
 
 describe("motion API - no parser", function()

@@ -79,26 +79,47 @@ local function _new_unit(node, units, index)
     return setmetatable({ _leaf = node, _units = units, _index = index }, _Unit)
 end
 
---- Find which of `units` contains (or is the closest unit at-or-after) `row`/`column`.
+--- Find which of `units` contains (or is the closest unit in `forward`'s
+--- direction to) `row`/`column`.
 ---
 --- Sub-word slices aren't real tree nodes, so there's no `vim.treesitter.get_node()`
 --- equivalent to ask "which one is the cursor on" -- this does the same job
 --- by hand, scanning in document order for the first unit whose end lands
---- after the cursor. Falling off the end (cursor past every unit) returns
---- the last unit rather than nothing, since the caller always needs a
---- concrete unit to treat as "current."
+--- after the cursor. When the cursor sits genuinely inside a unit, that unit
+--- wins regardless of direction; when it sits in a *gap* between two units
+--- (e.g. the blank column between two words, once `w`/`ge`'s "already
+--- inside" check falls through to here), `forward` decides which side of
+--- the gap to prefer -- the unit after it (matching the old, direction-blind
+--- behavior) or the one before it, so `b`/`ge` retreat instead of
+--- overshooting forward. Falling off the end (cursor past every unit)
+--- returns the last unit rather than nothing, since the caller always needs
+--- a concrete unit to treat as "current."
 ---
 ---@param units treemotion.SubwordUnit[] A leaf's sub-word units, in document order.
 ---@param row integer 0-indexed cursor row.
 ---@param column integer 0-indexed cursor column.
+---@param forward boolean Which side of a gap between two units to prefer.
 ---@return integer # The 1-indexed unit to treat as "under the cursor".
 ---
-local function _index_at(units, row, column)
+local function _index_at(units, row, column, forward)
     for index, unit in ipairs(units) do
+        local start_row, start_column = unit:start()
         local end_row, end_column = unit:end_()
 
-        if end_row > row or (end_row == row and end_column > column) then
-            return index
+        local before_end = end_row > row or (end_row == row and end_column > column)
+
+        if before_end then
+            local after_start = start_row < row or (start_row == row and start_column <= column)
+
+            if after_start then
+                return index -- cursor is genuinely inside this unit
+            end
+
+            if forward or index == 1 then
+                return index -- gap before this unit: prefer it (forward), or it's all there is
+            end
+
+            return index - 1 -- gap before this unit: prefer the one before the gap
         end
     end
 
@@ -165,7 +186,7 @@ function M.current_unit(forward)
 
     local row, column = leaf.cursor_position()
 
-    local unit = _new_unit(node, units, _index_at(units, row, column))
+    local unit = _new_unit(node, units, _index_at(units, row, column, forward))
 
     _log_unit_result(string.format("current_unit(forward=%s)", forward), unit)
 

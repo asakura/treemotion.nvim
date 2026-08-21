@@ -82,21 +82,38 @@ local function _new_unit(run_start, units, index)
     return setmetatable({ _leaf = run_start, _units = units, _index = index }, _Unit)
 end
 
---- Find which of `units` contains (or is the closest unit at-or-after) `row`/`column`.
+--- Find which of `units` contains (or is the closest unit in `forward`'s
+--- direction to) `row`/`column`.
 ---
---- Identical in shape to `word.lua`'s own `_index_at` -- see its docstring.
+--- Identical in shape to `word.lua`'s own `_index_at` -- see its docstring,
+--- including how `forward` picks a side when the cursor sits in a gap
+--- between two units.
 ---
 ---@param units treemotion.SubwordUnit[] A run's sub-word units, in document order.
 ---@param row integer 0-indexed cursor row.
 ---@param column integer 0-indexed cursor column.
+---@param forward boolean Which side of a gap between two units to prefer.
 ---@return integer # The 1-indexed unit to treat as "under the cursor".
 ---
-local function _index_at(units, row, column)
+local function _index_at(units, row, column, forward)
     for index, unit in ipairs(units) do
+        local start_row, start_column = unit:start()
         local end_row, end_column = unit:end_()
 
-        if end_row > row or (end_row == row and end_column > column) then
-            return index
+        local before_end = end_row > row or (end_row == row and end_column > column)
+
+        if before_end then
+            local after_start = start_row < row or (start_row == row and start_column <= column)
+
+            if after_start then
+                return index -- cursor is genuinely inside this unit
+            end
+
+            if forward or index == 1 then
+                return index -- gap before this unit: prefer it (forward), or it's all there is
+            end
+
+            return index - 1 -- gap before this unit: prefer the one before the gap
         end
     end
 
@@ -207,7 +224,7 @@ function M.current_unit(forward)
 
     local row, column = leaf.cursor_position()
 
-    local unit = _new_unit(run_start, units, _index_at(units, row, column))
+    local unit = _new_unit(run_start, units, _index_at(units, row, column, forward))
 
     _log_unit_result(string.format("current_unit(forward=%s)", forward), unit)
 
