@@ -23,6 +23,7 @@
 
 local logging = require("mega.logging")
 
+local codepoint = require("treemotion._commands.motion.codepoint")
 local leaf = require("treemotion._commands.motion.leaf")
 local bigword = require("treemotion._commands.motion.bigword")
 local word = require("treemotion._commands.motion.word")
@@ -30,28 +31,6 @@ local word = require("treemotion._commands.motion.word")
 local _LOGGER = logging.get_logger("treemotion._commands.motion.runner")
 
 local M = {}
-
---- Find the column of the last full character ending at `end_column`
---- (exclusive), on `row`.
----
---- `end_column - 1` is a raw *byte* decrement, which lands mid-character for
---- any unit ending in a multi-byte UTF-8 character (e.g. `—`) -- this walks
---- that byte back to its own lead byte via `vim.str_utf_start` instead, so
---- callers always land on (or measure against) a valid character boundary.
----
----@param row integer 0-indexed row.
----@param end_column integer 0-indexed column, one past the last character (exclusive).
----@return integer # The 0-indexed column of that last character's lead byte.
-local function _last_character_column(row, end_column)
-    local last_byte = math.max(end_column - 1, 0)
-    local line = vim.api.nvim_buf_get_lines(0, row, row + 1, false)[1]
-
-    if not line or last_byte >= #line then
-        return last_byte
-    end
-
-    return last_byte + vim.str_utf_start(line, last_byte + 1)
-end
 
 --- Move the cursor to `node`'s first character.
 ---
@@ -69,14 +48,14 @@ end
 --- Move the cursor to `node`'s last character.
 ---
 --- `node:end_()` is the column *after* the last character (exclusive), so
---- this steps back to the character itself via `_last_character_column`,
+--- this steps back to the character itself via `codepoint.last_character_column`,
 --- landing on its lead byte even when it's multi-byte UTF-8.
 ---
 ---@param node TSNode|treemotion.WordUnit|treemotion.BigWordUnit Anything with an `:end_()` -- a leaf or unit.
 local function _set_cursor_to_end(node)
     local row, column = node:end_()
 
-    vim.api.nvim_win_set_cursor(0, { row + 1, _last_character_column(row, column) })
+    vim.api.nvim_win_set_cursor(0, { row + 1, codepoint.last_character_column(row, column) })
 end
 
 --- Check if the cursor already sits on `node`'s first character.
@@ -104,7 +83,7 @@ end
 ---@return boolean # `true` if the cursor already sits on `node`'s (inclusive) end.
 local function _is_cursor_at_end(node)
     local row, column = node:end_()
-    column = _last_character_column(row, column)
+    column = codepoint.last_character_column(row, column)
     local cursor_row, cursor_column = leaf.cursor_position()
 
     return cursor_row == row and cursor_column == column

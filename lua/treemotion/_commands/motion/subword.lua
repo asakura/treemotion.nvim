@@ -44,6 +44,7 @@
 
 local logging = require("mega.logging")
 
+local codepoint = require("treemotion._commands.motion.codepoint")
 local configuration = require("treemotion._core.configuration")
 local leaf = require("treemotion._commands.motion.leaf")
 local motion_constant = require("treemotion._commands.motion.constant")
@@ -909,14 +910,29 @@ end
 --- units at all for `node` rather than falling back to its full span --
 --- see `M.split`'s docstring.
 ---
+--- Works in whole characters throughout, via `_commands.motion.codepoint`,
+--- not raw bytes: `char` is `text`'s first full codepoint (not just its
+--- first byte), `before` is read from `codepoint.last_character_column`'s
+--- lead-byte column rather than a blind `start_col - 1` (which can itself
+--- land mid-character, reading a bare continuation byte out of the buffer),
+--- and the run-length walk below advances one whole character at a time. No
+--- real grammar this plugin has been verified against actually produces a
+--- multi-byte comment-marker character, but this keeps the guarantee exact
+--- -- `text:sub(continuation + 1, ...)` in `_split` always lands on a
+--- character boundary -- rather than merely "safe in every case tested so far."
+---
 ---@param node TSNode The leaf `text` came from.
 ---@param text string `node`'s full text (see `M.split`).
 ---@return integer # 0 if `text`'s start doesn't continue a punctuation run.
 ---
 local function _leading_continuation_length(node, text)
-    local char = text:sub(1, 1)
+    if text == "" then
+        return 0
+    end
 
-    if char == "" or char:match("%s") or char:match("%w") then
+    local char = text:sub(1, codepoint.char_width(text, 1))
+
+    if char:match("%s") or char:match("%w") then
         return 0
     end
 
@@ -926,7 +942,8 @@ local function _leading_continuation_length(node, text)
         return 0
     end
 
-    local before = vim.api.nvim_buf_get_text(0, start_row, start_col - 1, start_row, start_col, {})[1]
+    local before_col = codepoint.last_character_column(start_row, start_col)
+    local before = vim.api.nvim_buf_get_text(0, start_row, before_col, start_row, start_col, {})[1]
 
     if before ~= char then
         return 0
@@ -934,8 +951,14 @@ local function _leading_continuation_length(node, text)
 
     local length = 0
 
-    while length < #text and text:sub(length + 1, length + 1) == char do
-        length = length + 1
+    while length < #text do
+        local width = codepoint.char_width(text, length + 1)
+
+        if text:sub(length + 1, length + width) ~= char then
+            break
+        end
+
+        length = length + width
     end
 
     return length
