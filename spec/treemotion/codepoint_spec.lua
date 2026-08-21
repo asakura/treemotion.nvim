@@ -1,29 +1,11 @@
 --- Direct unit tests for `_commands.motion.codepoint`'s encoding-aware
---- primitives -- `M.classify`, `M.char_width`, `M.last_character_column` --
---- isolated from the motion machinery that consumes them. See
+--- primitives -- `M.char_width`, `M.last_character_column` -- isolated from
+--- the motion machinery that consumes them. See
 --- `motion_spec.lua`'s "multi-byte (UTF-8) characters" block for an
 --- end-to-end `#e` regression covering the same fix through
 --- `_commands.motion.runner`.
 
 local codepoint = require("treemotion._commands.motion.codepoint")
-
-describe("codepoint.classify", function()
-    it('classifies pure ASCII text as "ascii"', function()
-        assert.same("ascii", codepoint.classify("hello world"))
-    end)
-
-    it('classifies empty text as "ascii"', function()
-        assert.same("ascii", codepoint.classify(""))
-    end)
-
-    it('classifies text made entirely of multi-byte characters as "multibyte"', function()
-        assert.same("multibyte", codepoint.classify("\226\128\148\226\128\148")) -- "——"
-    end)
-
-    it('classifies text mixing ASCII and multi-byte characters as "mixed"', function()
-        assert.same("mixed", codepoint.classify("hello \226\128\148 world"))
-    end)
-end)
 
 describe("codepoint.char_width", function()
     it("returns 1 for an ASCII character", function()

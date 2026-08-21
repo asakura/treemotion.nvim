@@ -921,6 +921,13 @@ end
 --- -- `text:sub(continuation + 1, ...)` in `_split` always lands on a
 --- character boundary -- rather than merely "safe in every case tested so far."
 ---
+--- The run-length walk special-cases a 1-byte `char` (an ordinary ASCII
+--- marker like `-`/`#`/`/`, the overwhelmingly common case) with a plain
+--- byte comparison instead of calling `codepoint.char_width` per character:
+--- a 1-byte `char` can only ever match another 1-byte character, so there's
+--- no codepoint arithmetic to do, and a long ASCII divider comment
+--- shouldn't pay a `vim.str_utf_end` call per dash.
+---
 ---@param node TSNode The leaf `text` came from.
 ---@param text string `node`'s full text (see `M.split`).
 ---@return integer # 0 if `text`'s start doesn't continue a punctuation run.
@@ -930,7 +937,8 @@ local function _leading_continuation_length(node, text)
         return 0
     end
 
-    local char = text:sub(1, codepoint.char_width(text, 1))
+    local char_width = codepoint.char_width(text, 1)
+    local char = text:sub(1, char_width)
 
     if char:match("%s") or char:match("%w") then
         return 0
@@ -951,14 +959,22 @@ local function _leading_continuation_length(node, text)
 
     local length = 0
 
-    while length < #text do
-        local width = codepoint.char_width(text, length + 1)
+    if char_width == 1 then
+        local byte = char:byte()
 
-        if text:sub(length + 1, length + width) ~= char then
-            break
+        while length < #text and text:byte(length + 1) == byte do
+            length = length + 1
         end
+    else
+        while length < #text do
+            local width = codepoint.char_width(text, length + 1)
 
-        length = length + width
+            if text:sub(length + 1, length + width) ~= char then
+                break
+            end
+
+            length = length + width
+        end
     end
 
     return length
