@@ -39,7 +39,7 @@ jobs:
         uses: DeterminateSystems/nix-installer-action@v23
 
       - name: Cache Nix Store
-        uses: DeterminateSystems/magic-nix-cache-action@v14
+        uses: DeterminateSystems/magic-nix-cache-action@v15
 
       - name: Run llscheck
         run: nix build .#checks.x86_64-linux.llscheck -L
@@ -67,7 +67,7 @@ jobs:
         uses: DeterminateSystems/nix-installer-action@v23
 
       - name: Cache Nix Store
-        uses: DeterminateSystems/magic-nix-cache-action@v14
+        uses: DeterminateSystems/magic-nix-cache-action@v15
 
       - name: Run LuaCov
         run: nix run .#coverage-html

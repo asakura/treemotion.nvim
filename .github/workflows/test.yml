@@ -166,7 +166,7 @@ jobs:
       uses: DeterminateSystems/nix-installer-action@v23
 
     - name: Cache Nix Store
-      uses: DeterminateSystems/magic-nix-cache-action@v14
+      uses: DeterminateSystems/magic-nix-cache-action@v15
 
     # Building the packaged plugin runs the busted suite as its
     # `checkPhase`, so a successful build here is the test run.
