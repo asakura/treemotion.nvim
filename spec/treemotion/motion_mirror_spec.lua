@@ -23,7 +23,7 @@
 ---
 --- `w`/`b` and `e`/`ge` are the real mirror pairs (both "start of word"; both
 --- "end of word" -- see `runner.lua`'s module docstring), not `w`/`ge` --
---- confirmed against `motion_spec.lua`'s existing hand-derived subword
+--- confirmed against `treemotion_spec.lua`'s existing hand-derived subword
 --- fixture before writing the generic version here.
 ---
 --- Config coverage: every `treemotion.SubwordDelimiterMode` field

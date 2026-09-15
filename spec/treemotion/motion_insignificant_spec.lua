@@ -6,7 +6,7 @@
 --- their own) is fair game, and can be configured away like any other code
 --- leaf -- see `subword.lua`'s `_is_insignificant` docstring for why.
 ---
---- Fixtures stay Lua-specific, mirroring `motion_spec.lua`'s "subword
+--- Fixtures stay Lua-specific, mirroring `treemotion_spec.lua`'s "subword
 --- configuration" block: this feature's mechanics (leaf text matching,
 --- code/prose gating, run-skipping) are grammar-agnostic already, so a
 --- second grammar here would only prove the same thing twice, not add
@@ -51,7 +51,7 @@ describe("motion API - insignificant_characters", function()
         -- `M.DATA` is one shared, process-wide table -- restore to
         -- `_DEFAULTS`' own `{}` so a test's one-off entry never leaks into
         -- whichever spec file runs next in the same busted process (mirrors
-        -- `motion_spec.lua`'s identical `comment_markers` restore).
+        -- `treemotion_spec.lua`'s identical `comment_markers` restore).
         treemotion.setup({
             commands = { motion = { insignificant_characters = {}, big = { enabled = false } } },
         })

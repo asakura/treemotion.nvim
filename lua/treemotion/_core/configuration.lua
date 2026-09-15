@@ -2,7 +2,6 @@
 
 local hints_constant = require("treemotion._core.hints")
 local motion_constant = require("treemotion._commands.motion.constant")
-local say_constant = require("treemotion._commands.hello_world.say.constant")
 
 local logging = require("mega.logging")
 
@@ -24,10 +23,6 @@ local _DEFAULTS = {
     hints = hints_constant.Kind.none,
     logging = { level = "info", use_console = false, use_file = false },
     commands = {
-        goodnight_moon = { read = { phrase = "A good book" } },
-        hello_world = {
-            say = { ["repeat"] = 1, style = say_constant.Keyword.style.lowercase },
-        },
         motion = {
             comment_markers = {
                 c = { "/" },

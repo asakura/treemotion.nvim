@@ -484,8 +484,6 @@ none of `commands.motion.big`'s other fields have any effect until you flip it.
 
 ## Configuration
 
-(These are default values, for the current template scaffolding)
-
 `treemotion` exposes a `setup(opts)` function, so lazy.nvim's `opts` table
 works as expected:
 
@@ -495,10 +493,6 @@ works as expected:
     opts = {
         hints = "none",
         commands = {
-            goodnight_moon = { read = { phrase = "A good book" } },
-            hello_world = {
-                say = { ["repeat"] = 1, style = "lowercase" },
-            },
             motion = {
                 -- Which single characters count as comment-marker
                 -- punctuation, per treesitter language. A language with
@@ -614,12 +608,6 @@ loads):
     config = function()
         vim.g.treemotion_configuration = {
             hints = "none",
-            commands = {
-                goodnight_moon = { read = { phrase = "A good book" } },
-                hello_world = {
-                    say = { ["repeat"] = 1, style = "lowercase" },
-                },
-            },
             logging = {
                 level = "info",
                 use_console = false,
@@ -674,26 +662,12 @@ free (`dw`, `cW`, ...) without a custom `'operatorfunc'`.
 
 ## Commands
 
-The `:TreeMotion` command tree exposes the real `motion` subcommand (see
-`Motions` above) alongside the template's placeholder example subcommands
-(see `Status`). See `plugin/treemotion.lua` for how they're all wired up.
+The `:TreeMotion` command tree exposes the `motion` subcommand (see `Motions`
+above). See `plugin/treemotion.lua` for how it's wired up.
 
 ```vim
-" The real functionality
 :TreeMotion motion w
 :TreeMotion motion W --count=3
-
-" A typical subcommand
-:TreeMotion hello-world say phrase "Hello, World!" " How are you?"
-:TreeMotion hello-world say phrase "Hello, World!" --repeat=2 --style=lowercase
-
-" An example of a flag this repeatable and 3 flags, -a, -b, -c, as one dash
-:TreeMotion arbitrary-thing -vvv -abc -f
-
-" Separate commands with completely separate, flexible APIs
-:TreeMotion goodnight-moon count-sheep 42
-:TreeMotion goodnight-moon read "a book"
-:TreeMotion goodnight-moon sleep -z -z -z
 ```
 
 ## Development

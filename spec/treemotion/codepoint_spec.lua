@@ -1,7 +1,7 @@
 --- Direct unit tests for `_commands.motion.codepoint`'s encoding-aware
 --- primitives -- `M.char_width`, `M.last_character_column` -- isolated from
 --- the motion machinery that consumes them. See
---- `motion_spec.lua`'s "multi-byte (UTF-8) characters" block for an
+--- `treemotion_spec.lua`'s "multi-byte (UTF-8) characters" block for an
 --- end-to-end `#e` regression covering the same fix through
 --- `_commands.motion.runner`.
 

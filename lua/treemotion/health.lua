@@ -4,7 +4,6 @@ local configuration_ = require("treemotion._core.configuration")
 local hints_constant = require("treemotion._core.hints")
 local logging_ = require("mega.logging")
 local motion_constant = require("treemotion._commands.motion.constant")
-local say_constant = require("treemotion._commands.hello_world.say.constant")
 local tabler = require("treemotion._core.tabler")
 
 local _LOGGER = logging_.get_logger("treemotion.health")
@@ -153,24 +152,6 @@ end
 ---
 local function _get_command_issues(data)
     local output = {}
-
-    _append_validated(output, "commands.goodnight_moon.read.phrase", function()
-        return tabler.get_value(data, { "commands", "goodnight_moon", "read", "phrase" })
-    end, "string")
-
-    _append_validated(output, "commands.hello_world.say.repeat", function()
-        return tabler.get_value(data, { "commands", "hello_world", "say", "repeat" })
-    end, function(value)
-        return type(value) == "number" and value > 0
-    end, "a number (value must be 1-or-more)")
-
-    _append_validated(output, "commands.hello_world.say.style", function()
-        return tabler.get_value(data, { "commands", "hello_world", "say", "style" })
-    end, function(value)
-        local choices = vim.tbl_keys(say_constant.Keyword.style)
-
-        return vim.tbl_contains(choices, value)
-    end, '"lowercase" or "uppercase"')
 
     _append_validated(output, "commands.motion.comment_markers", function()
         return tabler.get_value(data, { "commands", "motion", "comment_markers" })

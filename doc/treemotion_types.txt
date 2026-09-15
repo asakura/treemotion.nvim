@@ -35,10 +35,6 @@ Fields ~
    Customize the fallback behavior of all `:TreeMotion` commands.
 
 Fields ~
-    {goodnight_moon} |treemotion.ConfigurationGoodnightMoon|?
-       The default values when a user calls `:TreeMotion goodnight-moon`.
-    {hello_world} |treemotion.ConfigurationHelloWorld|?
-       The default values when a user calls `:TreeMotion hello-world`.
     {motion} |treemotion.ConfigurationMotion|?
        Customize the `w`/`e`/`b`/`ge` sub-word splitting behavior.
 
@@ -219,14 +215,6 @@ Fields ~
        base64 sha256 digest, comfortably over an ordinary identifier or word.
 
 ------------------------------------------------------------------------------
-*treemotion.ConfigurationGoodnightMoon*
-   The default values when a user calls `:TreeMotion goodnight-moon`.
-
-Fields ~
-    {read} |treemotion.ConfigurationGoodnightMoonRead|?
-       The default values when a user calls `:TreeMotion goodnight-moon read`.
-
-------------------------------------------------------------------------------
 *treemotion.LoggingConfiguration*
    Control whether or not logging is printed to the console or to disk.
 
@@ -244,33 +232,6 @@ Fields ~
     {output_path} `(string)`?
        The default path on-disk where log files will be written to.
        Defaults to "/home/selecaoone/.local/share/nvim/plugin_name.log".
-
-------------------------------------------------------------------------------
-*treemotion.ConfigurationGoodnightMoonRead*
-   The default values when a user calls `:TreeMotion goodnight-moon read`.
-
-Fields ~
-    {phrase} `(string)`
-       The book to read if no book is given by the user.
-
-------------------------------------------------------------------------------
-*treemotion.ConfigurationHelloWorld*
-   The default values when a user calls `:TreeMotion hello-world`.
-
-Fields ~
-    {say} |treemotion.ConfigurationHelloWorldSay|?
-       The default values when a user calls `:TreeMotion hello-world say`.
-
-------------------------------------------------------------------------------
-*treemotion.ConfigurationHelloWorldSay*
-   The default values when a user calls `:TreeMotion hello-world say`.
-
-Fields ~
-    {repeat} `(number)`
-       A 1-or-more value. When 1, the phrase is said once. When 2+, the phrase
-       is repeated that many times.
-    {style} "lowercase" | "uppercase"
-       Control how the text is displayed. e.g. "uppercase" changes "hello" to "HELLO".
 
 
 WARNING: This file is auto-generated. Do not edit it!

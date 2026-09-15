@@ -37,10 +37,6 @@
 
 ---@class treemotion.ConfigurationCommands
 ---    Customize the fallback behavior of all `:TreeMotion` commands.
----@field goodnight_moon treemotion.ConfigurationGoodnightMoon?
----    The default values when a user calls `:TreeMotion goodnight-moon`.
----@field hello_world treemotion.ConfigurationHelloWorld?
----    The default values when a user calls `:TreeMotion hello-world`.
 ---@field motion treemotion.ConfigurationMotion?
 ---    Customize the `w`/`e`/`b`/`ge` sub-word splitting behavior.
 
@@ -205,11 +201,6 @@
 ---    comfortably under a 40-character sha1 hex digest or a 44-character
 ---    base64 sha256 digest, comfortably over an ordinary identifier or word.
 
----@class treemotion.ConfigurationGoodnightMoon
----    The default values when a user calls `:TreeMotion goodnight-moon`.
----@field read treemotion.ConfigurationGoodnightMoonRead?
----    The default values when a user calls `:TreeMotion goodnight-moon read`.
-
 ---@class treemotion.LoggingConfiguration
 ---    Control whether or not logging is printed to the console or to disk.
 ---@field level ("trace" | "debug" | "info" | "warning" | "error" | "fatal")?
@@ -225,21 +216,3 @@
 ---@field output_path string?
 ---    The default path on-disk where log files will be written to.
 ---    Defaults to "/home/selecaoone/.local/share/nvim/plugin_name.log".
-
----@class treemotion.ConfigurationGoodnightMoonRead
----    The default values when a user calls `:TreeMotion goodnight-moon read`.
----@field phrase string
----    The book to read if no book is given by the user.
-
----@class treemotion.ConfigurationHelloWorld
----    The default values when a user calls `:TreeMotion hello-world`.
----@field say treemotion.ConfigurationHelloWorldSay?
----    The default values when a user calls `:TreeMotion hello-world say`.
-
----@class treemotion.ConfigurationHelloWorldSay
----    The default values when a user calls `:TreeMotion hello-world say`.
----@field repeat number
----    A 1-or-more value. When 1, the phrase is said once. When 2+, the phrase
----    is repeated that many times.
----@field style "lowercase" | "uppercase"
----    Control how the text is displayed. e.g. "uppercase" changes "hello" to "HELLO".
