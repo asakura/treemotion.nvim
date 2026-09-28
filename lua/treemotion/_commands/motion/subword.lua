@@ -51,51 +51,17 @@ local classify = require("treemotion._commands.motion.classify")
 local delimiters = require("treemotion._commands.motion.delimiters")
 local leaf = require("treemotion._commands.motion.leaf")
 local prose = require("treemotion._commands.motion.prose")
+local span = require("treemotion._commands.motion.span")
 
 local _LOGGER = logging.get_logger("treemotion._commands.motion.subword")
 
 local M = {}
 
---- A coordinate range identifying one sub-word slice of a leaf's text.
----
---- Deliberately dumber than a `TSNode`: just the four numbers that bound it,
---- no parent/child/sibling links -- a sub-word slice isn't a real tree node,
---- it's a range `M.split` invents on top of one. Exposing the same
---- `:start()`/`:end_()` shape a `TSNode` has is what lets `_commands.motion.runner`
---- treat this and a `TSNode` interchangeably (see its `TSNode|treemotion.MotionUnit` params).
----@class treemotion.SubwordUnit
----@field private _start_row integer
----@field private _start_col integer
----@field private _end_row integer
----@field private _end_col integer
-local _Unit = {}
-_Unit.__index = _Unit
-
---- This unit's first character.
----@return integer, integer
-function _Unit:start()
-    return self._start_row, self._start_col
-end
-
---- This unit's last character, exclusive (one column past the end, matching `TSNode:end_()`).
----@return integer, integer
-function _Unit:end_()
-    return self._end_row, self._end_col
-end
-
---- Build a `treemotion.SubwordUnit` from raw coordinates.
----
----@param start_row integer
----@param start_col integer
----@param end_row integer
----@param end_col integer
----@return treemotion.SubwordUnit
-local function _new_unit(start_row, start_col, end_row, end_col)
-    return setmetatable(
-        { _start_row = start_row, _start_col = start_col, _end_row = end_row, _end_col = end_col },
-        _Unit
-    )
-end
+--- What every `_split_text` call within one `M.split`/`M.split_run` call shares.
+---@class treemotion._SubwordContext
+---@field group "small"|"big" Which motion family's configuration to read.
+---@field comment_marker_characters table<string, true> This language's comment-marker punctuation (see
+---    `classify.comment_marker_characters`).
 
 --- Read the user's splitting configuration for `is_prose`'s context, within
 --- `group` ("small" for `w`/`e`/`b`/`ge`, "big" for `W`/`E`/`B`/`gE`).
@@ -130,8 +96,19 @@ local function _backtick_identifiers_enabled(group)
     return motion_group.backtick_identifiers
 end
 
---- Collapse `node` to a single-row span, if it only spans multiple rows
---- because of trailing blank characters.
+--- Build the `treemotion._SubwordContext` for one `M.split`/`M.split_run` call.
+---
+---@param group "small"|"big" Which motion family's configuration to read.
+---@return treemotion._SubwordContext
+---
+local function _context(group)
+    return {
+        group = group,
+        comment_marker_characters = classify.comment_marker_characters(classify.current_language()),
+    }
+end
+
+--- Trim `text`'s trailing blank characters, and find where what's left ends.
 ---
 --- Some grammars bake a trailing terminator into a token's own span instead
 --- of stopping right after its real content: tree-sitter-rust's
@@ -139,35 +116,30 @@ end
 --- scanner that folds the line's trailing newline into the token itself --
 --- confirmed against the real grammar, its range ends at `(next_row, 0)`
 --- and its text literally ends in `"\n"`, even though every real character
---- is still on `node`'s start row. That's not a Rust-only quirk: any
+--- is still on the token's start row. That's not a Rust-only quirk: any
 --- grammar whose scanner consumes trailing whitespace/newline(s) as part of
 --- a token (commonly done so the scanner can disambiguate that token from
 --- whatever follows) produces the same shape, the same way any grammar
 --- can split a fixed-width comment-marker literal the way
---- `_leading_continuation_length` above handles. Rather than special-casing
---- node types per grammar, this asks the one question that's actually true
---- generically: after trimming trailing blank characters, is everything
---- that's left still on one row? A leaf with *real* content on more than
---- one row (e.g. a Lua long string's `string_content`, confirmed to keep
---- its embedded newline even after trimming) fails this check, so `M.split`
---- keeps treating it as genuinely multi-row.
+--- `_leading_continuation_length` below handles. A run (`M.split_run`) can
+--- end in one too. Rather than special-casing node types per grammar,
+--- callers ask the one question that's actually true generically: after
+--- trimming trailing blank characters, is everything that's left still on
+--- one row -- i.e. is the returned end row still `start_row`? A span with
+--- *real* content on more than one row (e.g. a Lua long string's
+--- `string_content`, confirmed to keep its embedded newline even after
+--- trimming) fails this check, and is treated as genuinely multi-row.
 ---
----@param node TSNode The leaf to check.
----@param text string `node`'s full text.
----@return string?, integer?, integer? # `nil` if `node` is genuinely
----    multi-row; otherwise the trimmed text and its end row/column, both
----    still `node`'s start row.
+---@param text string The span's full text.
+---@param start_row integer `text`'s row in the buffer (0-indexed).
+---@param start_col integer `text`'s first column in the buffer (0-indexed).
+---@return string, integer, integer # The trimmed text, and the row/column one past its last character.
 ---
-local function _single_row_span(node, text)
+local function _trim_span(text, start_row, start_col)
     local trimmed = text:gsub("%s+$", "")
+    local end_row, end_col = span.end_position(start_row, start_col, trimmed)
 
-    if trimmed == text or trimmed:find("\n") then
-        return nil
-    end
-
-    local start_row, start_col = node:start()
-
-    return trimmed, start_row, start_col + #trimmed
+    return trimmed, end_row, end_col
 end
 
 --- How many of `text`'s leading characters continue a punctuation run that
@@ -276,101 +248,6 @@ local function _leading_continuation_length(node, text)
     return length
 end
 
---- Every offset in `text` (1-indexed, plus one entry for `#text + 1`, one
---- past the last character) mapped to the buffer row/column it corresponds
---- to, given `text`'s own first character sits at `start_row`/`start_col`.
----
---- `_split_text`'s per-chunk column arithmetic (`start_col + offset - 1`) is
---- only valid for single-row `text` -- a `\n` anywhere in `text` resets the
---- real buffer column back to `0`, which flat addition can't express. This
---- is what lets a multi-row *prose* leaf (a hard/soft-wrapped markdown
---- paragraph, confirmed against Neovim's own bundled `markdown_inline`
---- grammar: a whole paragraph parses as one leaf whose prose text has no
---- per-word node of its own at all, see this module's docstring) still get
---- split word-by-word across every line it spans, instead of `M.split`/
---- `_split_run_segment` falling back to one giant unit the moment the leaf
---- (or run) turns out to be genuinely multi-row -- the fallback that's
---- still correct for genuinely atomic multi-row *code* content (a Lua long
---- string, a C block comment), just not for prose.
----
---- Built once per multi-row `_split_text` call (only when `text` actually
---- contains a `\n` -- the overwhelming majority of leaves, every code leaf
---- and every prose leaf/run that doesn't wrap across lines, never pay for
---- this at all), then indexed by `_make_unit` for every chunk boundary
---- instead of re-scanning `text` from the start each time.
----
----@param start_row integer
----@param start_col integer
----@param text string
----@return integer[][] # 1-indexed; entry `offset` is `{row, column}`.
----
-local function _multirow_positions(start_row, start_col, text)
-    local positions = {}
-    local row, col = start_row, start_col
-
-    for offset = 1, #text + 1 do
-        positions[offset] = { row, col }
-
-        if text:sub(offset, offset) == "\n" then
-            row = row + 1
-            col = 0
-        else
-            col = col + 1
-        end
-    end
-
-    return positions
-end
-
---- The buffer row/column one past `text`'s last character, given `text`'s
---- own first character sits at `start_row`/`start_col`.
----
---- The one entry of `_multirow_positions`'s table `_split_run_segment` needs
---- up front (as the "no words at all" fallback endpoint `_split_text` takes
---- as a parameter) before `_split_text` itself builds -- and indexes into --
---- the full table for every chunk boundary. Delegates to
---- `_multirow_positions` rather than re-walking `text` itself, so the two
---- stay in lockstep instead of duplicating the same row/column walk.
----
----@param start_row integer
----@param start_col integer
----@param text string
----@return integer, integer
----
-local function _end_of_text(start_row, start_col, text)
-    local positions = _multirow_positions(start_row, start_col, text)
-    local row, col = unpack(positions[#text + 1])
-    return row, col
-end
-
---- Build one `treemotion.SubwordUnit` spanning `length` characters starting
---- at `text_offset` (1-indexed into the leaf/run's full text).
----
---- Single-row text -- `positions` is `nil` -- stays exactly the cheap
---- arithmetic `_split_text` always used: `row`/`column`, tracked by the
---- caller alongside `text_offset`, are already the right buffer position.
---- Multi-row text looks `text_offset` (and `text_offset + length`, this
---- unit's exclusive end) up in `positions` (`_multirow_positions`) instead,
---- since flat column arithmetic can't cross a line break.
----
----@param positions integer[][]? `_multirow_positions`'s result, or `nil` for single-row text.
----@param row integer The row to use when `positions` is `nil`.
----@param column integer The column to use when `positions` is `nil`.
----@param text_offset integer 1-indexed offset of this unit's first character in the full text.
----@param length integer How many characters this unit spans.
----@return treemotion.SubwordUnit
----
-local function _make_unit(positions, row, column, text_offset, length)
-    if not positions then
-        return _new_unit(row, column, row, column + length)
-    end
-
-    local start_row, start_col = positions[text_offset][1], positions[text_offset][2]
-    local end_row, end_col = positions[text_offset + length][1], positions[text_offset + length][2]
-
-    return _new_unit(start_row, start_col, end_row, end_col)
-end
-
 --- Shared tail of `M.split`/`M.split_run`: `text` -> words -> per-word
 --- delimiter/case split -> `treemotion.SubwordUnit[]`.
 ---
@@ -383,57 +260,51 @@ end
 --- boundaries). A chunk that *does* look like a hash skips `case.split`
 --- entirely -- it's one unit no matter its internal case transitions. Two
 --- running offsets -- `word.offset` from the outer pass, `delimited.offset`/
---- chunk length from the inner ones -- compose into each unit's absolute
---- buffer column, both relative to `start_col`.
+--- chunk length from the inner ones -- compose into each unit's offset in
+--- `text`, which `span.position_mapper` turns back into buffer coordinates
+--- (multi-row prose -- a hard/soft-wrapped markdown paragraph -- included).
 ---
 --- If `text` produces no words at all (e.g. an all-whitespace prose
---- comment), this falls back to one unit spanning `start_row`/`start_col`
---- to `end_row`/`end_col` -- nothing for any delimiter setting to have acted
---- on, so there's nothing to split. One more empty case falls out of
---- `delimiters.split` itself, though, and does *not* get that fallback:
---- text that's *entirely* a `comment_marker_case = "skip"` run has real
---- content -- unlike all-whitespace text -- but every bit of it is a marker
---- `delimiters.split` was told to drop, so `words` is non-empty while the
---- returned units end up empty anyway. That's `"skip"` doing exactly what
---- it says -- forcing a landing stop back in for it would silently override
---- the user's own setting.
+--- comment), this falls back to `fallback` -- nothing for any delimiter
+--- setting to have acted on, so there's nothing to split. One more empty
+--- case falls out of `delimiters.split` itself, though, and does *not* get
+--- that fallback: text that's *entirely* a `comment_marker_case = "skip"`
+--- run has real content -- unlike all-whitespace text -- but every bit of
+--- it is a marker `delimiters.split` was told to drop, so `words` is
+--- non-empty while the returned units end up empty anyway. That's `"skip"`
+--- doing exactly what it says -- forcing a landing stop back in for it
+--- would silently override the user's own setting.
 ---
 ---@param text string The text to split (already narrowed to what's eligible -- see `M.split`/`M.split_run`).
----@param start_row integer `text`'s row in the buffer (0-indexed).
----@param start_col integer `text`'s first column in the buffer (0-indexed).
----@param end_row integer The row to fall back to if `text` produces no words at all.
----@param end_col integer The column to fall back to if `text` produces no words at all.
----@param is_prose boolean Whether to read `.prose` or `.code` from `commands.motion[group]`.
----@param rules treemotion.ConfigurationMotionSubwordRules `_rules(is_prose, group)`'s result.
----@param group "small"|"big" Which motion family's configuration to read (for backtick identifiers,
----    and for resolving `.code`'s rules when a backtick-identifier word is encountered in prose).
----@param comment_marker_characters table<string, true> This language's comment-marker punctuation (see
----    `classify.comment_marker_characters`).
+---@param fallback treemotion.SubwordUnit Starts where `text` does; returned as-is if `text` produces no words.
+---@param is_prose boolean Whether to read `.prose` or `.code` from `commands.motion[context.group]`.
+---@param context treemotion._SubwordContext
 ---@return treemotion.SubwordUnit[]
 ---
-local function _split_text(
-    text,
-    start_row,
-    start_col,
-    end_row,
-    end_col,
-    is_prose,
-    rules,
-    group,
-    comment_marker_characters
-)
-    local words = is_prose and prose.words(text, _backtick_identifiers_enabled(group), rules.opaque_token_min_length)
+local function _split_text(text, fallback, is_prose, context)
+    local rules = _rules(is_prose, context.group)
+    local words = is_prose
+            and prose.words(text, _backtick_identifiers_enabled(context.group), rules.opaque_token_min_length)
         or { { text = text, offset = 1 } }
 
     if #words == 0 then
-        return { _new_unit(start_row, start_col, end_row, end_col) }
+        return { fallback }
     end
 
-    -- `nil` for the overwhelming majority of calls (every code leaf, and
-    -- every prose leaf/run that doesn't wrap across lines) -- see
-    -- `_multirow_positions`'s docstring for why only genuinely multi-row
-    -- `text` (a hard/soft-wrapped markdown paragraph, e.g.) needs it.
-    local positions = text:find("\n") and _multirow_positions(start_row, start_col, text) or nil
+    local start_row, start_col = fallback:start()
+    local position = span.position_mapper(start_row, start_col, text)
+
+    --- Build one unit spanning `length` bytes, starting at `offset` (1-indexed into `text`).
+    ---
+    ---@param offset integer
+    ---@param length integer
+    ---@return treemotion.SubwordUnit
+    local function make_unit(offset, length)
+        local unit_start_row, unit_start_col = position(offset)
+        local unit_end_row, unit_end_col = position(offset + length)
+
+        return span.new(unit_start_row, unit_start_col, unit_end_row, unit_end_col)
+    end
 
     -- Fetched lazily, at most once, only if a backtick-identifier word is
     -- actually encountered below -- most prose leaves have none, and
@@ -444,37 +315,22 @@ local function _split_text(
     local units = {}
 
     for _, word in ipairs(words) do
-        local word_column = start_col + word.offset - 1
         local word_rules = rules
 
         if word.is_identifier then
-            identifier_rules = identifier_rules or _rules(false, group)
+            identifier_rules = identifier_rules or _rules(false, context.group)
             word_rules = identifier_rules
         end
 
-        for _, delimited in
-            ipairs(
-                delimiters.split(
-                    word.text,
-                    word_rules.kebab_case,
-                    word_rules.snake_case,
-                    word_rules.colon_case,
-                    word_rules.slash_case,
-                    word_rules.comment_marker_case,
-                    comment_marker_characters
-                )
-            )
-        do
-            local column = word_column + delimited.offset - 1
-            local text_offset = word.offset + delimited.offset - 1
+        for _, delimited in ipairs(delimiters.split(word.text, word_rules, context.comment_marker_characters)) do
+            local offset = word.offset + delimited.offset - 1
 
             if case.looks_like_hash(delimited.text, word_rules.opaque_token_min_length) then
-                table.insert(units, _make_unit(positions, start_row, column, text_offset, #delimited.text))
+                table.insert(units, make_unit(offset, #delimited.text))
             else
                 for _, chunk in ipairs(case.split(delimited.text, word_rules.camel_case, word_rules.pascal_case)) do
-                    table.insert(units, _make_unit(positions, start_row, column, text_offset, #chunk))
-                    column = column + #chunk
-                    text_offset = text_offset + #chunk
+                    table.insert(units, make_unit(offset, #chunk))
+                    offset = offset + #chunk
                 end
             end
         end
@@ -504,11 +360,11 @@ end
 --- Split `node`'s text into sub-word units, per `commands.motion.small`.
 ---
 --- Two passes narrow `node` down to the text that's actually eligible to
---- split, before handing off to `_split_text`. `_single_row_span` first
+--- split, before handing off to `_split_text`. `_trim_span` first
 --- collapses a multi-row `node` down to one row when the only reason it
 --- spans rows is a trailing run of blank characters (tree-sitter-rust's
---- `doc_comment`, see its docstring) -- genuinely multi-row content (a long
---- string) is left alone and falls back to one whole-leaf unit, same as
+--- `doc_comment`, see its docstring) -- genuinely multi-row code content (a
+--- long string) is left alone and falls back to one whole-leaf unit, same as
 --- always. Then `_leading_continuation_length` strips off (and shifts past)
 --- any leading characters that are really the tail of the previous leaf's
 --- delimiter run -- see its docstring. When that continuation consumes
@@ -536,10 +392,10 @@ M.split = _logged("split", function(node)
     local is_prose = classify.is_prose(node)
 
     if start_row ~= end_row then
-        local collapsed_text, collapsed_end_row, collapsed_end_col = _single_row_span(node, text)
+        local trimmed, trimmed_end_row, trimmed_end_col = _trim_span(text, start_row, start_col)
 
-        if collapsed_text then
-            text, end_row, end_col = collapsed_text, assert(collapsed_end_row), assert(collapsed_end_col)
+        if trimmed_end_row == start_row then
+            text, end_row, end_col = trimmed, trimmed_end_row, trimmed_end_col
         elseif not is_prose then
             -- Genuinely multi-row, non-prose content; sub-word splitting
             -- only makes sense within a single line for code-shaped text,
@@ -547,10 +403,10 @@ M.split = _logged("split", function(node)
             -- block comment, ...) needs it across lines. Multi-row *prose*
             -- (a hard/soft-wrapped markdown paragraph, e.g.) falls through
             -- to `_split_text` below instead, which is row/column-aware
-            -- (see `_multirow_positions`) and splits it word-by-word across
+            -- (see `span.position_mapper`) and splits it word-by-word across
             -- every line it spans, the same as a single-line paragraph
             -- already does.
-            return { _new_unit(start_row, start_col, end_row, end_col) }
+            return { span.new(start_row, start_col, end_row, end_col) }
         end
     end
 
@@ -567,20 +423,7 @@ M.split = _logged("split", function(node)
         text_start_col = start_col + continuation
     end
 
-    local rules = _rules(is_prose, "small")
-    local comment_marker_characters = classify.comment_marker_characters(classify.current_language())
-
-    return _split_text(
-        text,
-        start_row,
-        text_start_col,
-        end_row,
-        end_col,
-        is_prose,
-        rules,
-        "small",
-        comment_marker_characters
-    )
+    return _split_text(text, span.new(start_row, text_start_col, end_row, end_col), is_prose, _context("small"))
 end, function(node)
     local row, column = node:start()
 
@@ -660,49 +503,34 @@ end
 --- in it, ...).
 ---
 ---@param segment {is_prose: boolean, start_row: integer, start_col: integer, end_row: integer, end_col: integer}
----@param group "small"|"big"
----@param comment_marker_characters table<string, true>
+---@param context treemotion._SubwordContext
 ---@return treemotion.SubwordUnit[]
 ---
-local function _split_run_segment(segment, group, comment_marker_characters)
+local function _split_run_segment(segment, context)
     local start_row, start_col = segment.start_row, segment.start_col
     local end_row, end_col = segment.end_row, segment.end_col
 
     local ok, lines = pcall(vim.api.nvim_buf_get_text, 0, start_row, start_col, end_row, end_col, {})
 
     if not ok then
-        return { _new_unit(start_row, start_col, end_row, end_col) }
+        return { span.new(start_row, start_col, end_row, end_col) }
     end
 
-    local text = table.concat(lines, "\n")
-    local trimmed = text:gsub("%s+$", "")
+    local trimmed, trimmed_end_row, trimmed_end_col = _trim_span(table.concat(lines, "\n"), start_row, start_col)
 
-    local trimmed_end_row, trimmed_end_col = start_row, start_col + #trimmed
-
-    if trimmed:find("\n") then
-        if not segment.is_prose then
-            -- Genuinely multi-row, non-prose content; sub-word splitting
-            -- only makes sense within a single line for code-shaped runs --
-            -- see `M.split`'s identical branch for why multi-row *prose*
-            -- runs fall through below instead.
-            return { _new_unit(start_row, start_col, end_row, end_col) }
-        end
-
-        trimmed_end_row, trimmed_end_col = _end_of_text(start_row, start_col, trimmed)
+    if trimmed_end_row ~= start_row and not segment.is_prose then
+        -- Genuinely multi-row, non-prose content; sub-word splitting
+        -- only makes sense within a single line for code-shaped runs --
+        -- see `M.split`'s identical branch for why multi-row *prose*
+        -- runs fall through below instead.
+        return { span.new(start_row, start_col, end_row, end_col) }
     end
-
-    local rules = _rules(segment.is_prose, group)
 
     return _split_text(
         trimmed,
-        start_row,
-        start_col,
-        trimmed_end_row,
-        trimmed_end_col,
+        span.new(start_row, start_col, trimmed_end_row, trimmed_end_col),
         segment.is_prose,
-        rules,
-        group,
-        comment_marker_characters
+        context
     )
 end
 
@@ -717,9 +545,9 @@ end
 --- `M.split` needs it for a single leaf. `_run_segments` first divides the
 --- run into same-classification (code vs. prose, see its docstring)
 --- stretches; each stretch is then handled by `_split_run_segment`, which
---- trims trailing blank characters the same way `_single_row_span` trims a
---- leaf (a run can end in one, the same trailing-terminator grammar quirk
---- `_single_row_span`'s docstring covers), falling back to one whole-segment
+--- trims trailing blank characters with `_trim_span`, the same way
+--- `M.split` trims a leaf (a run can end in one, the same trailing-terminator
+--- grammar quirk `_trim_span`'s docstring covers), falling back to one whole-segment
 --- unit for genuinely multi-row content left after trimming, same as
 --- `M.split` does for a multi-row leaf.
 ---
@@ -744,20 +572,20 @@ M.split_run = _logged("split_run", function(start_node, end_node)
         -- machinery exists only to make real splitting land on sensible
         -- boundaries, and applying it here too would change `W`/`E`/`B`/`gE`'s
         -- landing column in the same rare trailing-terminator-grammar-quirk
-        -- case `_single_row_span` handles for `M.split` -- exactly the
+        -- case `_trim_span` handles for `M.split` -- exactly the
         -- byte-for-byte parity with pre-`enabled` behavior this default is
         -- supposed to guarantee. So the disabled path returns the raw
         -- `start_node`/`end_node` span untouched, identical to what
         -- `_commands.motion.runner` used to compute directly from
         -- `leaf.run_start`/`leaf.run_end` before this function existed.
-        return { _new_unit(start_row, start_col, end_row, end_col) }
+        return { span.new(start_row, start_col, end_row, end_col) }
     end
 
-    local comment_marker_characters = classify.comment_marker_characters(classify.current_language())
+    local context = _context("big")
     local units = {}
 
     for _, segment in ipairs(_run_segments(start_node, end_node)) do
-        vim.list_extend(units, _split_run_segment(segment, "big", comment_marker_characters))
+        vim.list_extend(units, _split_run_segment(segment, context))
     end
 
     return units

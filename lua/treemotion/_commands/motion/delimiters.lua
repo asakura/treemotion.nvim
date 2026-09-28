@@ -2,48 +2,63 @@
 --- user's `kebab_case`/`snake_case`/`colon_case`/`slash_case`/
 --- `comment_marker_case` settings.
 ---
---- Pure string functions: the caller passes in every mode and the current
---- language's comment-marker set (see
+--- Pure string functions: the caller passes in its subword rules and the
+--- current language's comment-marker set (see
 --- `_commands.motion.classify.comment_marker_characters`).
 
 local motion_constant = require("treemotion._commands.motion.constant")
 
 local M = {}
 
---- Look up how `char` should be treated, per `kebab_case`/`snake_case`/`comment_marker_case`.
+--- Which `treemotion.ConfigurationMotionSubwordRules` field governs each
+--- identifier delimiter character.
+---
+---@type table<string, string>
+local _DELIMITER_FIELDS = { ["-"] = "kebab_case", ["_"] = "snake_case", [":"] = "colon_case", ["/"] = "slash_case" }
+
+--- Look up how `char` should be treated, per `rules`.
 ---
 ---@param char string A single character.
----@param kebab_case treemotion.SubwordDelimiterMode How to treat `-`.
----@param snake_case treemotion.SubwordDelimiterMode How to treat `_`.
----@param colon_case treemotion.SubwordDelimiterMode How to treat `:`.
----@param slash_case treemotion.SubwordDelimiterMode How to treat `/`.
----@param comment_marker_case treemotion.SubwordDelimiterMode How to treat `comment_marker_characters`.
+---@param rules treemotion.ConfigurationMotionSubwordRules Each delimiter's mode.
 ---@param comment_marker_characters table<string, true> This language's comment-marker punctuation (see
 ---    `classify.comment_marker_characters`).
 ---@return treemotion.SubwordDelimiterMode # `"none"` for any character that isn't covered by one of the above.
 ---
-local function _delimiter_mode(
-    char,
-    kebab_case,
-    snake_case,
-    colon_case,
-    slash_case,
-    comment_marker_case,
-    comment_marker_characters
-)
-    if char == "-" then
-        return kebab_case
-    elseif char == "_" then
-        return snake_case
-    elseif char == ":" then
-        return colon_case
-    elseif char == "/" then
-        return slash_case
+local function _delimiter_mode(char, rules, comment_marker_characters)
+    local field = _DELIMITER_FIELDS[char]
+
+    if field then
+        return rules[field]
     elseif comment_marker_characters[char] then
-        return comment_marker_case
+        return rules.comment_marker_case
     end
 
     return motion_constant.DelimiterMode.none
+end
+
+--- `rules`, with `comment_marker_case` taking over every identifier
+--- delimiter the current language also lists as a comment marker.
+---
+--- Returns `rules` itself (no copy) when no such delimiter is listed.
+---
+---@param rules treemotion.ConfigurationMotionSubwordRules
+---@param comment_marker_characters table<string, true>
+---@return treemotion.ConfigurationMotionSubwordRules
+---
+local function _bare_run_rules(rules, comment_marker_characters)
+    local result = rules
+
+    for char, field in pairs(_DELIMITER_FIELDS) do
+        if comment_marker_characters[char] then
+            if result == rules then
+                result = vim.tbl_extend("force", {}, rules)
+            end
+
+            result[field] = rules.comment_marker_case
+        end
+    end
+
+    return result
 end
 
 --- Split `text` on runs of `_`/`-`/comment-marker delimiters, per their configured modes.
@@ -81,33 +96,16 @@ end
 --- get one either.
 ---
 ---@param text string A word to split (a whole leaf's text, for code; one `prose.split_words` word, for prose).
----@param kebab_case treemotion.SubwordDelimiterMode How to treat `-` next to real identifier content.
----@param snake_case treemotion.SubwordDelimiterMode How to treat `_` next to real identifier content.
----@param colon_case treemotion.SubwordDelimiterMode How to treat `:` next to real identifier content.
----@param slash_case treemotion.SubwordDelimiterMode How to treat `/` next to real identifier content.
----@param comment_marker_case treemotion.SubwordDelimiterMode How to treat `comment_marker_characters`, or
----    `text`-wide `-`/`_`/`:`/`/` runs.
+---@param rules treemotion.ConfigurationMotionSubwordRules Reads `kebab_case`/`snake_case`/`colon_case`/
+---    `slash_case` (how to treat `-`/`_`/`:`/`/` next to real identifier content) and `comment_marker_case`
+---    (how to treat `comment_marker_characters`, or `text`-wide `-`/`_`/`:`/`/` runs).
 ---@param comment_marker_characters table<string, true> This language's comment-marker punctuation (see
 ---    `classify.comment_marker_characters`).
 ---@return {text: string, offset: integer}[] # Each chunk and its 1-indexed start column in `text`.
 ---
-function M.split(text, kebab_case, snake_case, colon_case, slash_case, comment_marker_case, comment_marker_characters)
+function M.split(text, rules, comment_marker_characters)
     if not text:find("%w") then
-        if comment_marker_characters["-"] then
-            kebab_case = comment_marker_case
-        end
-
-        if comment_marker_characters["_"] then
-            snake_case = comment_marker_case
-        end
-
-        if comment_marker_characters[":"] then
-            colon_case = comment_marker_case
-        end
-
-        if comment_marker_characters["/"] then
-            slash_case = comment_marker_case
-        end
+        rules = _bare_run_rules(rules, comment_marker_characters)
     end
 
     local chunks = {}
@@ -115,15 +113,7 @@ function M.split(text, kebab_case, snake_case, colon_case, slash_case, comment_m
     local index = 1
 
     while index <= #text do
-        local mode = _delimiter_mode(
-            text:sub(index, index),
-            kebab_case,
-            snake_case,
-            colon_case,
-            slash_case,
-            comment_marker_case,
-            comment_marker_characters
-        )
+        local mode = _delimiter_mode(text:sub(index, index), rules, comment_marker_characters)
 
         if mode == motion_constant.DelimiterMode.none then
             index = index + 1
@@ -136,16 +126,7 @@ function M.split(text, kebab_case, snake_case, colon_case, slash_case, comment_m
 
             while
                 run_end < #text
-                and _delimiter_mode(
-                        text:sub(run_end + 1, run_end + 1),
-                        kebab_case,
-                        snake_case,
-                        colon_case,
-                        slash_case,
-                        comment_marker_case,
-                        comment_marker_characters
-                    )
-                    == mode
+                and _delimiter_mode(text:sub(run_end + 1, run_end + 1), rules, comment_marker_characters) == mode
             do
                 run_end = run_end + 1
             end
