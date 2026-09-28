@@ -21,8 +21,8 @@
 --- available.
 ---
 --- Parser availability alone isn't enough, though: `comment_marker_case`
---- only fires on `@spell`-tagged ("prose") leaves (see `subword.lua`'s
---- `_is_prose`), and `@spell` comes from a language's own
+--- only fires on `@spell`-tagged ("prose") leaves (see `classify.lua`'s
+--- `is_prose`), and `@spell` comes from a language's own
 --- `queries/<lang>/highlights.scm` -- which `treesitterAllGrammars`
 --- deliberately does *not* vendor (only compiled `parser/<lang>.so` files;
 --- see `flake.nix`'s comment on that binding). Concretely: without a real

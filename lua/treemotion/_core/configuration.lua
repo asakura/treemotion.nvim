@@ -254,7 +254,7 @@ local _OPTIONAL_COMMENT_MARKERS = {
 --- other role (binding terminator, set/list delimiters, key-value and
 --- attrpath separators). `"`/`''` (string delimiters) qualify differently:
 --- they're unnamed leaves distinct from the named `string_fragment` they
---- wrap, so `subword.lua`'s named-only `_is_prose` check never protects them
+--- wrap, so `classify.is_insignificant`'s named-only prose check never protects them
 --- as prose in the first place.
 ---
 ---@type table<string, string[]>
@@ -324,7 +324,7 @@ end
 --- regardless of which languages actually get edited that session, would be
 --- wasteful. Checking lazily for just the buffer's current language costs
 --- nothing extra: by the time this is called, that language's parser is already
---- loaded (see `_current_language()`'s use of `vim.treesitter.get_parser()`).
+--- loaded (see `classify.current_language()`'s use of `vim.treesitter.get_parser()`).
 ---
 ---@param language string A treesitter language name.
 ---@return string[]?
@@ -407,8 +407,8 @@ end
 
 --- Look up `language`'s insignificant leaf texts -- leaf-level tokens (e.g.
 --- `";"`, `"{"`, `"}"`) that `w`/`e`/`b`/`ge`/`W`/`E`/`B`/`gE` treat as
---- invisible for **code** leaves (see `_commands.motion.subword`'s
---- `_is_insignificant` for why prose is exempt).
+--- invisible for **code** leaves (see `_commands.motion.classify`'s
+--- `is_insignificant` for why prose is exempt).
 ---
 --- Which punctuation counts as "insignificant" is mostly a personal taste
 --- call, not an objective fact about a grammar the way comment syntax is
