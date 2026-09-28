@@ -511,14 +511,14 @@ describe("bad configuration - logging", function()
     end)
 
     it("happens with a bad value for #logging.level", function()
+        local expected = 'expected "trace" or "debug" or "info" or "warning" or "error" or "fatal"'
+
         _assert_bad({ logging = { level = false } }, {
-            "logging.level: expected an enum. "
-                .. 'e.g. "trace" | "debug" | "info" | "warning" | "error" | "fatal", got false',
+            "logging.level: " .. expected .. ", got false",
         })
 
         _assert_bad({ logging = { level = "does not exist" } }, {
-            "logging.level: expected an enum. "
-                .. 'e.g. "trace" | "debug" | "info" | "warning" | "error" | "fatal", got does not exist',
+            "logging.level: " .. expected .. ", got does not exist",
         })
     end)
 
@@ -659,9 +659,36 @@ describe("health.check", function()
     end)
 
     it("reports a non-table section instead of erroring", function()
-        health.check({ hints = "none", commands = { motion = "aaa" } })
+        health.check({ commands = { motion = "aaa" } })
 
         assert.same({ "commands.motion: expected a table, got aaa" }, mock_vim.get_vim_health_errors())
+    end)
+
+    it("works with a partial configuration", function()
+        health.check({ logging = { use_file = true } })
+
+        assert.same({}, mock_vim.get_vim_health_errors())
+    end)
+
+    it("warns about unknown keys", function()
+        health.check({
+            commands = { motion = { comment_marker = {}, small = { code = { camelCase = false } } } },
+            logging = { levle = "debug" },
+            typo = true,
+        })
+
+        -- Neovim 0.10 also warns about `include_anonymous`, so only look at these.
+        local unknown = vim.tbl_filter(function(message)
+            return vim.startswith(message, "Unknown key")
+        end, mock_vim.get_vim_health_warnings())
+
+        assert.same({}, mock_vim.get_vim_health_errors())
+        assert.same({
+            'Unknown key "commands.motion.comment_marker" is ignored. Is it a typo?',
+            'Unknown key "commands.motion.small.code.camelCase" is ignored. Is it a typo?',
+            'Unknown key "logging.levle" is ignored. Is it a typo?',
+            'Unknown key "typo" is ignored. Is it a typo?',
+        }, unknown)
     end)
 
     it("shows all issues at once", function()
@@ -677,9 +704,8 @@ describe("health.check", function()
         local found = mock_vim.get_vim_health_errors()
 
         assert.same({
-            'hints: expected "word_boundaries" or "motions" or "none", got diagonal',
-            "logging.level: expected an enum. "
-                .. 'e.g. "trace" | "debug" | "info" | "warning" | "error" | "fatal", got false',
+            'hints: expected "motions" or "none" or "word_boundaries", got diagonal',
+            'logging.level: expected "trace" or "debug" or "info" or "warning" or "error" or "fatal", got false',
             "logging.use_console: expected a boolean, got aaa",
             "logging.use_file: expected a boolean, got fdas",
         }, found)
