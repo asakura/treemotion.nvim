@@ -16,6 +16,13 @@ local M = {}
 ---@diagnostic disable-next-line: missing-fields
 M.DATA = {}
 
+-- Whether `M.initialize_data_if_needed()` has filled out this module's
+-- `M.DATA`. Kept module-local, next to the state it guards, rather than read
+-- from `vim.g.loaded_treemotion`: a global outlives a reload of this module
+-- (e.g. clearing `package.loaded`), and a user may preset it, either of which
+-- would skip initialization and leave the fresh `M.DATA` empty.
+local _initialized = false
+
 ---@type treemotion.ResolvedConfiguration
 local _DEFAULTS = {
     hints = hints_constant.Kind.none,
@@ -262,16 +269,18 @@ local _OPTIONAL_INSIGNIFICANT_CHARACTERS = {
 
 --- Setup `treemotion` for the first time, if needed.
 ---
---- `vim.g.loaded_treemotion` starts out unset (`nil`), which reads the same
---- as `false` here; this is the only place that sets it.
+--- Runs at most once per load of this module. Also sets
+--- `vim.g.loaded_treemotion`, for anyone who wants to check whether
+--- treemotion has initialized; this module never reads it back.
 ---
 function M.initialize_data_if_needed()
-    if vim.g.loaded_treemotion then
+    if _initialized then
         return
     end
 
     M.DATA = vim.tbl_deep_extend("force", _DEFAULTS, vim.g.treemotion_configuration or {})
 
+    _initialized = true
     vim.g.loaded_treemotion = true
 
     local configuration = M.DATA.logging

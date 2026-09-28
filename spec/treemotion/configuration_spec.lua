@@ -344,6 +344,44 @@ describe("get_insignificant_characters", function()
     end)
 end)
 
+describe("initialize_data_if_needed", function()
+    local _NAME = "treemotion._core.configuration"
+
+    after_each(function()
+        package.loaded[_NAME] = configuration_
+        vim.g.loaded_treemotion = true
+    end)
+
+    --- Load a brand-new copy of the configuration module.
+    ---
+    ---@return table
+    local function _reload()
+        package.loaded[_NAME] = nil
+
+        return require(_NAME)
+    end
+
+    it("initializes a reloaded module even though #loaded_treemotion is already set", function()
+        vim.g.loaded_treemotion = true
+
+        local fresh = _reload()
+        fresh.initialize_data_if_needed()
+
+        assert.is_not_nil(fresh.DATA.commands)
+    end)
+
+    it("initializes only once per module load", function()
+        local fresh = _reload()
+        fresh.initialize_data_if_needed()
+        local data = fresh.DATA
+
+        fresh.initialize_data_if_needed()
+
+        assert.equal(data, fresh.DATA)
+        assert.is_true(vim.g.loaded_treemotion)
+    end)
+end)
+
 describe("hints", function()
     local _snapshot
 
