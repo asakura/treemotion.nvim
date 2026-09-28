@@ -552,6 +552,8 @@ describe("schema", function()
             return
         end
 
+        ---@cast node treemotion._SchemaSection
+
         local declared = {}
 
         for _, field in ipairs(node.fields) do
@@ -611,7 +613,7 @@ describe("health.check", function()
 
     it("doesn't warn about the shipped #commands.motion.comment_markers defaults", function()
         -- The defaults (`c`, `cpp`, `rust`, `python`, ...) cover languages most
-        -- users won't have every parser for -- see `_check_comment_markers`'s
+        -- users won't have every parser for -- see `_check_missing_parsers`'s
         -- docstring in `health.lua` for why warning about those would be noise.
         health.check({})
         health.check()
@@ -654,6 +656,12 @@ describe("health.check", function()
             'No treesitter parser named "not_a_real_language" is installed, '
                 .. "so `insignificant_characters.not_a_real_language` has no effect until one is.",
         }, mock_vim.get_vim_health_warnings())
+    end)
+
+    it("reports a non-table section instead of erroring", function()
+        health.check({ hints = "none", commands = { motion = "aaa" } })
+
+        assert.same({ "commands.motion: expected a table, got aaa" }, mock_vim.get_vim_health_errors())
     end)
 
     it("shows all issues at once", function()

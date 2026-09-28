@@ -222,6 +222,17 @@ M.SCHEMA = _section({
     },
 })
 
+--- Describe why `value`, found at `path`, isn't valid.
+---
+---@param path string The dotted configuration key, e.g. `"logging.level"`.
+---@param expected string What a valid value looks like, e.g. `"a boolean"`.
+---@param value any The invalid value.
+---@return string # e.g. `"logging.use_file: expected a boolean, got aaa"`.
+---
+local function _format_issue(path, expected, value)
+    return string.format("%s: expected %s, got %s", path, expected, tostring(value))
+end
+
 --- Check `value` against `node`, appending every issue found to `output`.
 ---
 ---@param node treemotion._SchemaNode The schema to check against.
@@ -230,30 +241,36 @@ M.SCHEMA = _section({
 ---@param output string[] All issues found so far.
 ---
 local function _append_issues(node, value, path, output)
-    if value == nil and (node.kind == "section" or not node.required) then
-        return
-    end
+    if node.kind == "value" then
+        ---@cast node treemotion._SchemaValue
 
-    local valid
-
-    if node.kind == "section" then
-        valid = type(value) == "table"
-    else
-        valid = node.check(value)
-    end
-
-    if not valid then
-        table.insert(output, string.format("%s: expected %s, got %s", path, node.expected, tostring(value)))
-
-        return
-    end
-
-    if node.kind == "section" then
-        for _, field in ipairs(node.fields) do
-            local name, child = field[1], field[2]
-
-            _append_issues(child, value[name], path == "" and name or path .. "." .. name, output)
+        if value == nil and not node.required then
+            return
         end
+
+        if not node.check(value) then
+            table.insert(output, _format_issue(path, node.expected, value))
+        end
+
+        return
+    end
+
+    ---@cast node treemotion._SchemaSection
+
+    if value == nil then
+        return
+    end
+
+    if type(value) ~= "table" then
+        table.insert(output, _format_issue(path, node.expected, value))
+
+        return
+    end
+
+    for _, field in ipairs(node.fields) do
+        local name, child = field[1], field[2]
+
+        _append_issues(child, value[name], path == "" and name or path .. "." .. name, output)
     end
 end
 
