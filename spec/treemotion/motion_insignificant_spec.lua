@@ -4,7 +4,7 @@
 --- leaf -- an *unnamed* one (a string's own quote delimiters, captured
 --- `@string` via their parent `string` node rather than for any content of
 --- their own) is fair game, and can be configured away like any other code
---- leaf -- see `subword.lua`'s `_is_insignificant` docstring for why.
+--- leaf -- see `classify.is_insignificant`'s docstring for why.
 ---
 --- Fixtures stay Lua-specific, mirroring `treemotion_spec.lua`'s "subword
 --- configuration" block: this feature's mechanics (leaf text matching,
@@ -108,7 +108,7 @@ describe("motion API - insignificant_characters", function()
         -- Unlike the `;` inside the string's content (previous test), the
         -- quotes themselves (`"`) are unnamed leaves -- captured `@string`
         -- only via their parent `string` node's own `(string) @string`,
-        -- never as content of their own -- so `_is_insignificant` doesn't
+        -- never as content of their own -- so `classify.is_insignificant` doesn't
         -- exempt them the way it exempts `string_content`.
         treemotion.setup({ commands = { motion = { insignificant_characters = { lua = { '"' } } } } })
         _initialize_buffer({ [[local s = "foo bar";]] })

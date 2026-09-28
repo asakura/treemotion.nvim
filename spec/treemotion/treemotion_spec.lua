@@ -67,7 +67,7 @@ end)
 --- 28, 29, 33). `_` (column 12, inside the identifier `fooBar_bazQux`) is a
 --- gap: `commands.motion.small.code.snake_case` defaults to `"skip"`, a
 --- dropped delimiter no unit lands on. `-` (column 28) is different: the
---- string's content is `@string`-tagged (see `subword.lua`'s
+--- string's content is `@string`-tagged (see `classify.lua`'s
 --- `_is_prose_capture`), so it's split with `commands.motion.small.prose`'s
 --- rules instead of `.code`'s -- and `prose.kebab_case` defaults to
 --- `"stop"`, so the `-` itself is a landing stop, splitting `kebab-word`
@@ -138,7 +138,7 @@ end)
 --- `--` itself, whose two `-` characters form one run and become a single
 --- stop under prose's default `comment_marker_case = "stop"` (a bare `-`
 --- run with no identifier beside it, so `comment_marker_case` governs it,
---- not `kebab_case` -- see `_split_delimiters`; a run of consecutive
+--- not `kebab_case` -- see `delimiters.split`; a run of consecutive
 --- same-mode delimiter characters is always one unit, however long, the
 --- same way real Vim's `w` treats a run of same-class punctuation as one
 --- word). `comment_content` then splits into words on whitespace --
@@ -264,7 +264,7 @@ describe("motion API - subword unit fallback", function()
     it("skips a leaf that's entirely a dropped delimiter (`_`) rather than landing on it", function()
         -- `local` (0-5), `_` (6), `=` (8), `1` (10). `_` alone, with the
         -- default `code.snake_case = "skip"`, has nothing left after
-        -- `_split_delimiters` drops it -- Lua's default `comment_markers`
+        -- `delimiters.split` drops it -- Lua's default `comment_markers`
         -- only lists `-` (see `_DEFAULTS`), not `_`, so this bare run stays
         -- under `snake_case` instead of falling to `comment_marker_case`.
         -- `M.split` doesn't fall back to a whole-leaf unit for an
@@ -283,7 +283,7 @@ describe("motion API - subword unit fallback", function()
 
     it("treats an all-blank prose leaf as one whole unit spanning its full range", function()
         -- `--` (0-2), `comment_content` = `"   "`, three spaces (2-5), all
-        -- blank -- `_split_prose_words` finds no words at all, exercising
+        -- blank -- `prose.split_words` finds no words at all, exercising
         -- `M.split`'s `#units == 0` fallback for prose specifically.
         vim.api.nvim_buf_set_lines(assert(_BUFFER), 0, -1, false, { "--   " })
 
@@ -421,7 +421,7 @@ describe("motion API - subword configuration", function()
 
             -- `--` (0), `comment_content` = `" ### heading text"` (2-...) --
             -- `###` (class "other", per `_char_class`) is its own
-            -- `_split_prose_words` word, isolated by the surrounding blanks, so
+            -- `prose.split_words` word, isolated by the surrounding blanks, so
             -- `comment_marker_case` alone decides whether it's a landing stop.
             vim.api.nvim_buf_set_lines(assert(_BUFFER), 0, -1, false, { "-- ### heading text" })
 
@@ -471,7 +471,7 @@ describe("motion API - subword configuration", function()
             },
         })
         -- With no split at all, `###` stays embedded exactly where
-        -- `_split_prose_words` already isolated it -- so this looks
+        -- `prose.split_words` already isolated it -- so this looks
         -- identical to `"stop"` here (a lone, whitespace-bounded run has
         -- nothing else to merge with); `"none"` only differs from `"stop"`
         -- for a run mixed into a larger word, e.g. `foo/bar`.
@@ -664,7 +664,7 @@ describe("motion API - #backtick_identifiers", function()
     it("leaves a multi-word backtick span as ordinary prose, with no rule changes", function()
         -- `foo bar` (two words) fails the single-word check, so the whole
         -- span -- backticks included -- falls back to exactly what
-        -- `_split_prose_words` alone would already produce.
+        -- `prose.split_words` alone would already produce.
         vim.api.nvim_buf_set_lines(assert(_BUFFER), 0, -1, false, { "-- see `foo bar` here" })
         _set_cursor(0)
 
@@ -707,7 +707,7 @@ describe("motion API - #backtick_identifiers", function()
     end)
 end)
 
---- `:`/`/` are grouped into `_char_class`'s `"word"` class (see `subword.lua`'s
+--- `:`/`/` are grouped into `_char_class`'s `"word"` class (see `prose.lua`'s
 --- docstring), and prose's `colon_case`/`slash_case` both default to `"skip"`
 --- -- so a structured token like a `github:owner/repo` reference, a URL, or a
 --- filesystem path never fragments at every `:`/`/` the way ordinary
@@ -805,7 +805,7 @@ describe("motion API - opaque hash/digest tokens (#opaque_token_min_length)", fu
 
             treemotion.run_motion_e()
             -- Straight to the digest's own last character, in one hop --
-            -- without opaque handling, `_split_case` would stop at every
+            -- without opaque handling, `case.split` would stop at every
             -- lowercase-to-uppercase transition instead.
             assert.same(_OPEN_QUOTE + #digest, _get_cursor_column())
         end
@@ -846,7 +846,7 @@ describe("motion API - opaque hash/digest tokens (#opaque_token_min_length)", fu
         function()
             -- 24 characters (at/above the default `opaque_token_min_length` of
             -- 20), mixed-case, purely alphanumeric -- exactly what
-            -- `_looks_like_hash` used to flag as opaque on charset/length
+            -- `case.looks_like_hash` used to flag as opaque on charset/length
             -- alone. It has no digits anywhere in it, though, unlike a real
             -- base64/hex digest of this length almost certainly would.
             local identifier = "handleSubmitButtonClick"

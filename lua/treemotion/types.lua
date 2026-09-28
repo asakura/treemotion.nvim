@@ -53,7 +53,7 @@
 ---    Which single characters count as comment-marker punctuation
 ---    (`comment_marker_case`'s target), keyed by treesitter language name
 ---    (`vim.treesitter.get_parser():lang()`, e.g. `"lua"`, `"c"`, `"vim"` --
----    not always the same as `'filetype'`; see `_comment_marker_characters`'s
+---    not always the same as `'filetype'`; see `classify.comment_marker_characters`'s
 ---    docstring). Deliberately per-language rather than one fixed global set:
 ---    the same punctuation means different things in different grammars --
 ---    `"` opens a comment in Vimscript but closes a string everywhere else,
@@ -84,7 +84,7 @@
 ---    applies to **code** leaves: a leaf tagged `@spell`/`@string` (prose, or
 ---    string content) never has any of its characters treated as
 ---    insignificant, since prose already does its own punctuation-is-a-word
----    splitting (`_split_prose_words`), deliberately mirroring how real Vim's
+---    splitting (`prose.split_words`), deliberately mirroring how real Vim's
 ---    `w` treats punctuation as a landing stop in a text file -- the same
 ---    reason `.code`/`.prose` are configured separately everywhere else in
 ---    this type. The character itself is still real buffer text (`x`, `dd`,
@@ -112,7 +112,7 @@
 ---    any other span a treesitter query marks `@spell` or `@string` --
 ---    string content counts as prose too, since it just as often holds free
 ---    text -- a description, an error message, a URL -- as it does an
----    identifier-like slug; see `_is_prose_capture` in `subword.lua`).
+---    identifier-like slug; see `_is_prose_capture` in `classify.lua`).
 ---    Splitting a prose leaf/run first divides it into individual words (on
 ---    whitespace/punctuation, like real Vim's `w` in a text file) before
 ---    either ruleset ever runs; code leaves skip straight to these rules.

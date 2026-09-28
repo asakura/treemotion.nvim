@@ -1,5 +1,16 @@
 # `M.current_leaf` calls `parser:parse(true)` on every motion
 
+> **Note (28-09-2026):** this note predates the refactor that moved
+> injection handling out of `leaf.lua` into `injection.lua`. The private
+> names and `leaf.lua` line numbers below are from before that refactor and
+> no longer exist as written. Current equivalents:
+>
+> | Name used below | Now |
+> | --- | --- |
+> | `leaf.lua`'s `_injection_at` | `injection.injected_content` |
+> | `leaf.lua`'s `_within_piece` | `injection.within_piece` |
+> | `leaf.lua`'s `_owning_ltree`, `_piece_at`, `_merge_contiguous` | same names, now private to `injection.lua` |
+
 Status: **resolved and shipped.** Attempts 3 and 4 (below) looked like a dead
 end, but the actual root cause of their regression turned out to be a
 separate, real correctness bug (see "The multi-region injection matching

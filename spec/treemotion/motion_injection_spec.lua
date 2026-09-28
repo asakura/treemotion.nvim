@@ -189,7 +189,7 @@ describe("motion API - a fenced code block's content reported as several regions
     -- and `2,0`-`3,0`, even though the host `code_fence_content` node's own
     -- `:range()` is one clean `1,0`-`3,0` span covering both lines.
     --
-    -- Before `_merge_contiguous` (`_commands.motion.leaf`), `_injection_at`'s
+    -- Before `_merge_contiguous` (`_commands.motion.injection`), `injected_content`'s
     -- exact-range match compared a *single* region against a node's *whole*
     -- span, so it could never succeed here -- the fenced block was never
     -- recognized as an injection to descend into at all, and `w`/`e`/`b`

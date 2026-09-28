@@ -17,6 +17,7 @@
 --- `leaf.run_end`/`leaf.previous_leaf` need to re-derive the run's bounds
 --- when stepping past it.
 
+local classify = require("treemotion._commands.motion.classify")
 local leaf = require("treemotion._commands.motion.leaf")
 local subword = require("treemotion._commands.motion.subword")
 local unit = require("treemotion._commands.motion.unit")
@@ -24,7 +25,7 @@ local unit = require("treemotion._commands.motion.unit")
 ---@alias treemotion.BigWordUnit treemotion.MotionUnit
 
 --- Whether every leaf in the run from `run_start` to `run_end` is
---- `subword.is_insignificant` -- i.e. the whole run is punctuation the user
+--- `classify.is_insignificant` -- i.e. the whole run is punctuation the user
 --- has configured as invisible (`commands.motion.insignificant_characters`),
 --- not just one leaf within an otherwise-significant run.
 ---
@@ -44,7 +45,7 @@ local function _run_is_insignificant(run_start, run_end)
     local node = run_start
 
     while true do
-        if not subword.is_insignificant(node) then
+        if not classify.is_insignificant(node) then
             return false
         end
 
