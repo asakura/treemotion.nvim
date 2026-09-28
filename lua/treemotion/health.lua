@@ -14,15 +14,19 @@ configuration_.initialize_data_if_needed()
 
 --- Check `data` for problems and return each of them.
 ---
+--- `data` is merged over the defaults first, so a partial configuration
+--- (e.g. just `{ logging = { use_file = true } }`) isn't reported as missing
+--- every value it leaves out.
+---
 ---@param data treemotion.Configuration? All extra customizations for this plugin.
 ---@return string[] # All found issues, if any.
 ---
 function M.get_issues(data)
     if not data or vim.tbl_isempty(data) then
-        data = configuration_.resolve_data(vim.g.treemotion_configuration)
+        data = vim.g.treemotion_configuration
     end
 
-    return schema.get_issues(data)
+    return schema.get_issues(configuration_.resolve_data(data))
 end
 
 --- Check whether this Neovim version can run `motion` commands at full fidelity.
@@ -135,9 +139,13 @@ function M.check(data)
         vim.health.error(issue)
     end
 
-    _check_motion()
-
     local raw = data or vim.g.treemotion_configuration or {}
+
+    for _, key in ipairs(schema.get_unknown_keys(raw)) do
+        vim.health.warn(string.format('Unknown key "%s" is ignored. Is it a typo?', key))
+    end
+
+    _check_motion()
 
     _check_missing_parsers(raw, "comment_markers", "Comment markers")
     _check_missing_parsers(raw, "insignificant_characters", "Insignificant characters")

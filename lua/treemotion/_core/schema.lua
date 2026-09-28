@@ -67,14 +67,44 @@ local function _positive_integer()
     end, "a positive integer")
 end
 
----@param choices table<string, string> A symbolic-value table, e.g. `hints.Kind`. Its keys are the valid values.
----@param expected string
+--- Describe `choices` for a `:checkhealth` message, e.g. `'"none" or "skip" or "stop"'`.
+---
+---@param choices string[] Every valid value, in the order to list them.
+---@return string
+---
+local function _describe_choices(choices)
+    local quoted = {}
+
+    for _, choice in ipairs(choices) do
+        table.insert(quoted, string.format("%q", choice))
+    end
+
+    return table.concat(quoted, " or ")
+end
+
+--- Check that a value is one of `choices`.
+---
+--- The expected-value message is built from `choices` too, so adding a new
+--- choice can't leave `:checkhealth` describing a stale list.
+---
+--- `choices` is either an ordered list of every valid value, or a
+--- symbolic-value table like `hints.Kind`, whose keys are the valid values
+--- (listed alphabetically).
+---
+---@param choices string[] | table<string, string>
 ---@param required boolean?
 ---@return treemotion._SchemaValue
-local function _enum(choices, expected, required)
+local function _enum(choices, required)
+    local values = choices
+
+    if not vim.islist(choices) then
+        values = vim.tbl_keys(choices)
+        table.sort(values)
+    end
+
     return _value(function(value)
-        return vim.tbl_contains(vim.tbl_keys(choices), value)
-    end, expected, required)
+        return vim.tbl_contains(values, value)
+    end, _describe_choices(values), required)
 end
 
 --- Check that `value` is a `table<string, T>` whose every `T` passes `check`.
@@ -156,7 +186,7 @@ local function _subword_rules()
     }
 
     for _, name in ipairs({ "kebab_case", "snake_case", "colon_case", "slash_case", "comment_marker_case" }) do
-        table.insert(fields, { name, _enum(motion_constant.DelimiterMode, '"none" or "skip" or "stop"') })
+        table.insert(fields, { name, _enum(motion_constant.DelimiterMode) })
     end
 
     table.insert(fields, { "opaque_token_min_length", _positive_integer() })
@@ -182,15 +212,11 @@ local function _group(has_enabled)
     return _section(fields)
 end
 
---- Every `mega.logging` level `logging.level` accepts.
-local _LOG_LEVELS = {
-    trace = "trace",
-    debug = "debug",
-    info = "info",
-    warning = "warning",
-    error = "error",
-    fatal = "fatal",
-}
+--- Every `mega.logging` level `logging.level` accepts, least to most severe.
+---
+--- `mega.logging` keeps its own level table private, so this list mirrors
+--- its `_Level` alias.
+local _LOG_LEVELS = { "trace", "debug", "info", "warning", "error", "fatal" }
 
 ---@type treemotion._SchemaSection
 M.SCHEMA = _section({
@@ -208,14 +234,11 @@ M.SCHEMA = _section({
             },
         }),
     },
-    { "hints", _enum(hints_constant.Kind, '"word_boundaries" or "motions" or "none"', true) },
+    { "hints", _enum(hints_constant.Kind, true) },
     {
         "logging",
         _section({
-            {
-                "level",
-                _enum(_LOG_LEVELS, 'an enum. e.g. "trace" | "debug" | "info" | "warning" | "error" | "fatal"', true),
-            },
+            { "level", _enum(_LOG_LEVELS, true) },
             { "use_console", _boolean() },
             { "use_file", _boolean() },
         }, 'a table. e.g. { level = "info", ... }'),
@@ -272,6 +295,63 @@ local function _append_issues(node, value, path, output)
 
         _append_issues(child, value[name], path == "" and name or path .. "." .. name, output)
     end
+end
+
+--- Append the dotted path of every key in `value` that `node` doesn't declare.
+---
+--- Only sections are walked: a value's own keys (e.g. the language names
+--- in `comment_markers`) are free-form. A value that isn't a table is left
+--- to `_append_issues` to report.
+---
+---@param node treemotion._SchemaNode The schema to check against.
+---@param value any The configuration value at `path`.
+---@param path string The dotted configuration key, e.g. `"logging"`. `""` for the root.
+---@param output string[] All unknown keys found so far.
+---
+local function _append_unknown_keys(node, value, path, output)
+    if node.kind ~= "section" or type(value) ~= "table" then
+        return
+    end
+
+    ---@cast node treemotion._SchemaSection
+
+    local children = {}
+
+    for _, field in ipairs(node.fields) do
+        children[field[1]] = field[2]
+    end
+
+    local keys = vim.tbl_keys(value)
+    table.sort(keys, function(left, right)
+        return tostring(left) < tostring(right)
+    end)
+
+    for _, key in ipairs(keys) do
+        local name = tostring(key)
+        local child_path = path == "" and name or path .. "." .. name
+        local child = children[key]
+
+        if child then
+            _append_unknown_keys(child, value[key], child_path, output)
+        else
+            table.insert(output, child_path)
+        end
+    end
+end
+
+--- Find every key in `data` that `M.SCHEMA` doesn't declare, e.g. a typo
+--- like `commands.motion.small.code.camelCase`. Such keys are silently
+--- ignored by the plugin, so they're worth pointing out.
+---
+---@param data table The configuration to check, e.g. the user's raw `vim.g.treemotion_configuration`.
+---@return string[] # The dotted path of every unknown key, e.g. `"logging.levle"`, sorted per section.
+---
+function M.get_unknown_keys(data)
+    local output = {}
+
+    _append_unknown_keys(M.SCHEMA, data, "", output)
+
+    return output
 end
 
 --- Check `data` against `M.SCHEMA`.

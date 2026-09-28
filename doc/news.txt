@@ -48,6 +48,10 @@ NEW FEATURES                                     *treemotion-new-features*
   / `.prose` -- the same shape as `commands.motion.small`'s above -- control
   splitting within each run.
 
+- `:checkhealth treemotion` warns about configuration keys it doesn't
+  recognize, e.g. a typo like `camelCase` for `camel_case`, which would
+  otherwise be silently ignored.
+
 
 ===============================================================================
 BREAKING CHANGES                                 *treemotion-new-breaking*
