@@ -2,10 +2,9 @@
 
 local cmdparse = require("mega.cmdparse")
 
-local M = {}
+local constant = require("treemotion._commands.motion.constant")
 
----@type string[] # Every `motion` subcommand name, `word` (lowercase) then `WORD` (uppercase).
-local _NAMES = { "w", "e", "b", "ge", "W", "E", "B", "gE" }
+local M = {}
 
 ---@return mega.cmdparse.ParameterParser # The main parser for the `:TreeMotion motion` command.
 function M.make_parser()
@@ -14,7 +13,7 @@ function M.make_parser()
     local subparsers =
         parser:add_subparsers({ destination = "commands", help = "All motion commands.", required = true })
 
-    for _, name in ipairs(_NAMES) do
+    for _, name in ipairs(constant.MOTION_NAMES) do
         local subparser = subparsers:add_parser({ name, help = string.format('Move like Vim\'s "%s".', name) })
 
         subparser:add_parameter({
@@ -28,7 +27,7 @@ function M.make_parser()
             ---@cast data mega.cmdparse.NamespaceExecuteArguments
             local runner = require("treemotion._commands.motion.runner")
 
-            runner["run_" .. name](data.namespace.count)
+            runner.run(name, data.namespace.count)
         end)
     end
 
