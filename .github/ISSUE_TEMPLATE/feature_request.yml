@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thank you for suggestion! Depending on your request, the issue may be reposted to https://github.com/nvim-neorocks/nvim-best-practices (which this plugin takes great inspiration). But please feel free to ask here first!
+        Thank you for your suggestion! Please check the [documentation](https://github.com/asakura/treemotion.nvim) and [existing issues](https://github.com/asakura/treemotion.nvim/issues) first.
   - type: checkboxes
     attributes:
       label: Did you check the documentation?
