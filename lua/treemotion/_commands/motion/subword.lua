@@ -374,7 +374,7 @@ end)
 --- Break the run from `start_node` to `end_node` into maximal stretches of
 --- leaves that all share the same `classify.is_prose` classification.
 ---
---- A contiguous run (see `_commands.motion.leaf`'s `is_contiguous`) can mix
+--- A contiguous run (see `_commands.motion.run`'s `is_contiguous`) can mix
 --- a code leaf with a prose/string leaf right next to it with no whitespace
 --- in between -- e.g. Lua's sugar call syntax `foo"bar"` parses as an
 --- `identifier` leaf (code) immediately followed by a `"`/`string_content`/`"`
@@ -430,7 +430,7 @@ end
 
 --- Split one `_run_segments` segment into sub-word units.
 ---
---- `pcall` guards `nvim_buf_get_text` the same way `_commands.motion.leaf`'s
+--- `pcall` guards `nvim_buf_get_text` the same way `_commands.motion.leaf_shape`'s
 --- `_has_non_blank_between` already guards its own identical call: a leaf's
 --- `:end_()` can sit one row past the buffer's last line (a root node
 --- covering an implicit trailing newline is the common case), which isn't a
@@ -479,7 +479,7 @@ end
 --- sub-word units, per `settings` (`commands.motion.big`'s) -- the `W`/`E`/`B`/`gE`
 --- counterpart to `M.split`.
 ---
---- A run's leaves are contiguous by construction (see `_commands.motion.leaf`'s
+--- A run's leaves are contiguous by construction (see `_commands.motion.run`'s
 --- `is_contiguous`), so the raw buffer text from `start_node`'s start to
 --- `end_node`'s end is already exactly the run's text -- no leaf-boundary
 --- artifact-stitching like `_leading_continuation_length` is needed the way
@@ -498,8 +498,8 @@ end
 --- Setting it to `true` opts into real splitting, reading
 --- `commands.motion.big.code`/`.prose` instead of `.small`'s.
 ---
----@param start_node TSNode The run's first leaf (e.g. `leaf.run_start(node)`).
----@param end_node TSNode The run's last leaf (e.g. `leaf.run_end(node)`).
+---@param start_node TSNode The run's first leaf (e.g. `run.run_start(node)`).
+---@param end_node TSNode The run's last leaf (e.g. `run.run_end(node)`).
 ---@param settings treemotion.SplitSettings See `_commands.motion.settings.resolve`.
 ---@return treemotion.SubwordUnit[] # Empty when `enabled` is `true` and the whole run is a dropped
 ---    (`"skip"`) delimiter run with no other content -- same as `M.split`, see `_split_text`'s docstring;
@@ -519,7 +519,7 @@ M.split_run = _logged("split_run", function(start_node, end_node, settings)
         -- supposed to guarantee. So the disabled path returns the raw
         -- `start_node`/`end_node` span untouched, identical to what
         -- `_commands.motion.runner` used to compute directly from
-        -- `leaf.run_start`/`leaf.run_end` before this function existed.
+        -- `run.run_start`/`run.run_end` before this function existed.
         return { span.new(start_row, start_col, end_row, end_col) }
     end
 

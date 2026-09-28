@@ -74,7 +74,7 @@ describe("motion API - crossing language injections", function()
         -- `vim.cmd([[set` is one run even though it crosses into injected
         -- content, since nothing but real buffer whitespace (the space
         -- before `number`) ever counts as a run break -- see
-        -- `_commands.motion.leaf`'s `is_contiguous`.
+        -- `_commands.motion.run`'s `is_contiguous`.
         grammar.set_cursor(0, 0)
         treemotion.run_motion_W()
 

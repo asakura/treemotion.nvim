@@ -25,7 +25,7 @@
 local logging = require("mega.logging")
 
 local codepoint = require("treemotion._commands.motion.codepoint")
-local leaf = require("treemotion._commands.motion.leaf")
+local position = require("treemotion._commands.motion.position")
 local bigword = require("treemotion._commands.motion.bigword")
 local settings = require("treemotion._commands.motion.settings")
 local word = require("treemotion._commands.motion.word")
@@ -70,7 +70,7 @@ end
 ---@return boolean # `true` if the cursor already sits on `node`'s start.
 local function _is_cursor_at_start(node)
     local row, column = node:start()
-    local cursor_row, cursor_column = leaf.cursor_position()
+    local cursor_row, cursor_column = position.cursor_position()
 
     return cursor_row == row and cursor_column == column
 end
@@ -86,7 +86,7 @@ end
 local function _is_cursor_at_end(node)
     local row, column = node:end_()
     column = codepoint.last_character_column(row, column)
-    local cursor_row, cursor_column = leaf.cursor_position()
+    local cursor_row, cursor_column = position.cursor_position()
 
     return cursor_row == row and cursor_column == column
 end
@@ -106,7 +106,7 @@ end
 local function _is_cursor_inside(node)
     local start_row, start_column = node:start()
     local end_row, end_column = node:end_()
-    local cursor_row, cursor_column = leaf.cursor_position()
+    local cursor_row, cursor_column = position.cursor_position()
 
     if cursor_row < start_row or (cursor_row == start_row and cursor_column < start_column) then
         return false
@@ -294,13 +294,13 @@ function M.run(name, count)
 
     count = count or 1
 
-    local start_row, start_column = leaf.cursor_position()
+    local start_row, start_column = position.cursor_position()
 
     _LOGGER:fmt_debug('Running treemotion motion "%s" (count=%s) from %s:%s.', name, count, start_row, start_column)
 
     motion.move(motion.units.new_source(settings.resolve(motion.group)), count)
 
-    local end_row, end_column = leaf.cursor_position()
+    local end_row, end_column = position.cursor_position()
 
     _LOGGER:fmt_debug('Finished treemotion motion "%s" at %s:%s.', name, end_row, end_column)
 end

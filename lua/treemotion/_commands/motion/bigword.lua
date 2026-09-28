@@ -14,11 +14,12 @@
 --- `_commands.motion.word`; this module only defines what a span is (a whole
 --- run) and how to get past one. A unit's `_leaf` holds the run's *start*
 --- leaf specifically (not just any leaf in it), since that's what
---- `leaf.run_end`/`leaf.previous_leaf` need to re-derive the run's bounds
+--- `run.run_end`/`leaf.previous_leaf` need to re-derive the run's bounds
 --- when stepping past it.
 
 local classify = require("treemotion._commands.motion.classify")
 local leaf = require("treemotion._commands.motion.leaf")
+local run = require("treemotion._commands.motion.run")
 local subword = require("treemotion._commands.motion.subword")
 local unit = require("treemotion._commands.motion.unit")
 
@@ -86,8 +87,8 @@ end
 ---
 local function _first_nonempty_split(node, forward, settings)
     while node do
-        local run_start = leaf.run_start(node)
-        local run_end = leaf.run_end(node)
+        local run_start = run.run_start(node)
+        local run_end = run.run_end(node)
 
         if not _run_is_insignificant(run_start, run_end, settings.insignificant_characters) then
             local units = subword.split_run(run_start, run_end, settings)
@@ -109,7 +110,7 @@ end
 ---@return TSNode? # The leaf right after the run's end, if any.
 ---
 local function _after_run(run_start)
-    return leaf.next_leaf(leaf.run_end(run_start))
+    return leaf.next_leaf(run.run_end(run_start))
 end
 
 --- Build a `treemotion._UnitSource` stepping through `W`/`E`/`B`/`gE` units.
