@@ -35,11 +35,11 @@ local M = {}
 
 --- Move the cursor to `node`'s first character.
 ---
---- Converts `TSNode`/`treemotion.WordUnit`'s 0-indexed row to
+--- Converts `TSNode`/`treemotion.MotionUnit`'s 0-indexed row to
 --- `nvim_win_set_cursor`'s 1-indexed row; the column needs no conversion,
 --- since both are already 0-indexed.
 ---
----@param node TSNode|treemotion.WordUnit|treemotion.BigWordUnit Anything with a `:start()` -- a leaf or unit.
+---@param node TSNode|treemotion.MotionUnit Anything with a `:start()` -- a leaf or unit.
 local function _set_cursor_to_start(node)
     local row, column = node:start()
 
@@ -52,7 +52,7 @@ end
 --- this steps back to the character itself via `codepoint.last_character_column`,
 --- landing on its lead byte even when it's multi-byte UTF-8.
 ---
----@param node TSNode|treemotion.WordUnit|treemotion.BigWordUnit Anything with an `:end_()` -- a leaf or unit.
+---@param node TSNode|treemotion.MotionUnit Anything with an `:end_()` -- a leaf or unit.
 local function _set_cursor_to_end(node)
     local row, column = node:end_()
 
@@ -65,7 +65,7 @@ end
 --- just snap to the start of the current one -- mirroring how real Vim's
 --- `b` only skips the current word if the cursor is already at its start.
 ---
----@param node TSNode|treemotion.WordUnit|treemotion.BigWordUnit
+---@param node TSNode|treemotion.MotionUnit
 ---@return boolean # `true` if the cursor already sits on `node`'s start.
 local function _is_cursor_at_start(node)
     local row, column = node:start()
@@ -80,7 +80,7 @@ end
 --- just snap to the end of the current one -- mirroring how real Vim's `e`
 --- only skips the current word if the cursor is already at its end.
 ---
----@param node TSNode|treemotion.WordUnit|treemotion.BigWordUnit
+---@param node TSNode|treemotion.MotionUnit
 ---@return boolean # `true` if the cursor already sits on `node`'s (inclusive) end.
 local function _is_cursor_at_end(node)
     local row, column = node:end_()
@@ -100,7 +100,7 @@ end
 --- unconditionally stepping to the *next*/*previous* one from there would
 --- overshoot by one. See `_move_forward_to_start`/`_move_backward_to_end`.
 ---
----@param node TSNode|treemotion.WordUnit|treemotion.BigWordUnit
+---@param node TSNode|treemotion.MotionUnit
 ---@return boolean # `true` if the cursor is inside `node`'s range, `false` for a gap `node` substitutes for.
 local function _is_cursor_inside(node)
     local start_row, start_column = node:start()
@@ -118,18 +118,17 @@ local function _is_cursor_inside(node)
     return true
 end
 
----@alias treemotion._Unit treemotion.WordUnit|treemotion.BigWordUnit
-
 --- The unit-stepping API `_commands.motion.word` and `_commands.motion.bigword` share.
 ---
 --- Every `_move_*` function below takes one of those two modules as its
 --- `units` argument, so each of the four shapes is implemented once and
---- serves both `w`/`e`/`b`/`ge` and `W`/`E`/`B`/`gE`.
+--- serves both `w`/`e`/`b`/`ge` and `W`/`E`/`B`/`gE`. Both modules build
+--- theirs with `_commands.motion.unit.new_source`.
 ---
 ---@class treemotion._UnitSource
----@field current_unit fun(forward: boolean): treemotion._Unit?
----@field next_unit fun(unit: treemotion._Unit): treemotion._Unit?
----@field previous_unit fun(unit: treemotion._Unit): treemotion._Unit?
+---@field current_unit fun(forward: boolean): treemotion.MotionUnit?
+---@field next_unit fun(unit: treemotion.MotionUnit): treemotion.MotionUnit?
+---@field previous_unit fun(unit: treemotion.MotionUnit): treemotion.MotionUnit?
 
 --- `w`/`W`-shape move: unconditionally advance to the start of the next unit.
 ---
