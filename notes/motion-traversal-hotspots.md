@@ -1,5 +1,18 @@
 # Profiling the remaining `_commands.motion.leaf`/`runner` hot spots
 
+> **Note (28-09-2026):** this note predates the refactor that moved
+> injection handling out of `leaf.lua` into `injection.lua` and split
+> `subword.lua` into `classify.lua`, `case.lua`, `delimiters.lua` and
+> `prose.lua`. The private names below are from before that refactor and no
+> longer exist as written. Current equivalents:
+>
+> | Name used below | Now |
+> | --- | --- |
+> | `leaf.lua`'s `_injection_at` | `injection.injected_content` |
+> | `leaf.lua`'s `_piece_at`, `_sorted_pieces`, `_merge_contiguous`, `_floor_index` | same names, now private to `injection.lua` |
+> | `subword.lua`'s `_is_prose` | `classify.is_prose` |
+> | `subword.lua`'s `_is_insignificant` | `classify.is_insignificant` |
+
 Status: **three fixed, two measured and rejected.** Follow-on to
 `notes/injection-parse-performance.md`, which covered `parser:parse()`'s own
 cost. This note covers five candidate hot spots identified by reading
