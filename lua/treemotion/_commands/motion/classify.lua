@@ -16,24 +16,12 @@ local M = {}
 --- Whether `capture` (a raw capture name from `vim.treesitter.get_captures_at_pos`)
 --- marks its node as prose rather than code.
 ---
---- `@spell` is `:help treesitter-highlight-spell`'s own natural-language
---- boundary, already correct (and user-overridable) per language without
---- this plugin hand-listing prose-ish node type names. `@string` (and its
---- dotted specializations, `@string.special.url`, `@string.regexp`, ...) is
---- folded in here too: nvim-treesitter's highlight convention almost never
---- tags a plain string's content `@spell` even when it holds free text (a
---- Nix `description = "..."` value, a Lua error message, ...) -- confirmed
---- against tree-sitter-nix's own `queries/highlights.scm`, which captures
---- `string_expression` as `@string` and never emits `@spell` anywhere in the
---- file at all. Without treating `@string` as prose too, a whole string
---- literal collapses into a handful of huge `delimiters.split`/`case.split`
---- chunks instead of stopping at each word, since code leaves are assumed
---- (correctly, for real identifiers) to "never contain embedded blanks in
---- the first place" -- an assumption free-form string content breaks. Using
---- the capture *name* rather than a node type keeps this the same
---- grammar-agnostic check `@spell` alone already was: any language whose
---- highlight query uses the standard `@string`/`@spell` capture names gets
---- this for free, no per-language query of this plugin's own required.
+--- `@spell` is `:help treesitter-highlight-spell`'s natural-language marker.
+--- `@string` and its dotted variants (`@string.special.url`, ...) count too,
+--- because highlight queries rarely tag string content `@spell` even when it
+--- holds free text, and splitting such a string by code rules would leave
+--- it as a few huge chunks. Matching capture names keeps the check
+--- grammar-agnostic.
 ---
 ---@param capture string A capture name, as returned by `get_captures_at_pos` (dots and all).
 ---@return boolean
@@ -64,29 +52,11 @@ end
 
 --- Turn a language's comment-marker characters into a set.
 ---
---- Deliberately per-language rather than one fixed global set: the same
---- punctuation means different, unrelated things in different grammars --
---- `"` opens a comment in Vimscript but closes a string everywhere else;
---- `;` ends a comment in a treesitter query file but ends a *statement* in
---- every C-family language. Applying `comment_marker_case` to a character
---- globally would make `"skip"` start eating string-quote or
---- statement-terminator leaves in every *other* language that happens to
---- reuse the same character for something unrelated -- so a character only
---- ever gets `comment_marker_case` treatment in the languages
---- `commands.motion.comment_markers` actually lists it for (see
---- that field's docstring in `types.lua`). A language with no entry at all
---- has no comment-marker characters, so `comment_marker_case` is silently a
---- no-op there until the user configures one -- consistent with this
---- plugin's general approach of only claiming behavior it's actually
---- verified against a real grammar, never guessing (see
---- `subword.lua`'s `_leading_continuation_length` docstring for the same philosophy
---- applied to leaf-boundary tokenization quirks).
----
---- Beyond the shipped/user-configured languages, `comment_marker_case` also
---- activates automatically for any language in
---- `configuration.get_comment_markers`'s optional table whose treesitter
---- parser is actually installed -- no configuration needed for those.
---- `_commands.motion.settings` does that lookup and passes the result here.
+--- Markers are per language because the same punctuation means different
+--- things in different grammars (`"` opens a Vimscript comment but closes a
+--- string elsewhere). A character only gets `comment_marker_case` treatment
+--- in the languages `commands.motion.comment_markers` lists it for, and a
+--- language with no entry has no markers.
 ---
 ---@param characters string[]? The language's comment markers (see
 ---    `configuration.get_comment_markers`), or `nil` if it has none.
@@ -108,15 +78,9 @@ end
 
 --- The treesitter language attached to the current buffer, if any.
 ---
---- Reads the *language* a parser actually attached
---- (`vim.treesitter.get_parser():lang()`), not `vim.bo.filetype` -- the two
---- usually match for the languages this plugin has been verified against,
---- but don't have to (e.g. a filetype attached to a differently-named
---- parser). Doesn't attempt injection-aware resolution (a node inside an
---- injected language block, e.g. a fenced code block in markdown, still
---- reports the *root* parser's language) -- narrower than fully correct,
---- but matches every other language-resolution point in this plugin, none
---- of which are injection-aware either.
+--- Uses the parser's language, not `vim.bo.filetype`, which can differ. Not
+--- injection-aware: inside an injected block this still reports the root
+--- parser's language.
 ---
 ---@return string?
 ---
@@ -130,55 +94,21 @@ function M.current_language()
     return parser:lang()
 end
 
---- Whether `node` should be treated as invisible to `w`/`e`/`b`/`ge` (and, via
---- `bigword.lua`'s `_run_is_insignificant`, `W`/`E`/`B`/`gE`) entirely -- a leaf-level token
---- (`;`, `{`, `}`, ...) the user has configured as insignificant for its
---- language, via `commands.motion.insignificant_characters`.
+--- Whether `node` is invisible to `w`/`e`/`b`/`ge` (and, per leaf of a run,
+--- `W`/`E`/`B`/`gE`): a token such as `;` or `}` that
+--- `commands.motion.insignificant_characters` lists for the language.
 ---
---- Code leaves only: a *named* prose leaf (`@spell`-/`@string`-tagged, see
---- `M.is_prose`) keeps every character significant, since prose already does
---- its own punctuation-is-a-word splitting (`prose.split_words`),
---- deliberately mirroring how real Vim's `w` treats punctuation as a landing
---- stop in a text file -- the same reason `.code`/`.prose` are configured
---- separately everywhere in `_commands.motion.subword`.
+--- Named prose leaves are never insignificant, since prose splitting already
+--- treats punctuation as words. Unnamed prose leaves can be: an anonymous
+--- delimiter such as Nix's `"` is often highlighted `@string` only to match
+--- the string it wraps, and has no prose content of its own. `M.is_prose`
+--- itself still reports such leaves as prose, for rule selection.
 ---
---- `node:named()` gates that exemption, deliberately -- `:help
---- TSNode:named()`: "Named nodes correspond to named rules in the grammar,
---- whereas anonymous nodes correspond to string literals in the grammar."
---- An *unnamed* leaf that's still `M.is_prose` (Lua's `--` comment opener,
---- captured via its parent `comment` node's `(comment) @comment @spell`
---- span) is left alone here -- `comment_marker_case` already governs
---- whether markers like that are a landing stop, and this function must
---- keep calling them prose so `subword.lua`'s `split`/`_run_segments` route them through
---- `.prose`'s rules, not `.code`'s. But an unnamed leaf whose *own* prose
---- capture comes from a query pattern that targets it directly rather than
---- from an ancestor's span (Nix's `"`/`''` string delimiters: confirmed
---- against `tree-sitter-nix`'s `queries/highlights.scm`, `(string_expression
---- "\"" @string)` captures the literal quote child for uniform coloring,
---- while the actual text sits in a sibling, named `string_fragment`) has no
---- real prose content of its own to protect -- it's a one-character
---- structural delimiter that merely renders the same color as the string it
---- wraps. Exempting `M.is_prose` here (not in `M.is_prose` itself, which stays
---- untouched for `.code`/`.prose` rule selection) is what lets
---- `insignificant_characters` reach it at all; without this, no
---- configuration could ever hide a quote delimiter, since the code/prose
---- gate came first. Not Nix-specific: any grammar whose highlight query
---- paints an anonymous delimiter leaf the same color as the content it
---- encloses hits the same thing.
+--- Not injection-aware (see `M.current_language`).
 ---
---- Deliberately not injection-aware, same as every other language-resolution
---- point in this module (see `M.current_language`'s docstring).
----
---- `pcall` guards `get_node_text`: `bigword.lua`'s `_run_is_insignificant`
---- calls this for every leaf in a candidate run *before* `subword.split_run` ever
---- runs, so a read that would otherwise only ever fail inside
---- `subword.lua`'s `_split_run_segment`'s own already-guarded call (a leaf's `:end_()`
---- sitting one row past the buffer's last line, the same rare case
---- `_has_non_blank_between` in `leaf_shape.lua` guards too) can now fail here
---- first instead. Treating a failed read as "not insignificant" is exactly
---- right, not just a safe fallback: unreadable text can never match a
---- configured entry anyway, so this just reaches the same answer
---- `_split_run_segment`'s fallback already would have.
+--- `pcall` guards `get_node_text`, since a leaf's `:end_()` can sit one row
+--- past the buffer's last line. Unreadable text can't match a configured
+--- entry, so a failed read means "not insignificant".
 ---
 ---@param node TSNode Any leaf (see `_commands.motion.leaf`).
 ---@param characters string[]? The current language's insignificant leaf texts (see

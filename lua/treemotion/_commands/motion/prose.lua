@@ -51,8 +51,8 @@ end
 --- like Vim's `w` always skips whitespace).
 ---
 --- Only used for prose (`@spell`- or `@string`-tagged, see
---- `classify.lua`'s `_is_prose_capture`) leaves -- code leaves never contain embedded blanks
---- in the first place, so there's nothing for this pass to do for them.
+--- `classify.is_prose`) leaves -- code leaves never contain embedded blanks,
+--- so there's nothing for this pass to do for them.
 ---
 ---@param text string A leaf's full text.
 ---@return {text: string, offset: integer}[] # Each word and its 1-indexed start column in `text`.

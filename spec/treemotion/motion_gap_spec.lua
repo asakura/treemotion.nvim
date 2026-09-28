@@ -129,7 +129,7 @@ describe("motion API - genuinely multi-row leaves, across grammars", function()
     -- rows) is still one single `leaf.lua`-level leaf, not split at the row
     -- boundary -- but that's no longer the same thing as one single `w`/`b`
     -- *stop*: both fixtures below are `@string`/`@spell`-tagged (see
-    -- `classify.lua`'s `_is_prose_capture`), i.e. prose by this plugin's own
+    -- `classify.is_prose`), i.e. prose by this plugin's own
     -- classification, and `subword.split()` already divides a *single-row*
     -- prose leaf word-by-word -- multi-row prose used to be the one place
     -- that stopped short, collapsing into one giant unit purely because it
@@ -208,7 +208,7 @@ describe("motion API - leaves with a partial-coverage child, across grammars", f
             -- (11-19) with exactly one child, `escape_sequence` (14-16, the
             -- `\n`) -- `"foo"` (11-14) and `"bar"` (16-19) have no node of
             -- their own at all. `string_content` is also `@string`-tagged
-            -- (see `classify.lua`'s `_is_prose_capture`), so `subword` splits
+            -- (see `classify.is_prose`), so `subword` splits
             -- its text like prose: `foo`(11-14, word-class), `\`(14-15,
             -- its own "other"-class run), `nbar`(15-19, `n` and `bar` are
             -- both word-class with nothing between them, so they're one

@@ -83,13 +83,12 @@ end
 --- Lua's `--` comment opener, a `---` doc-comment marker, a `-----`
 --- separator line), there's no identifier being kebab/snake-cased at all --
 --- it's a bare punctuation run, the same kind of thing `#`/`/`/`%` already
---- always are (`prose.lua`'s `_char_class` isolates them into their own word before this
---- function even runs, since they're never grouped as `"word"` class). So
---- for a text like that, `comment_marker_case` takes over for `-`/`_`
---- too, exactly like it already does for `#`/`/`/`%` -- but only if the
---- current language's `comment_markers` actually lists `-`/`_` (see
---- `_DEFAULTS`' `lua = { "-" }`, for Lua's `--`); a language that doesn't
---- list them there leaves `kebab_case`/`snake_case` in charge even for a
+--- always are (`prose.words` isolates them into their own word before this
+--- function even runs). So for a text like that, `comment_marker_case`
+--- takes over for `-`/`_` too, exactly like it already does for `#`/`/`/`%`
+--- -- but only if the current language's `comment_markers` actually lists
+--- `-`/`_` (see the default `comment_markers.lua = { "-" }`, for Lua's
+--- `--`); a language that doesn't list them there leaves `kebab_case`/`snake_case` in charge even for a
 --- bare run, the same "no entry means no effect" rule every other marker
 --- character already follows -- there's deliberately no special, always-on
 --- carve-out for `-`/`_` the way `comment_markers`' other characters don't

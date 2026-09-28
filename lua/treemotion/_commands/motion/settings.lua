@@ -1,12 +1,10 @@
 --- Resolve everything the sub-word splitter reads from the user's configuration.
 ---
---- `_commands.motion.subword` and `_commands.motion.classify` used to read
---- `_core.configuration` directly, several times per leaf. They now take a
---- `treemotion.SplitSettings` instead, which `_commands.motion.runner`
---- resolves with `M.resolve` once per motion. Keeping the configuration
---- lookups here means the splitter itself does only string and range work,
---- and tests can hand it any rules they like without touching the global
---- configuration.
+--- `_commands.motion.subword` and `_commands.motion.classify` take a
+--- `treemotion.SplitSettings` rather than reading `_core.configuration`;
+--- `_commands.motion.runner` resolves one with `M.resolve` once per motion.
+--- The splitter itself then does only string and range work, and tests can
+--- hand it any rules without touching the global configuration.
 
 local classify = require("treemotion._commands.motion.classify")
 local configuration = require("treemotion._core.configuration")
