@@ -2,6 +2,7 @@
 
 local configuration_ = require("treemotion._core.configuration")
 local health = require("treemotion.health")
+local schema = require("treemotion._core.schema")
 
 local mock_vim = require("test_utilities.mock_vim")
 
@@ -418,6 +419,16 @@ describe("bad configuration - commands", function()
         )
     end)
 
+    it("happens with a non-table #commands.motion section", function()
+        -- Reported once, as the section itself, instead of erroring out
+        -- while trying to look up every value inside it.
+        _assert_bad({ commands = { motion = "aaa" } }, { "commands.motion: expected a table, got aaa" })
+        _assert_bad(
+            { commands = { motion = { small = { code = 5 } } } },
+            { "commands.motion.small.code: expected a table, got 5" }
+        )
+    end)
+
     it("happens with a bad type for #commands.motion.big.enabled", function()
         _assert_bad(
             { commands = { motion = { big = { enabled = "aaa" } } } },
@@ -520,6 +531,51 @@ describe("bad configuration - logging", function()
     end)
 end)
 ---@diagnostic enable: assign-type-mismatch
+
+describe("schema", function()
+    --- Find every `_DEFAULTS` key `node` doesn't declare, and every value
+    --- `node` declares that `_DEFAULTS` doesn't set.
+    ---
+    ---@param node treemotion._SchemaNode
+    ---@param defaults any
+    ---@param path string
+    ---@param output string[]
+    ---
+    local function _get_mismatches(node, defaults, path, output)
+        if defaults == nil then
+            table.insert(output, path .. " has no default")
+
+            return
+        end
+
+        if node.kind == "value" then
+            return
+        end
+
+        local declared = {}
+
+        for _, field in ipairs(node.fields) do
+            local name, child = field[1], field[2]
+            declared[name] = true
+
+            _get_mismatches(child, defaults[name], path == "" and name or path .. "." .. name, output)
+        end
+
+        for name, _ in pairs(defaults) do
+            if not declared[name] then
+                table.insert(output, (path == "" and name or path .. "." .. name) .. " is missing from the schema")
+            end
+        end
+    end
+
+    it("declares exactly the values the defaults set", function()
+        local output = {}
+
+        _get_mismatches(schema.SCHEMA, configuration_.resolve_data({}), "", output)
+
+        assert.same({}, output)
+    end)
+end)
 
 ---@diagnostic disable: assign-type-mismatch
 describe("health.check", function()
