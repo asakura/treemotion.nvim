@@ -122,7 +122,7 @@ Fields ~
    any other span a treesitter query marks `@spell` or `@string` --
    string content counts as prose too, since it just as often holds free
    text -- a description, an error message, a URL -- as it does an
-   identifier-like slug; see `_is_prose_capture` in `classify.lua`).
+   identifier-like slug).
    Splitting a prose leaf/run first divides it into individual words (on
    whitespace/punctuation, like real Vim's `w` in a text file) before
    either ruleset ever runs; code leaves skip straight to these rules.

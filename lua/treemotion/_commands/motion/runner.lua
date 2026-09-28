@@ -13,7 +13,7 @@
 --- leaves, optionally split further by naming convention (camelCase,
 --- kebab-case, ...) per `commands.motion.small`, via
 --- `_commands.motion.word`. `W`/`E`/`B`/`gE` move between contiguous *runs*
---- of whole leaves (see `_commands.motion.leaf`'s module docstring),
+--- of whole leaves (see `_commands.motion.run`),
 --- optionally split the same way per `commands.motion.big` (only once
 --- `.enabled = true`; by default a run ignores case entirely, the same way
 --- real Vim's `W` ignores punctuation inside a WORD), via

@@ -3,7 +3,7 @@
 --- Mirrors `_commands.motion.word` one level coarser: where `word.lua` steps
 --- through case-convention sub-words *inside* a single treesitter leaf,
 --- this steps through them inside a whole *run* of contiguous leaves (see
---- `_commands.motion.leaf`'s module docstring for what a "run" is). By
+--- `_commands.motion.run`). By
 --- default (`commands.motion.big.enabled = false`) a run is always exactly
 --- one stop, ignoring case/delimiters entirely -- the same way real Vim's
 --- `W` ignores punctuation inside a WORD; `subword.split_run()` is what
@@ -32,12 +32,9 @@ local M = {}
 --- has configured as invisible (`commands.motion.insignificant_characters`),
 --- not just one leaf within an otherwise-significant run.
 ---
---- A run that *mixes* insignificant and significant leaves (`foo;bar` as one
---- contiguous run, `;` unconfigured or not) is deliberately left alone here
---- -- it was already one `W`/`E`/`B`/`gE` stop before this feature existed,
---- and nothing about grouping leaves into runs changes because of it; only a
---- run that's *entirely* insignificant (an isolated `;` with whitespace on
---- both sides, which would otherwise be its own spurious stop) should be
+--- A run that *mixes* insignificant and significant leaves (`foo;bar`) is
+--- still one `W`/`E`/`B`/`gE` stop; only a run that's *entirely*
+--- insignificant (an isolated `;` with whitespace on both sides) is
 --- skipped.
 ---
 ---@param run_start TSNode The run's first leaf.

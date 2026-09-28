@@ -23,8 +23,8 @@ local M = {}
 --- Walk from `node` in `forward`'s direction until finding a leaf
 --- `subword.split()` actually produces units for.
 ---
---- A leaf entirely consumed by `_commands.motion.subword`'s
---- `_leading_continuation_length` (e.g. tree-sitter-rust's lone `/`
+--- A leaf that is entirely the continuation of the previous leaf's
+--- punctuation run (see `subword.split`; e.g. tree-sitter-rust's lone `/`
 --- `outer_doc_comment_marker` leaf inside a `///` doc comment) splits into
 --- zero units -- it has no content of its own, just the tail of the
 --- previous leaf's punctuation run -- so it should never be a landing spot.

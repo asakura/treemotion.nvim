@@ -62,22 +62,19 @@ end
 ---
 --- This only looks at the user's own raw override, not the fully-resolved
 --- configuration -- the shipped defaults (`c`, `cpp`, `rust`, `python`,
---- ..., see `configuration.lua`'s `_DEFAULTS`) intentionally cover
---- languages most users won't have every parser for (that's the point of
---- being pre-configured ahead of installing e.g. Python's or Rust's parser
---- later), so warning about *those* on every `:checkhealth` run would be
---- noise, not signal. A language the user typed themselves, though, is
+--- ...) intentionally cover languages most users won't have every parser
+--- for (that's the point of being pre-configured ahead of installing e.g.
+--- Python's or Rust's parser later), so warning about *those* on every
+--- `:checkhealth` run would be noise, not signal. A language the user typed themselves, though, is
 --- worth a warning if it can't be found -- most likely a typo, or a parser
 --- that still needs installing.
 ---
---- `configuration.lua`'s `_OPTIONAL_COMMENT_MARKERS`/
---- `_OPTIONAL_INSIGNIFICANT_CHARACTERS` (additional languages,
---- auto-detected when their parser is installed) are exempt for the same
---- reason as the shipped defaults -- they aren't part of the user's raw
---- override this function inspects. They're also already pre-gated by a
---- `vim.treesitter.language.add()` check before
---- `configuration.get_comment_markers`/`get_insignificant_characters` ever
---- return one of their entries, so there's never a "missing parser" case
+--- The optional languages behind `configuration.get_comment_markers`/
+--- `get_insignificant_characters` (auto-detected when their parser is
+--- installed) are exempt for the same reason as the shipped defaults --
+--- they aren't part of the user's raw override this function inspects.
+--- They're also already pre-gated by a `vim.treesitter.language.add()`
+--- check before those functions ever return one of their entries, so there's never a "missing parser" case
 --- to warn about for them in the first place.
 ---
 ---@param raw treemotion.Configuration The user's own configuration, unresolved.

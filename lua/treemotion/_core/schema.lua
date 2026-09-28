@@ -1,12 +1,12 @@
 --- A declarative description of every `treemotion.Configuration` value.
 ---
---- `M.SCHEMA` mirrors the shape of `configuration.lua`'s `_DEFAULTS`: each
+--- `M.SCHEMA` mirrors the shape of the default configuration: each
 --- section is a table of named fields, and each field is a check plus the
 --- human-readable description `:checkhealth` shows when a value fails it.
 --- `M.get_issues` walks it, so adding a configuration value means adding
 --- one line here, not another hand-written `vim.validate` call in
 --- `health.lua`. `spec/treemotion/configuration_spec.lua` checks that the
---- schema and `_DEFAULTS` declare exactly the same values, so the two can't
+--- schema and the defaults declare exactly the same values, so the two can't
 --- drift apart.
 ---
 --- Fields are stored as ordered `{ name, node }` pairs, not as a map, so
