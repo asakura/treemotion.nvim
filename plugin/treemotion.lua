@@ -18,7 +18,9 @@ end
 
 cmdparse.create_user_command(_SUBCOMMANDS, _PREFIX)
 
-for _, name in ipairs({ "w", "e", "b", "ge", "W", "E", "B", "gE" }) do
+local constant = require("treemotion._commands.motion.constant")
+
+for _, name in ipairs(constant.MOTION_NAMES) do
     vim.keymap.set({ "n", "x", "o" }, string.format("<Plug>(TreeMotion%s)", name), function()
         local configuration = require("treemotion._core.configuration")
         local treemotion = require("treemotion")

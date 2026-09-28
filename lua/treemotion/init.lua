@@ -23,76 +23,84 @@ function M.setup(opts)
     configuration.merge_data(opts)
 end
 
---- Move the cursor like `w`: to the start of the next treesitter leaf.
+--- Move the cursor like `w`: to the start of the next word -- a treesitter
+--- leaf, or a naming-convention sub-word inside one (`commands.motion.small`).
 ---
 ---@param count number?
----    A 1-or-more value. How many leaves to move over.
+---    A 1-or-more value. How many words to move over.
 ---
 function M.run_motion_w(count)
-    motion_runner.run_w(count)
+    motion_runner.run("w", count)
 end
 
---- Move the cursor like `ge`: to the end of the previous treesitter leaf.
+--- Move the cursor like `ge`: to the end of the previous word -- a treesitter
+--- leaf, or a naming-convention sub-word inside one (`commands.motion.small`).
 ---
 ---@param count number?
----    A 1-or-more value. How many leaves to move over.
+---    A 1-or-more value. How many words to move over.
 ---
 function M.run_motion_ge(count)
-    motion_runner.run_ge(count)
+    motion_runner.run("ge", count)
 end
 
---- Move the cursor like `e`: to the end of the current or next treesitter leaf.
+--- Move the cursor like `e`: to the end of the current or next word -- a
+--- treesitter leaf, or a naming-convention sub-word inside one (`commands.motion.small`).
 ---
 ---@param count number?
----    A 1-or-more value. How many leaves to move over.
+---    A 1-or-more value. How many words to move over.
 ---
 function M.run_motion_e(count)
-    motion_runner.run_e(count)
+    motion_runner.run("e", count)
 end
 
---- Move the cursor like `b`: to the start of the current or previous treesitter leaf.
+--- Move the cursor like `b`: to the start of the current or previous word -- a
+--- treesitter leaf, or a naming-convention sub-word inside one (`commands.motion.small`).
 ---
 ---@param count number?
----    A 1-or-more value. How many leaves to move over.
+---    A 1-or-more value. How many words to move over.
 ---
 function M.run_motion_b(count)
-    motion_runner.run_b(count)
+    motion_runner.run("b", count)
 end
 
---- Move the cursor like `W`: to the start of the next run of contiguous treesitter leaves.
+--- Move the cursor like `W`: to the start of the next WORD -- a run of
+--- contiguous treesitter leaves (split further only if `commands.motion.big.enabled`).
 ---
 ---@param count number?
----    A 1-or-more value. How many runs to move over.
+---    A 1-or-more value. How many WORDs to move over.
 ---
 function M.run_motion_W(count)
-    motion_runner.run_W(count)
+    motion_runner.run("W", count)
 end
 
---- Move the cursor like `gE`: to the end of the previous run of contiguous treesitter leaves.
+--- Move the cursor like `gE`: to the end of the previous WORD -- a run of
+--- contiguous treesitter leaves (split further only if `commands.motion.big.enabled`).
 ---
 ---@param count number?
----    A 1-or-more value. How many runs to move over.
+---    A 1-or-more value. How many WORDs to move over.
 ---
 function M.run_motion_gE(count)
-    motion_runner.run_gE(count)
+    motion_runner.run("gE", count)
 end
 
---- Move the cursor like `E`: to the end of the current or next run of contiguous treesitter leaves.
+--- Move the cursor like `E`: to the end of the current or next WORD -- a run of
+--- contiguous treesitter leaves (split further only if `commands.motion.big.enabled`).
 ---
 ---@param count number?
----    A 1-or-more value. How many runs to move over.
+---    A 1-or-more value. How many WORDs to move over.
 ---
 function M.run_motion_E(count)
-    motion_runner.run_E(count)
+    motion_runner.run("E", count)
 end
 
---- Move the cursor like `B`: to the start of the current or previous run of contiguous treesitter leaves.
+--- Move the cursor like `B`: to the start of the current or previous WORD -- a run of
+--- contiguous treesitter leaves (split further only if `commands.motion.big.enabled`).
 ---
 ---@param count number?
----    A 1-or-more value. How many runs to move over.
+---    A 1-or-more value. How many WORDs to move over.
 ---
 function M.run_motion_B(count)
-    motion_runner.run_B(count)
+    motion_runner.run("B", count)
 end
 
 return M
