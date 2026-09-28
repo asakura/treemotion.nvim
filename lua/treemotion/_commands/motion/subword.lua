@@ -214,7 +214,7 @@ end
 --- and the run-length walk below advances one whole character at a time. No
 --- real grammar this plugin has been verified against actually produces a
 --- multi-byte comment-marker character, but this keeps the guarantee exact
---- -- `text:sub(continuation + 1, ...)` in `_split` always lands on a
+--- -- `text:sub(continuation + 1, ...)` in `M.split` always lands on a
 --- character boundary -- rather than merely "safe in every case tested so far."
 ---
 --- The run-length walk special-cases a 1-byte `char` (an ordinary ASCII
@@ -287,7 +287,7 @@ end
 --- paragraph, confirmed against Neovim's own bundled `markdown_inline`
 --- grammar: a whole paragraph parses as one leaf whose prose text has no
 --- per-word node of its own at all, see this module's docstring) still get
---- split word-by-word across every line it spans, instead of `_split`/
+--- split word-by-word across every line it spans, instead of `M.split`/
 --- `_split_run_segment` falling back to one giant unit the moment the leaf
 --- (or run) turns out to be genuinely multi-row -- the fallback that's
 --- still correct for genuinely atomic multi-row *code* content (a Lua long
@@ -483,6 +483,24 @@ local function _split_text(
     return units
 end
 
+--- Wrap `fn` so each call logs how many units it produced, at debug level.
+---
+---@generic F: function
+---@param name string The public function's name, for the log message.
+---@param fn F The function doing the actual work, returning `treemotion.SubwordUnit[]`.
+---@param describe_args fun(...: any): string Render `fn`'s arguments for the log message.
+---@return F # `fn`, plus logging.
+---
+local function _logged(name, fn, describe_args)
+    return function(...)
+        local units = fn(...)
+
+        _LOGGER:fmt_debug("%s(%s) -> %s unit(s).", name, describe_args(...), #units)
+
+        return units
+    end
+end
+
 --- Split `node`'s text into sub-word units, per `commands.motion.small`.
 ---
 --- Two passes narrow `node` down to the text that's actually eligible to
@@ -507,7 +525,7 @@ end
 ---    entirely a dropped (`"skip"`) delimiter run with no other content;
 ---    otherwise `node`'s full span if nothing else splits it.
 ---
-local function _split(node)
+M.split = _logged("split", function(node)
     if classify.is_insignificant(node) then
         return {}
     end
@@ -563,22 +581,11 @@ local function _split(node)
         "small",
         comment_marker_characters
     )
-end
-
---- Split `node`'s text into sub-word units, per `commands.motion.small` --
---- logging wrapper around `_split`.
----
----@param node TSNode Any leaf (see `_commands.motion.leaf`).
----@return treemotion.SubwordUnit[] # See `_split`'s docstring.
----
-function M.split(node)
-    local units = _split(node)
+end, function(node)
     local row, column = node:start()
 
-    _LOGGER:fmt_debug("split(%s at %s:%s) -> %s unit(s).", node:type(), row, column, #units)
-
-    return units
-end
+    return string.format("%s at %s:%s", node:type(), row, column)
+end)
 
 --- Break the run from `start_node` to `end_node` into maximal stretches of
 --- leaves that all share the same `classify.is_prose` classification.
@@ -676,7 +683,7 @@ local function _split_run_segment(segment, group, comment_marker_characters)
         if not segment.is_prose then
             -- Genuinely multi-row, non-prose content; sub-word splitting
             -- only makes sense within a single line for code-shaped runs --
-            -- see `_split`'s identical branch for why multi-row *prose*
+            -- see `M.split`'s identical branch for why multi-row *prose*
             -- runs fall through below instead.
             return { _new_unit(start_row, start_col, end_row, end_col) }
         end
@@ -728,7 +735,7 @@ end
 ---    (`"skip"`) delimiter run with no other content -- same as `M.split`, see `_split_text`'s docstring;
 ---    otherwise the run's full (trimmed) span if nothing else splits it.
 ---
-local function _split_run(start_node, end_node)
+M.split_run = _logged("split_run", function(start_node, end_node)
     local start_row, start_col = start_node:start()
     local end_row, end_col = end_node:end_()
 
@@ -754,31 +761,11 @@ local function _split_run(start_node, end_node)
     end
 
     return units
-end
-
---- Split the contiguous run from `start_node` to `end_node`'s text into
---- sub-word units, per `commands.motion.big` -- logging wrapper around `_split_run`.
----
----@param start_node TSNode The run's first leaf (e.g. `leaf.run_start(node)`).
----@param end_node TSNode The run's last leaf (e.g. `leaf.run_end(node)`).
----@return treemotion.SubwordUnit[] # See `_split_run`'s docstring.
----
-function M.split_run(start_node, end_node)
-    local units = _split_run(start_node, end_node)
+end, function(start_node, end_node)
     local start_row, start_col = start_node:start()
     local end_row, end_col = end_node:end_()
 
-    _LOGGER:fmt_debug(
-        "split_run(%s at %s:%s -> %s:%s) -> %s unit(s).",
-        start_node:type(),
-        start_row,
-        start_col,
-        end_row,
-        end_col,
-        #units
-    )
-
-    return units
-end
+    return string.format("%s at %s:%s -> %s:%s", start_node:type(), start_row, start_col, end_row, end_col)
+end)
 
 return M

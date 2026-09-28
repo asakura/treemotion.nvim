@@ -10,6 +10,7 @@
 > | `leaf.lua`'s `_injection_at` | `injection.injected_content` |
 > | `leaf.lua`'s `_within_piece` | `injection.within_piece` |
 > | `leaf.lua`'s `_owning_ltree`, `_piece_at`, `_merge_contiguous` | same names, now private to `injection.lua` |
+> | `leaf.lua`'s `_current_leaf`, `_next_leaf`, `_previous_leaf`, `_run_start`, `_run_end` | gone: `M.current_leaf` etc. are now defined once, wrapped by a `_logged` helper |
 
 Status: **resolved and shipped.** Attempts 3 and 4 (below) looked like a dead
 end, but the actual root cause of their regression turned out to be a
