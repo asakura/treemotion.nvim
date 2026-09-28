@@ -9,8 +9,6 @@ local _LOGGER = logging.get_logger("treemotion._core.configuration")
 
 local M = {}
 
-vim.g.loaded_treemotion = false
-
 -- NOTE: `M.DATA` starts empty and is always filled out by
 -- `M.initialize_data_if_needed()` before any other function in this module
 -- reads it, so the "missing `logging`" warning below is a false positive.
@@ -263,6 +261,10 @@ local _OPTIONAL_INSIGNIFICANT_CHARACTERS = {
 }
 
 --- Setup `treemotion` for the first time, if needed.
+---
+--- `vim.g.loaded_treemotion` starts out unset (`nil`), which reads the same
+--- as `false` here; this is the only place that sets it.
+---
 function M.initialize_data_if_needed()
     if vim.g.loaded_treemotion then
         return
@@ -292,13 +294,13 @@ end
 --- `M.DATA` with nothing produces a value equal to `M.DATA` itself, just a
 --- freshly (and, for `commands.motion`'s nested tables, repeatedly) deep-copied
 --- one -- pure waste on the only way `_commands.motion.subword` ever calls
---- this (no override, several times per leaf/run split, i.e. several times
---- per motion step). `M.DATA` is safe to hand back directly here: every
---- no-override caller only reads it (`_commands.motion.subword`'s `_rules`/
---- `_backtick_identifiers_enabled`/`split_run`), and the one caller that
---- does mutate configuration (`M.merge_data`) reassigns `M.DATA` wholesale
---- rather than mutating the table in place, so an old reference already
---- handed out is never surprised by a later merge.
+--- this (no override, once per motion, see `_commands.motion.settings`).
+--- `M.DATA` is safe to hand back directly here: every no-override caller
+--- only reads it, and every function that changes configuration
+--- (`M.merge_data`, `M.set_hints`, `M.toggle_hints`) replaces `M.DATA`
+--- with a new table rather than editing it in place, so a reference
+--- already handed out never sees a later change. Callers must not edit
+--- the returned table themselves.
 ---
 ---@param data treemotion.Configuration? All extra customizations for this plugin.
 ---@return treemotion.ResolvedConfiguration # The configuration with 100% filled out values.
@@ -473,7 +475,9 @@ end
 function M.set_hints(kind)
     M.initialize_data_if_needed()
 
-    M.DATA.hints = kind
+    -- Replace `M.DATA` rather than editing it, so a table `M.resolve_data()`
+    -- already handed out never changes underneath its holder.
+    M.DATA = vim.tbl_extend("force", M.DATA, { hints = kind })
 end
 
 --- Turn `kind` on if it isn't already active, otherwise turn all hints off.
@@ -484,12 +488,10 @@ end
 ---@param kind treemotion.HintKind Which hints to toggle. e.g. `"word_boundaries"`.
 ---
 function M.toggle_hints(kind)
-    M.initialize_data_if_needed()
-
-    if M.DATA.hints == kind then
-        M.DATA.hints = hints_constant.Kind.none
+    if M.resolve_data().hints == kind then
+        M.set_hints(hints_constant.Kind.none)
     else
-        M.DATA.hints = kind
+        M.set_hints(kind)
     end
 end
 

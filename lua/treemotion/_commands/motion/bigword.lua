@@ -24,6 +24,8 @@ local unit = require("treemotion._commands.motion.unit")
 
 ---@alias treemotion.BigWordUnit treemotion.MotionUnit
 
+local M = {}
+
 --- Whether every leaf in the run from `run_start` to `run_end` is
 --- `classify.is_insignificant` -- i.e. the whole run is punctuation the user
 --- has configured as invisible (`commands.motion.insignificant_characters`),
@@ -39,13 +41,14 @@ local unit = require("treemotion._commands.motion.unit")
 ---
 ---@param run_start TSNode The run's first leaf.
 ---@param run_end TSNode The run's last leaf.
+---@param characters string[]? The current language's insignificant leaf texts.
 ---@return boolean
 ---
-local function _run_is_insignificant(run_start, run_end)
+local function _run_is_insignificant(run_start, run_end, characters)
     local node = run_start
 
     while true do
-        if not classify.is_insignificant(node) then
+        if not classify.is_insignificant(node, characters) then
             return false
         end
 
@@ -77,16 +80,17 @@ end
 ---@param node TSNode? Where to start looking.
 ---@param forward boolean Search after `node` (`leaf.next_leaf` off each empty run's end) or
 ---    before it (`leaf.previous_leaf` off each empty run's start).
+---@param settings treemotion.SplitSettings Passed to `subword.split_run`.
 ---@return TSNode?, treemotion.SubwordUnit[]? # The first nonempty, significant
 ---    run's *start* leaf, and its units -- both `nil` if none remain.
 ---
-local function _first_nonempty_split(node, forward)
+local function _first_nonempty_split(node, forward, settings)
     while node do
         local run_start = leaf.run_start(node)
         local run_end = leaf.run_end(node)
 
-        if not _run_is_insignificant(run_start, run_end) then
-            local units = subword.split_run(run_start, run_end)
+        if not _run_is_insignificant(run_start, run_end, settings.insignificant_characters) then
+            local units = subword.split_run(run_start, run_end, settings)
 
             if #units > 0 then
                 return run_start, units
@@ -108,8 +112,20 @@ local function _after_run(run_start)
     return leaf.next_leaf(leaf.run_end(run_start))
 end
 
-return unit.new_source({
-    logger = "treemotion._commands.motion.bigword",
-    first_nonempty = _first_nonempty_split,
-    after = _after_run,
-})
+--- Build a `treemotion._UnitSource` stepping through `W`/`E`/`B`/`gE` units.
+---
+---@param settings treemotion.SplitSettings `commands.motion.big`'s settings
+---    (see `_commands.motion.settings.resolve`).
+---@return treemotion._UnitSource
+---
+function M.new_source(settings)
+    return unit.new_source({
+        logger = "treemotion._commands.motion.bigword",
+        first_nonempty = function(node, forward)
+            return _first_nonempty_split(node, forward, settings)
+        end,
+        after = _after_run,
+    })
+end
+
+return M

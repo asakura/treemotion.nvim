@@ -27,6 +27,7 @@ local logging = require("mega.logging")
 local codepoint = require("treemotion._commands.motion.codepoint")
 local leaf = require("treemotion._commands.motion.leaf")
 local bigword = require("treemotion._commands.motion.bigword")
+local settings = require("treemotion._commands.motion.settings")
 local word = require("treemotion._commands.motion.word")
 
 local _LOGGER = logging.get_logger("treemotion._commands.motion.runner")
@@ -120,10 +121,11 @@ end
 
 --- The unit-stepping API `_commands.motion.word` and `_commands.motion.bigword` share.
 ---
---- Every `_move_*` function below takes one of those two modules as its
---- `units` argument, so each of the four shapes is implemented once and
---- serves both `w`/`e`/`b`/`ge` and `W`/`E`/`B`/`gE`. Both modules build
---- theirs with `_commands.motion.unit.new_source`.
+--- Every `_move_*` function below takes a source built by one of those two
+--- modules' `new_source` as its `units` argument, so each of the four
+--- shapes is implemented once and serves both `w`/`e`/`b`/`ge` and
+--- `W`/`E`/`B`/`gE`. Both modules build theirs with
+--- `_commands.motion.unit.new_source`.
 ---
 ---@class treemotion._UnitSource
 ---@field current_unit fun(forward: boolean): treemotion.MotionUnit?
@@ -139,7 +141,7 @@ end
 --- `bigword.current_unit`/`subword.split_run`). Either way, the gap
 --- substitution rule applies -- see `_is_cursor_inside`.
 ---
----@param units treemotion._UnitSource `_commands.motion.word` or `_commands.motion.bigword`.
+---@param units treemotion._UnitSource From `word.new_source` or `bigword.new_source`.
 ---@param count integer How many units to move over.
 ---
 local function _move_forward_to_start(units, count)
@@ -168,7 +170,7 @@ end
 ---
 --- Same gap substitution rule as `_move_forward_to_start` -- see `_is_cursor_inside`.
 ---
----@param units treemotion._UnitSource `_commands.motion.word` or `_commands.motion.bigword`.
+---@param units treemotion._UnitSource From `word.new_source` or `bigword.new_source`.
 ---@param count integer How many units to move over.
 ---
 local function _move_backward_to_end(units, count)
@@ -195,7 +197,7 @@ end
 
 --- `e`/`E`-shape move: advance to the end of the current unit, or the next one if already there.
 ---
----@param units treemotion._UnitSource `_commands.motion.word` or `_commands.motion.bigword`.
+---@param units treemotion._UnitSource From `word.new_source` or `bigword.new_source`.
 ---@param count integer How many units to move over.
 ---
 local function _move_forward_to_end(units, count)
@@ -220,7 +222,7 @@ end
 
 --- `b`/`B`-shape move: retreat to the start of the current unit, or the previous one if already there.
 ---
----@param units treemotion._UnitSource `_commands.motion.word` or `_commands.motion.bigword`.
+---@param units treemotion._UnitSource From `word.new_source` or `bigword.new_source`.
 ---@param count integer How many units to move over.
 ---
 local function _move_backward_to_start(units, count)
@@ -245,7 +247,9 @@ end
 
 ---@class treemotion._Motion
 ---@field move fun(units: treemotion._UnitSource, count: integer): nil One of the `_move_*` helpers above.
----@field units treemotion._UnitSource `_commands.motion.word` or `_commands.motion.bigword`.
+---@field units {new_source: fun(settings: treemotion.SplitSettings): treemotion._UnitSource}
+---    `_commands.motion.word` or `_commands.motion.bigword`.
+---@field group "small"|"big" Which `commands.motion` group configures `units`.
 
 --- Every motion, by its Vim-facing name (see `constant.MOTION_NAMES`).
 ---
@@ -256,14 +260,14 @@ end
 ---
 ---@type table<string, treemotion._Motion>
 local _MOTIONS = {
-    w = { move = _move_forward_to_start, units = word },
-    ge = { move = _move_backward_to_end, units = word },
-    e = { move = _move_forward_to_end, units = word },
-    b = { move = _move_backward_to_start, units = word },
-    W = { move = _move_forward_to_start, units = bigword },
-    gE = { move = _move_backward_to_end, units = bigword },
-    E = { move = _move_forward_to_end, units = bigword },
-    B = { move = _move_backward_to_start, units = bigword },
+    w = { move = _move_forward_to_start, units = word, group = "small" },
+    ge = { move = _move_backward_to_end, units = word, group = "small" },
+    e = { move = _move_forward_to_end, units = word, group = "small" },
+    b = { move = _move_backward_to_start, units = word, group = "small" },
+    W = { move = _move_forward_to_start, units = bigword, group = "big" },
+    gE = { move = _move_backward_to_end, units = bigword, group = "big" },
+    E = { move = _move_forward_to_end, units = bigword, group = "big" },
+    B = { move = _move_backward_to_start, units = bigword, group = "big" },
 }
 
 --- Run the motion called `name`, logging the cursor's position before and after.
@@ -273,6 +277,10 @@ local _MOTIONS = {
 --- motions with one implementation, and reports exactly what a user would
 --- want to reproduce a "cursor didn't land where I expected" report: which
 --- motion ran, with what `count`, from where, to where.
+---
+--- The configuration is resolved here, once per motion (see
+--- `_commands.motion.settings`), and handed down to the splitter, so a
+--- `count` of several units reads it only once.
 ---
 ---@param name string The motion's Vim-facing name (`"w"`, `"gE"`, ...).
 ---@param count number? A 1-or-more value. How many units to move over.
@@ -290,7 +298,7 @@ function M.run(name, count)
 
     _LOGGER:fmt_debug('Running treemotion motion "%s" (count=%s) from %s:%s.', name, count, start_row, start_column)
 
-    motion.move(motion.units, count)
+    motion.move(motion.units.new_source(settings.resolve(motion.group)), count)
 
     local end_row, end_column = leaf.cursor_position()
 

@@ -344,6 +344,41 @@ describe("get_insignificant_characters", function()
     end)
 end)
 
+describe("hints", function()
+    local _snapshot
+
+    before_each(function()
+        _snapshot = configuration_.DATA
+    end)
+
+    after_each(function()
+        configuration_.DATA = _snapshot
+    end)
+
+    it("#set_hints replaces the configuration instead of editing a table already handed out", function()
+        local before = configuration_.resolve_data()
+        local hints = before.hints
+
+        configuration_.set_hints("word_boundaries")
+
+        assert.equal(hints, before.hints)
+        assert.equal("word_boundaries", configuration_.resolve_data().hints)
+    end)
+
+    it("#toggle_hints turns a kind on, then off, without editing a table already handed out", function()
+        configuration_.set_hints("none")
+        local before = configuration_.resolve_data()
+
+        configuration_.toggle_hints("motions")
+        local toggled_on = configuration_.resolve_data()
+        configuration_.toggle_hints("motions")
+
+        assert.equal("none", before.hints)
+        assert.equal("motions", toggled_on.hints)
+        assert.equal("none", configuration_.resolve_data().hints)
+    end)
+end)
+
 ---@diagnostic disable: assign-type-mismatch
 ---@diagnostic disable: missing-fields
 describe("bad configuration - commands", function()

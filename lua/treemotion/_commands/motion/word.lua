@@ -18,6 +18,8 @@ local unit = require("treemotion._commands.motion.unit")
 
 ---@alias treemotion.WordUnit treemotion.MotionUnit
 
+local M = {}
+
 --- Walk from `node` in `forward`'s direction until finding a leaf
 --- `subword.split()` actually produces units for.
 ---
@@ -32,13 +34,14 @@ local unit = require("treemotion._commands.motion.unit")
 ---
 ---@param node TSNode? Where to start looking.
 ---@param forward boolean Search after `node` (`leaf.next_leaf`) or before it (`leaf.previous_leaf`).
+---@param settings treemotion.SplitSettings Passed to `subword.split`.
 ---@return TSNode?, treemotion.SubwordUnit[]? # The first leaf with real
 ---    units, and its units -- both `nil` if none remain.
-local function _first_nonempty_split(node, forward)
+local function _first_nonempty_split(node, forward, settings)
     local step = forward and leaf.next_leaf or leaf.previous_leaf
 
     while node do
-        local units = subword.split(node)
+        local units = subword.split(node, settings)
 
         if #units > 0 then
             return node, units
@@ -50,8 +53,20 @@ local function _first_nonempty_split(node, forward)
     return nil, nil
 end
 
-return unit.new_source({
-    logger = "treemotion._commands.motion.word",
-    first_nonempty = _first_nonempty_split,
-    after = leaf.next_leaf,
-})
+--- Build a `treemotion._UnitSource` stepping through `w`/`e`/`b`/`ge` units.
+---
+---@param settings treemotion.SplitSettings `commands.motion.small`'s settings
+---    (see `_commands.motion.settings.resolve`).
+---@return treemotion._UnitSource
+---
+function M.new_source(settings)
+    return unit.new_source({
+        logger = "treemotion._commands.motion.word",
+        first_nonempty = function(node, forward)
+            return _first_nonempty_split(node, forward, settings)
+        end,
+        after = leaf.next_leaf,
+    })
+end
+
+return M
