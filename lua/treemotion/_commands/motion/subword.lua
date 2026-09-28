@@ -1,12 +1,16 @@
 --- Split a treesitter leaf's (`M.split`), or a whole run's (`M.split_run`),
 --- text into case-convention-aware sub-word units.
 ---
---- `M.split` backs `w`/`e`/`b`/`ge` (see `_commands.motion.word`), reading
---- `commands.motion.small`. `M.split_run` backs `W`/`E`/`B`/`gE` (see
---- `_commands.motion.bigword`), reading `commands.motion.big` -- but only
---- once `commands.motion.big.enabled` is `true`; by default it always
---- returns one unit spanning the whole run, ignoring case entirely, the
---- same way real Vim's `W` ignores punctuation inside a WORD.
+--- `M.split` backs `w`/`e`/`b`/`ge` (see `_commands.motion.word`), given
+--- `commands.motion.small`'s settings. `M.split_run` backs `W`/`E`/`B`/`gE`
+--- (see `_commands.motion.bigword`), given `commands.motion.big`'s -- but
+--- only splits once `commands.motion.big.enabled` is `true`; by default it
+--- always returns one unit spanning the whole run, ignoring case entirely,
+--- the same way real Vim's `W` ignores punctuation inside a WORD.
+---
+--- Neither reads the configuration itself: both take a
+--- `treemotion.SplitSettings`, which `_commands.motion.settings.resolve`
+--- builds once per motion.
 ---
 --- This module only orchestrates: it narrows a leaf or run down to the
 --- text that's eligible to split, turns offsets back into buffer
@@ -45,7 +49,6 @@
 local logging = require("mega.logging")
 
 local codepoint = require("treemotion._commands.motion.codepoint")
-local configuration = require("treemotion._core.configuration")
 local case = require("treemotion._commands.motion.case")
 local classify = require("treemotion._commands.motion.classify")
 local delimiters = require("treemotion._commands.motion.delimiters")
@@ -56,57 +59,6 @@ local span = require("treemotion._commands.motion.span")
 local _LOGGER = logging.get_logger("treemotion._commands.motion.subword")
 
 local M = {}
-
---- What every `_split_text` call within one `M.split`/`M.split_run` call shares.
----@class treemotion._SubwordContext
----@field group "small"|"big" Which motion family's configuration to read.
----@field comment_marker_characters table<string, true> This language's comment-marker punctuation (see
----    `classify.comment_marker_characters`).
-
---- Read the user's splitting configuration for `is_prose`'s context, within
---- `group` ("small" for `w`/`e`/`b`/`ge`, "big" for `W`/`E`/`B`/`gE`).
----
----@param is_prose boolean Whether to read `.prose` or `.code`.
----@param group "small"|"big" Which motion family's configuration to read.
----@return treemotion.ConfigurationMotionSubwordRules
----
-local function _rules(is_prose, group)
-    -- `assert()`: `commands.motion.small`/`.big` and their `.code`/`.prose`
-    -- are optional in the LuaCATS types (they double as valid partial
-    -- user-override input), but `configuration._DEFAULTS` always fills all
-    -- of them in, so `resolve_data()`'s result always has them.
-    local motion_group = assert(configuration.resolve_data().commands.motion[group])
-
-    return assert(is_prose and motion_group.prose or motion_group.code)
-end
-
---- Whether `commands.motion[group].backtick_identifiers` is enabled.
----
----@param group "small"|"big" Which motion family's configuration to read.
----@return boolean
----
-local function _backtick_identifiers_enabled(group)
-    -- `assert()`: see `_rules`'s identical use above -- `commands.motion[group]`
-    -- is optional in the LuaCATS types, but `configuration._DEFAULTS` always
-    -- fills it in, so `resolve_data()`'s result always has it. Don't `assert()`
-    -- the boolean field itself, though (unlike `_rules`' table) -- `false` is
-    -- a legitimate value here, and `assert(false)` would raise.
-    local motion_group = assert(configuration.resolve_data().commands.motion[group])
-
-    return motion_group.backtick_identifiers
-end
-
---- Build the `treemotion._SubwordContext` for one `M.split`/`M.split_run` call.
----
----@param group "small"|"big" Which motion family's configuration to read.
----@return treemotion._SubwordContext
----
-local function _context(group)
-    return {
-        group = group,
-        comment_marker_characters = classify.comment_marker_characters(classify.current_language()),
-    }
-end
 
 --- Trim `text`'s trailing blank characters, and find where what's left ends.
 ---
@@ -277,14 +229,13 @@ end
 ---
 ---@param text string The text to split (already narrowed to what's eligible -- see `M.split`/`M.split_run`).
 ---@param fallback treemotion.SubwordUnit Starts where `text` does; returned as-is if `text` produces no words.
----@param is_prose boolean Whether to read `.prose` or `.code` from `commands.motion[context.group]`.
----@param context treemotion._SubwordContext
+---@param is_prose boolean Whether to use `settings.prose` or `settings.code`.
+---@param settings treemotion.SplitSettings
 ---@return treemotion.SubwordUnit[]
 ---
-local function _split_text(text, fallback, is_prose, context)
-    local rules = _rules(is_prose, context.group)
-    local words = is_prose
-            and prose.words(text, _backtick_identifiers_enabled(context.group), rules.opaque_token_min_length)
+local function _split_text(text, fallback, is_prose, settings)
+    local rules = is_prose and settings.prose or settings.code
+    local words = is_prose and prose.words(text, settings.backtick_identifiers, rules.opaque_token_min_length)
         or { { text = text, offset = 1 } }
 
     if #words == 0 then
@@ -306,23 +257,12 @@ local function _split_text(text, fallback, is_prose, context)
         return span.new(unit_start_row, unit_start_col, unit_end_row, unit_end_col)
     end
 
-    -- Fetched lazily, at most once, only if a backtick-identifier word is
-    -- actually encountered below -- most prose leaves have none, and
-    -- `_rules(false, group)` is an extra `resolve_data()` walk not worth
-    -- paying for on every prose leaf regardless.
-    local identifier_rules
-
     local units = {}
 
     for _, word in ipairs(words) do
-        local word_rules = rules
+        local word_rules = word.is_identifier and settings.code or rules
 
-        if word.is_identifier then
-            identifier_rules = identifier_rules or _rules(false, context.group)
-            word_rules = identifier_rules
-        end
-
-        for _, delimited in ipairs(delimiters.split(word.text, word_rules, context.comment_marker_characters)) do
+        for _, delimited in ipairs(delimiters.split(word.text, word_rules, settings.comment_marker_characters)) do
             local offset = word.offset + delimited.offset - 1
 
             if case.looks_like_hash(delimited.text, word_rules.opaque_token_min_length) then
@@ -357,7 +297,7 @@ local function _logged(name, fn, describe_args)
     end
 end
 
---- Split `node`'s text into sub-word units, per `commands.motion.small`.
+--- Split `node`'s text into sub-word units, per `settings` (`commands.motion.small`'s).
 ---
 --- Two passes narrow `node` down to the text that's actually eligible to
 --- split, before handing off to `_split_text`. `_trim_span` first
@@ -376,13 +316,14 @@ end
 --- already skips punctuation runs collapsed into a single stop elsewhere.
 ---
 ---@param node TSNode Any leaf (see `_commands.motion.leaf`).
+---@param settings treemotion.SplitSettings See `_commands.motion.settings.resolve`.
 ---@return treemotion.SubwordUnit[] # Empty when `node` is `classify.is_insignificant`,
 ---    entirely a punctuation-run continuation of the leaf before it, or
 ---    entirely a dropped (`"skip"`) delimiter run with no other content;
 ---    otherwise `node`'s full span if nothing else splits it.
 ---
-M.split = _logged("split", function(node)
-    if classify.is_insignificant(node) then
+M.split = _logged("split", function(node, settings)
+    if classify.is_insignificant(node, settings.insignificant_characters) then
         return {}
     end
 
@@ -423,7 +364,7 @@ M.split = _logged("split", function(node)
         text_start_col = start_col + continuation
     end
 
-    return _split_text(text, span.new(start_row, text_start_col, end_row, end_col), is_prose, _context("small"))
+    return _split_text(text, span.new(start_row, text_start_col, end_row, end_col), is_prose, settings)
 end, function(node)
     local row, column = node:start()
 
@@ -503,10 +444,10 @@ end
 --- in it, ...).
 ---
 ---@param segment {is_prose: boolean, start_row: integer, start_col: integer, end_row: integer, end_col: integer}
----@param context treemotion._SubwordContext
+---@param settings treemotion.SplitSettings
 ---@return treemotion.SubwordUnit[]
 ---
-local function _split_run_segment(segment, context)
+local function _split_run_segment(segment, settings)
     local start_row, start_col = segment.start_row, segment.start_col
     local end_row, end_col = segment.end_row, segment.end_col
 
@@ -530,12 +471,12 @@ local function _split_run_segment(segment, context)
         trimmed,
         span.new(start_row, start_col, trimmed_end_row, trimmed_end_col),
         segment.is_prose,
-        context
+        settings
     )
 end
 
 --- Split the contiguous run from `start_node` to `end_node`'s text into
---- sub-word units, per `commands.motion.big` -- the `W`/`E`/`B`/`gE`
+--- sub-word units, per `settings` (`commands.motion.big`'s) -- the `W`/`E`/`B`/`gE`
 --- counterpart to `M.split`.
 ---
 --- A run's leaves are contiguous by construction (see `_commands.motion.leaf`'s
@@ -559,15 +500,16 @@ end
 ---
 ---@param start_node TSNode The run's first leaf (e.g. `leaf.run_start(node)`).
 ---@param end_node TSNode The run's last leaf (e.g. `leaf.run_end(node)`).
+---@param settings treemotion.SplitSettings See `_commands.motion.settings.resolve`.
 ---@return treemotion.SubwordUnit[] # Empty when `enabled` is `true` and the whole run is a dropped
 ---    (`"skip"`) delimiter run with no other content -- same as `M.split`, see `_split_text`'s docstring;
 ---    otherwise the run's full (trimmed) span if nothing else splits it.
 ---
-M.split_run = _logged("split_run", function(start_node, end_node)
+M.split_run = _logged("split_run", function(start_node, end_node, settings)
     local start_row, start_col = start_node:start()
     local end_row, end_col = end_node:end_()
 
-    if not configuration.resolve_data().commands.motion.big.enabled then
+    if not settings.enabled then
         -- Deliberately skips `_run_segments`/trimming entirely: that
         -- machinery exists only to make real splitting land on sensible
         -- boundaries, and applying it here too would change `W`/`E`/`B`/`gE`'s
@@ -581,11 +523,10 @@ M.split_run = _logged("split_run", function(start_node, end_node)
         return { span.new(start_row, start_col, end_row, end_col) }
     end
 
-    local context = _context("big")
     local units = {}
 
     for _, segment in ipairs(_run_segments(start_node, end_node)) do
-        vim.list_extend(units, _split_run_segment(segment, context))
+        vim.list_extend(units, _split_run_segment(segment, settings))
     end
 
     return units

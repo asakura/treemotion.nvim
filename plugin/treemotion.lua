@@ -1,5 +1,21 @@
 --- All `treemotion` command definitions.
 
+-- `g:loaded_treemotion` follows Vim's plugin convention (`:help
+-- lua-plugin-filetype`, `usr_41.txt` "NOT LOADING"): if it exists at all,
+-- this file does nothing. That lets users opt out of the plugin from Lua or
+-- Vimscript, and makes sourcing this file a second time a no-op.
+--
+-- `g:` lives in Nvim's own variable store, not in Lua: `vim.g` hands back a
+-- converted copy on every read, so `let g:loaded_treemotion = 0` arrives
+-- here as the number `0`, which Lua treats as true. Check `~= nil`, which
+-- matches Vimscript's `exists("g:loaded_treemotion")`, rather than
+-- truthiness, so every value opts out, `0` and `v:false` included.
+if vim.g.loaded_treemotion ~= nil then
+    return
+end
+
+vim.g.loaded_treemotion = true
+
 local cmdparse = require("mega.cmdparse")
 
 local _PREFIX = "TreeMotion"

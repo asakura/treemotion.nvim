@@ -5,11 +5,11 @@
 --- token the user wants skipped entirely (`M.is_insignificant`), and which
 --- characters count as comment markers in the current language
 --- (`M.comment_marker_characters`). These read treesitter highlight
---- captures, the attached parser's language and the user's configuration,
---- which is what separates this module from the pure string splitters in
---- `_commands.motion.case`/`.prose`/`.delimiters`.
-
-local configuration = require("treemotion._core.configuration")
+--- captures and the attached parser's language, which is what separates
+--- this module from the pure string splitters in
+--- `_commands.motion.case`/`.prose`/`.delimiters`. The per-language
+--- character lists themselves are passed in by the caller (see
+--- `_commands.motion.settings`), not read from the configuration here.
 
 local M = {}
 
@@ -62,7 +62,7 @@ function M.is_prose(node)
     return false
 end
 
---- Look up which single characters count as comment-marker punctuation for `language`.
+--- Turn a language's comment-marker characters into a set.
 ---
 --- Deliberately per-language rather than one fixed global set: the same
 --- punctuation means different, unrelated things in different grammars --
@@ -86,13 +86,13 @@ end
 --- activates automatically for any language in
 --- `configuration.get_comment_markers`'s optional table whose treesitter
 --- parser is actually installed -- no configuration needed for those.
+--- `_commands.motion.settings` does that lookup and passes the result here.
 ---
----@param language string? A treesitter language name (see `M.current_language`), or `nil` if unknown.
+---@param characters string[]? The language's comment markers (see
+---    `configuration.get_comment_markers`), or `nil` if it has none.
 ---@return table<string, true>
 ---
-function M.comment_marker_characters(language)
-    local characters = language and configuration.get_comment_markers(language)
-
+function M.comment_marker_characters(characters)
     if not characters then
         return {}
     end
@@ -181,17 +181,16 @@ end
 --- `_split_run_segment`'s fallback already would have.
 ---
 ---@param node TSNode Any leaf (see `_commands.motion.leaf`).
+---@param characters string[]? The current language's insignificant leaf texts (see
+---    `configuration.get_insignificant_characters`), or `nil` if it has none.
 ---@return boolean
 ---
-function M.is_insignificant(node)
-    if node:named() and M.is_prose(node) then
+function M.is_insignificant(node, characters)
+    if not characters then
         return false
     end
 
-    local language = M.current_language()
-    local characters = language and configuration.get_insignificant_characters(language)
-
-    if not characters then
+    if node:named() and M.is_prose(node) then
         return false
     end
 
