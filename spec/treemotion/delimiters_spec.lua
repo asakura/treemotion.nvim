@@ -14,7 +14,13 @@ local _NONE, _SKIP, _STOP = "none", "skip", "stop"
 ---@param comment_marker_characters table<string, true>?
 ---@return {text: string, offset: integer}[]
 local function _split(text, mode, comment_marker_case, comment_marker_characters)
-    return delimiters.split(text, mode, mode, mode, mode, comment_marker_case or _NONE, comment_marker_characters or {})
+    return delimiters.split(text, {
+        kebab_case = mode,
+        snake_case = mode,
+        colon_case = mode,
+        slash_case = mode,
+        comment_marker_case = comment_marker_case or _NONE,
+    }, comment_marker_characters or {})
 end
 
 describe("delimiters.split", function()
@@ -37,7 +43,13 @@ describe("delimiters.split", function()
     it("reads each delimiter's own mode", function()
         assert.same(
             { { text = "a-b", offset = 1 }, { text = "c", offset = 5 } },
-            delimiters.split("a-b_c", _NONE, _SKIP, _NONE, _NONE, _NONE, {})
+            delimiters.split("a-b_c", {
+                kebab_case = _NONE,
+                snake_case = _SKIP,
+                colon_case = _NONE,
+                slash_case = _NONE,
+                comment_marker_case = _NONE,
+            }, {})
         )
     end)
 
@@ -55,5 +67,18 @@ describe("delimiters.split", function()
 
     it("keeps kebab_case in charge of a bare - run when - isn't a listed marker", function()
         assert.same({ { text = "---", offset = 1 } }, _split("---", _STOP, _SKIP, {}))
+    end)
+
+    it("doesn't modify the rules it's given when comment_marker_case takes over a bare run", function()
+        local rules = {
+            kebab_case = _STOP,
+            snake_case = _STOP,
+            colon_case = _STOP,
+            slash_case = _STOP,
+            comment_marker_case = _SKIP,
+        }
+
+        assert.same({}, delimiters.split("---", rules, { ["-"] = true }))
+        assert.equal(_STOP, rules.kebab_case)
     end)
 end)
