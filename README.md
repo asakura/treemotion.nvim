@@ -618,6 +618,19 @@ loads):
 }
 ```
 
+### Disabling
+
+Like any Vim plugin, `treemotion` doesn't load if `g:loaded_treemotion`
+already exists when its `plugin/treemotion.lua` runs. Set it before plugins
+load, with any value, to turn the plugin off:
+
+```lua
+vim.g.loaded_treemotion = true -- or, in Vimscript: let g:loaded_treemotion = 1
+```
+
+Note that `0` and `v:false` count too: only whether the variable exists
+matters, the same as Vimscript's `exists("g:loaded_treemotion")`.
+
 ### Keymaps
 
 Both families are exposed as `:TreeMotion motion {name} [--count=N]` and as

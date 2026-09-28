@@ -52,6 +52,11 @@ NEW FEATURES                                     *treemotion-new-features*
   recognize, e.g. a typo like `camelCase` for `camel_case`, which would
   otherwise be silently ignored.
 
+- `g:loaded_treemotion` now works as the usual plugin opt-out: if it exists
+  (with any value, `0` and `v:false` included) before `plugin/treemotion.lua`
+  runs, the plugin doesn't load. The plugin sets it itself otherwise, so
+  sourcing that file again is a no-op.
+
 
 ===============================================================================
 BREAKING CHANGES                                 *treemotion-new-breaking*

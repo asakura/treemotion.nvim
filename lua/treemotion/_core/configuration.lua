@@ -17,10 +17,11 @@ local M = {}
 M.DATA = {}
 
 -- Whether `M.initialize_data_if_needed()` has filled out this module's
--- `M.DATA`. Kept module-local, next to the state it guards, rather than read
--- from `vim.g.loaded_treemotion`: a global outlives a reload of this module
--- (e.g. clearing `package.loaded`), and a user may preset it, either of which
--- would skip initialization and leave the fresh `M.DATA` empty.
+-- `M.DATA`. Kept in this module, next to the state it guards, rather than in
+-- a `g:` variable: `g:` lives in Nvim's variable store, not in Lua, so it
+-- would outlive a reload of this module (clearing `package.loaded`) and
+-- leave the fresh `M.DATA` empty. `g:loaded_treemotion` is a separate
+-- concern, the plugin's load guard (see `plugin/treemotion.lua`).
 local _initialized = false
 
 ---@type treemotion.ResolvedConfiguration
@@ -269,9 +270,7 @@ local _OPTIONAL_INSIGNIFICANT_CHARACTERS = {
 
 --- Setup `treemotion` for the first time, if needed.
 ---
---- Runs at most once per load of this module. Also sets
---- `vim.g.loaded_treemotion`, for anyone who wants to check whether
---- treemotion has initialized; this module never reads it back.
+--- Runs at most once per load of this module.
 ---
 function M.initialize_data_if_needed()
     if _initialized then
@@ -281,7 +280,6 @@ function M.initialize_data_if_needed()
     M.DATA = vim.tbl_deep_extend("force", _DEFAULTS, vim.g.treemotion_configuration or {})
 
     _initialized = true
-    vim.g.loaded_treemotion = true
 
     local configuration = M.DATA.logging
 
