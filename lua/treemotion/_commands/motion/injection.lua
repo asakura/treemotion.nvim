@@ -55,7 +55,7 @@ end
 
 --- `TSTree` -> owning `LanguageTree`, populated lazily by `_owning_ltree`.
 ---
---- `leaf.run_start`/`leaf.run_end` call `leaf.next_leaf`/`leaf.previous_leaf` once per leaf in a
+--- `run.run_start`/`run.run_end` call `leaf.next_leaf`/`leaf.previous_leaf` once per leaf in a
 --- run, and each of those calls `_owning_ltree` -- without this cache, a
 --- long run in a heavily-injected buffer would re-walk the *entire*
 --- injection hierarchy from the root once per leaf (O(run_length x
@@ -197,7 +197,7 @@ end
 --- on every buffer edit) unconditionally reassigns `self._regions` to a
 --- *new* table, even when the new content happens to be identical to the
 --- old. So keying on that table's identity is exactly as safe as
---- `_tree_to_ltree` above (and `leaf.lua`'s `_uncovered_text_cache`) keying on `TSTree`/`TSNode`
+--- `_tree_to_ltree` above (and `leaf_shape.lua`'s `_uncovered_text_cache`) keying on `TSTree`/`TSNode`
 --- identity: a stale entry can never be read back, because the table it
 --- would be stale *for* no longer exists (it's simply not the table
 --- `included_regions()` returns anymore, and gets garbage-collected once
@@ -285,7 +285,7 @@ end
 --- in the host buffer (that's how the stitching in `:help
 --- treesitter-language-injections` works even for a combined tree spanning
 --- several disjoint pieces), so comparing raw coordinates against each piece
---- here is enough to tell them apart -- the same way `leaf.is_contiguous` already
+--- here is enough to tell them apart -- the same way `run.is_contiguous` already
 --- compares raw coordinates to tell leaves apart from runs. Pieces come from
 --- `_sorted_pieces` (in turn from `_merge_contiguous`), not
 --- `included_regions()` directly -- see their docstrings for why a raw,

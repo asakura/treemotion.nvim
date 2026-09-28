@@ -20,6 +20,7 @@
 local logging = require("mega.logging")
 
 local leaf = require("treemotion._commands.motion.leaf")
+local position = require("treemotion._commands.motion.position")
 
 local M = {}
 
@@ -170,7 +171,7 @@ function M.new_source(spans)
         -- `assert` narrows it back to non-optional for `_new_unit`/`_index_at`.
         units = assert(units)
 
-        local row, column = leaf.cursor_position()
+        local row, column = position.cursor_position()
 
         return _log(name, _new_unit(node, units, _index_at(units, row, column, forward)))
     end

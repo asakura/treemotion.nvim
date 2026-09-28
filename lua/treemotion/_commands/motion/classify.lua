@@ -174,7 +174,7 @@ end
 --- runs, so a read that would otherwise only ever fail inside
 --- `subword.lua`'s `_split_run_segment`'s own already-guarded call (a leaf's `:end_()`
 --- sitting one row past the buffer's last line, the same rare case
---- `_has_non_blank_between` in `leaf.lua` guards too) can now fail here
+--- `_has_non_blank_between` in `leaf_shape.lua` guards too) can now fail here
 --- first instead. Treating a failed read as "not insignificant" is exactly
 --- right, not just a safe fallback: unreadable text can never match a
 --- configured entry anyway, so this just reaches the same answer
