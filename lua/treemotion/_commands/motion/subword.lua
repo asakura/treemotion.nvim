@@ -59,7 +59,7 @@ local M = {}
 --- no parent/child/sibling links -- a sub-word slice isn't a real tree node,
 --- it's a range `M.split` invents on top of one. Exposing the same
 --- `:start()`/`:end_()` shape a `TSNode` has is what lets `_commands.motion.runner`
---- treat this and a `TSNode` interchangeably (see its `TSNode|treemotion.WordUnit` params).
+--- treat this and a `TSNode` interchangeably (see its `TSNode|treemotion.MotionUnit` params).
 ---@class treemotion.SubwordUnit
 ---@field private _start_row integer
 ---@field private _start_col integer
