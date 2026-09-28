@@ -12,6 +12,7 @@
 > | `leaf.lua`'s `_piece_at`, `_sorted_pieces`, `_merge_contiguous`, `_floor_index` | same names, now private to `injection.lua` |
 > | `subword.lua`'s `_is_prose` | `classify.is_prose` |
 > | `subword.lua`'s `_is_insignificant` | `classify.is_insignificant` |
+> | `leaf.lua`'s `_current_leaf`; `subword.lua`'s `_split`, `_split_run` | gone: `M.current_leaf`, `M.split`, `M.split_run` are now defined once, wrapped by a `_logged` helper |
 
 Status: **three fixed, two measured and rejected.** Follow-on to
 `notes/injection-parse-performance.md`, which covered `parser:parse()`'s own

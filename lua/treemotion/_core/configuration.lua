@@ -295,7 +295,7 @@ end
 --- this (no override, several times per leaf/run split, i.e. several times
 --- per motion step). `M.DATA` is safe to hand back directly here: every
 --- no-override caller only reads it (`_commands.motion.subword`'s `_rules`/
---- `_backtick_identifiers_enabled`/`_split_run`), and the one caller that
+--- `_backtick_identifiers_enabled`/`split_run`), and the one caller that
 --- does mutate configuration (`M.merge_data`) reassigns `M.DATA` wholesale
 --- rather than mutating the table in place, so an old reference already
 --- handed out is never surprised by a later merge.

@@ -323,6 +323,62 @@ local function _leaf_at(ltree, row, column, forward)
     return _nearest_leaf_in_gap(node, row, column, forward)
 end
 
+--- Log `name`'s result at trace level -- shared by every traversal entry
+--- point `_logged` wraps (`M.current_leaf`/`M.next_leaf`/`M.previous_leaf`/
+--- `M.run_start`/`M.run_end`), so a leaf walk's outcome (or lack of one) is
+--- reported the same way no matter which of them produced it. Trace, not
+--- debug, since these can fire many times over for a single motion (once
+--- per leaf a `run_start`/`run_end` walk crosses) -- `mega.logging`'s
+--- default level (`info`) never pays even the varargs-table cost for a call
+--- site that isn't reporting anything, per `Logger:_log_at_level`.
+---
+---@param name string The wrapped function's name (plus any arguments worth reporting), for the log message.
+---@param node TSNode? The result to report.
+---
+local function _log_leaf_result(name, node)
+    if not node then
+        _LOGGER:fmt_trace("%s -> nil.", name)
+
+        return
+    end
+
+    local row, column = node:start()
+
+    _LOGGER:fmt_trace("%s -> %s at %s:%s.", name, node:type(), row, column)
+end
+
+--- Describe `node` the way every `_logged` traversal entry point reports its argument.
+---
+---@param node TSNode
+---@return string # e.g. `"identifier at 3:4"`.
+---
+local function _describe_node(node)
+    return string.format("%s at %s:%s", node:type(), node:start())
+end
+
+--- Wrap `fn` so each call logs its result via `_log_leaf_result`.
+---
+--- Recursive entry points (`M.next_leaf`/`M.previous_leaf`, whose
+--- injection-crossing branch calls itself again on the host node) recurse
+--- through the wrapped function, so each hop across an injection boundary
+--- gets its own log line too, not just the outermost call.
+---
+---@generic F: function
+---@param name string The public function's name, for the log message.
+---@param fn F The function doing the actual work.
+---@param describe_args fun(...: any): string Render `fn`'s arguments for the log message.
+---@return F # `fn`, plus logging.
+---
+local function _logged(name, fn, describe_args)
+    return function(...)
+        local result = fn(...)
+
+        _log_leaf_result(string.format("%s(%s)", name, describe_args(...)), result)
+
+        return result
+    end
+end
+
 --- Find the leaf directly under the cursor, or nearest it.
 ---
 --- `get_node()` can return a node with children instead of a real leaf --
@@ -363,7 +419,7 @@ end
 ---@param forward boolean Off a leaf, prefer the nearest leaf after the cursor over the nearest one before it.
 ---@return TSNode? # The leaf under (or nearest) the cursor, if a parser and a leaf exist that way.
 ---
-local function _current_leaf(forward)
+M.current_leaf = _logged("current_leaf", function(forward)
     -- `get_parser()` returns `nil, message` when no parser can be created on
     -- some Neovim versions, but `error()`s with the same message on others
     -- (e.g. 0.11) -- `pcall` handles both the same way.
@@ -435,44 +491,9 @@ local function _current_leaf(forward)
     end
 
     return _nearest_leaf_in_gap(node, row, column, forward)
-end
-
---- Log `name`'s result at trace level -- shared by every wrapped traversal
---- entry point below (`M.current_leaf`/`M.next_leaf`/`M.previous_leaf`/
---- `M.run_start`/`M.run_end`), so a leaf walk's outcome (or lack of one) is
---- reported the same way no matter which of them produced it. Trace, not
---- debug, since these can fire many times over for a single motion (once
---- per leaf a `run_start`/`run_end` walk crosses) -- `mega.logging`'s
---- default level (`info`) never pays even the varargs-table cost for a call
---- site that isn't reporting anything, per `Logger:_log_at_level`.
----
----@param name string The wrapped function's name (plus any arguments worth reporting), for the log message.
----@param node TSNode? The result to report.
----
-local function _log_leaf_result(name, node)
-    if not node then
-        _LOGGER:fmt_trace("%s -> nil.", name)
-
-        return
-    end
-
-    local row, column = node:start()
-
-    _LOGGER:fmt_trace("%s -> %s at %s:%s.", name, node:type(), row, column)
-end
-
---- Find the leaf directly under the cursor, or nearest it -- logging wrapper around `_current_leaf`.
----
----@param forward boolean Off a leaf, prefer the nearest leaf after the cursor over the nearest one before it.
----@return TSNode? # The leaf under (or nearest) the cursor, if a parser and a leaf exist that way.
----
-function M.current_leaf(forward)
-    local node = _current_leaf(forward)
-
-    _log_leaf_result(string.format("current_leaf(forward=%s)", forward), node)
-
-    return node
-end
+end, function(forward)
+    return string.format("forward=%s", forward)
+end)
 
 --- Read the cursor's position, converted to `TSNode`'s 0-indexed row convention.
 ---
@@ -669,7 +690,7 @@ end
 ---@param node TSNode A leaf (or any node) to start searching from.
 ---@return TSNode? # The next leaf, if `node` isn't the last leaf in the buffer.
 ---
-local function _next_leaf(node)
+M.next_leaf = _logged("next_leaf", function(node)
     local climbed = _climb_next(node)
     local piece, host_ltree = injection.enclosing_piece(node, node:start())
 
@@ -691,24 +712,7 @@ local function _next_leaf(node)
     end
 
     return M.next_leaf(host_node)
-end
-
---- Find the leaf directly after `node`, in document order -- logging wrapper around `_next_leaf`.
----
---- The injection-crossing recursion inside `_next_leaf` calls back into
---- this wrapper (not `_next_leaf` directly), so each hop across an
---- injection boundary gets its own log line too, not just the outermost call.
----
----@param node TSNode A leaf (or any node) to start searching from.
----@return TSNode? # The next leaf, if `node` isn't the last leaf in the buffer.
----
-function M.next_leaf(node)
-    local result = _next_leaf(node)
-
-    _log_leaf_result(string.format("next_leaf(%s at %s:%s)", node:type(), node:start()), result)
-
-    return result
-end
+end, _describe_node)
 
 --- Find the leaf directly before `node`, in document order.
 ---
@@ -722,7 +726,7 @@ end
 ---@param node TSNode A leaf (or any node) to start searching from.
 ---@return TSNode? # The previous leaf, if `node` isn't the first leaf in the buffer.
 ---
-local function _previous_leaf(node)
+M.previous_leaf = _logged("previous_leaf", function(node)
     local climbed = _climb_previous(node)
     local piece, host_ltree = injection.enclosing_piece(node, node:start())
 
@@ -744,22 +748,7 @@ local function _previous_leaf(node)
     end
 
     return M.previous_leaf(host_node)
-end
-
---- Find the leaf directly before `node`, in document order -- logging wrapper around `_previous_leaf`.
----
---- Same recursion-through-the-wrapper reasoning as `M.next_leaf`'s docstring.
----
----@param node TSNode A leaf (or any node) to start searching from.
----@return TSNode? # The previous leaf, if `node` isn't the first leaf in the buffer.
----
-function M.previous_leaf(node)
-    local result = _previous_leaf(node)
-
-    _log_leaf_result(string.format("previous_leaf(%s at %s:%s)", node:type(), node:start()), result)
-
-    return result
-end
+end, _describe_node)
 
 --- Check if `first` ends exactly where `second` starts.
 ---
@@ -789,7 +778,7 @@ end
 ---@param node TSNode Any leaf.
 ---@return TSNode # `node` itself, or a later leaf if the run continues.
 ---
-local function _run_end(node)
+M.run_end = _logged("run_end", function(node)
     local current = node
 
     while true do
@@ -801,20 +790,7 @@ local function _run_end(node)
 
         current = next_
     end
-end
-
---- Find the last leaf in the contiguous run that `node` belongs to -- logging wrapper around `_run_end`.
----
----@param node TSNode Any leaf.
----@return TSNode # `node` itself, or a later leaf if the run continues.
----
-function M.run_end(node)
-    local result = _run_end(node)
-
-    _log_leaf_result(string.format("run_end(%s at %s:%s)", node:type(), node:start()), result)
-
-    return result
-end
+end, _describe_node)
 
 --- Find the first leaf in the contiguous run that `node` belongs to.
 ---
@@ -824,7 +800,7 @@ end
 ---@param node TSNode Any leaf.
 ---@return TSNode # `node` itself, or an earlier leaf if the run continues.
 ---
-local function _run_start(node)
+M.run_start = _logged("run_start", function(node)
     local current = node
 
     while true do
@@ -836,19 +812,6 @@ local function _run_start(node)
 
         current = previous
     end
-end
-
---- Find the first leaf in the contiguous run that `node` belongs to -- logging wrapper around `_run_start`.
----
----@param node TSNode Any leaf.
----@return TSNode # `node` itself, or an earlier leaf if the run continues.
----
-function M.run_start(node)
-    local result = _run_start(node)
-
-    _log_leaf_result(string.format("run_start(%s at %s:%s)", node:type(), node:start()), result)
-
-    return result
-end
+end, _describe_node)
 
 return M

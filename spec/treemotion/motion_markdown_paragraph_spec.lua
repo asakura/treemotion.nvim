@@ -12,7 +12,7 @@
 --- word-by-word).
 ---
 --- That word-splitting used to never run at all once the paragraph wrapped
---- across more than one line, though: `subword.lua`'s `_split()` checked
+--- across more than one line, though: `subword.lua`'s `split()` checked
 --- `start_row ~= end_row` before ever consulting `is_prose`, and -- since
 --- `_single_row_span` can't collapse a leaf whose extra rows hold real
 --- content, not just trailing blanks -- fell back to treating the *entire*
@@ -23,7 +23,7 @@
 --- wasn't: wrapping prose across lines is the normal, common shape for real
 --- markdown, not an edge case.
 ---
---- Fixed by making `_split`/`_split_run_segment` fall through to
+--- Fixed by making `split`/`_split_run_segment` fall through to
 --- `_split_text` for genuinely multi-row *prose* instead of taking the
 --- single-unit fallback, and making `_split_text` itself row/column-aware
 --- (`_multirow_positions`/`_make_unit`) so a unit's start/end can land past

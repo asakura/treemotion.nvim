@@ -163,7 +163,7 @@ describe("motion API - crossing an injection nested inside another injection", f
     -- sitting exactly on that region's start boundary (confirmed against
     -- `root:parse({1, 0, 1, 0})` on this exact fixture -- child ltree
     -- exists but `#ltree:trees() == 0`, i.e. never actually parsed).
-    -- `_current_leaf` (`leaf.lua`) currently avoids this by calling
+    -- `current_leaf` (`leaf.lua`) currently avoids this by calling
     -- `parser:parse(true)`, not a narrow range, so this test passes today
     -- -- its purpose is to fail loudly if a future change narrows that call
     -- to a zero-width (or otherwise sub-one-column) range without also

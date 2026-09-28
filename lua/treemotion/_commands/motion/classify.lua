@@ -149,7 +149,7 @@ end
 --- captured via its parent `comment` node's `(comment) @comment @spell`
 --- span) is left alone here -- `comment_marker_case` already governs
 --- whether markers like that are a landing stop, and this function must
---- keep calling them prose so `subword.lua`'s `_split`/`_run_segments` route them through
+--- keep calling them prose so `subword.lua`'s `split`/`_run_segments` route them through
 --- `.prose`'s rules, not `.code`'s. But an unnamed leaf whose *own* prose
 --- capture comes from a query pattern that targets it directly rather than
 --- from an ancestor's span (Nix's `"`/`''` string delimiters: confirmed
