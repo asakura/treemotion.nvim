@@ -19,6 +19,12 @@ NEW FEATURES                                     *treemotion-new-features*
   `@string`-tagged span) are treated as prose instead, splitting into words on
   whitespace first, the way real Vim's `w` does in a text file.
 
+- Prose words follow Vim's character classes for non-ASCII text too
+  (|word|, |charclass()|): `café` and `naïve` are one word, `—` and `…` are
+  punctuation, a no-break space is blank, and a word ends where the Unicode
+  class changes (between CJK scripts, emoji, subscripts, ...). camelCase and
+  PascalCase splitting recognizes accented uppercase letters (`caféÉtat`).
+
 - Sub-word splitting is configured separately for code and prose via
   `commands.motion.small.code` / `.prose`. Each has `camel_case` /
   `.pascal_case` (boolean) and `kebab_case` / `.snake_case` / `.colon_case` /

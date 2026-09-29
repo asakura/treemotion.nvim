@@ -6,6 +6,7 @@
 --- current language's comment-marker set (see
 --- `_commands.motion.classify.comment_marker_characters`).
 
+local codepoint = require("treemotion._commands.motion.codepoint")
 local motion_constant = require("treemotion._commands.motion.constant")
 
 local M = {}
@@ -103,7 +104,7 @@ end
 ---@return {text: string, offset: integer}[] # Each chunk and its 1-indexed start column in `text`.
 ---
 function M.split(text, rules, comment_marker_characters)
-    if not text:find("%w") then
+    if not codepoint.has_alphanumeric(text) then
         rules = _bare_run_rules(rules, comment_marker_characters)
     end
 

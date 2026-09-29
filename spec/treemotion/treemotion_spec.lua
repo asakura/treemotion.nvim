@@ -1055,6 +1055,46 @@ describe("motion API - multi-byte (UTF-8) characters", function()
     end)
 end)
 
+describe("motion API - accented letters", function()
+    after_each(_remove_buffer)
+
+    ---@param line string
+    local function _initialize(line)
+        _BUFFER = vim.api.nvim_create_buf(false, true)
+        vim.api.nvim_buf_set_lines(_BUFFER, 0, -1, false, { line })
+        vim.api.nvim_set_current_buf(_BUFFER)
+        vim.treesitter.start(_BUFFER, "lua")
+    end
+
+    it("#w steps over an accented word in a comment in one go", function()
+        _initialize("-- café au lait")
+        _set_cursor(3)
+
+        local expected = { 9, 12 }
+
+        for _, column in ipairs(expected) do
+            treemotion.run_motion_w()
+            assert.same(column, _get_cursor_column())
+        end
+    end)
+
+    it("#e lands on an accented last letter's first byte", function()
+        _initialize("-- café au lait")
+        _set_cursor(3)
+
+        treemotion.run_motion_e()
+        assert.same(6, _get_cursor_column()) -- `é`, bytes 6-7
+    end)
+
+    it("#w splits an identifier before an accented uppercase letter", function()
+        _initialize("local caféÉtat = 1")
+        _set_cursor(6)
+
+        treemotion.run_motion_w()
+        assert.same(11, _get_cursor_column()) -- `État`
+    end)
+end)
+
 describe("motion API - blank gaps inside one leaf/run", function()
     before_each(function()
         _BUFFER = vim.api.nvim_create_buf(false, true)

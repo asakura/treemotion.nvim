@@ -65,6 +65,13 @@ describe("delimiters.split", function()
         assert.same({ { text = "---", offset = 1 } }, _split("---", _SKIP, _STOP, { ["-"] = true }))
     end)
 
+    it("treats accented letters as identifier content, not a bare marker run", function()
+        assert.same(
+            { { text = "é", offset = 1 }, { text = "-", offset = 3 }, { text = "é", offset = 4 } },
+            _split("é-é", _STOP, _SKIP, { ["-"] = true })
+        )
+    end)
+
     it("keeps kebab_case in charge of a bare - run when - isn't a listed marker", function()
         assert.same({ { text = "---", offset = 1 } }, _split("---", _STOP, _SKIP, {}))
     end)
