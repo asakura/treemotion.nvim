@@ -203,6 +203,78 @@ describe("operator-pending motions", function()
         end)
     end)
 
+    describe("prose", function()
+        it("#dw in markdown keeps the punctuation after the blanks", function()
+            _configure({ enabled = true })
+
+            local lines = { "- and `comment`. It always counts." }
+
+            assert.same({ "- `comment`. It always counts." }, _type("markdown", lines, 0, 2, "dw"))
+            assert.same(_type_builtin(lines, 0, 2, "dw"), _type("markdown", lines, 0, 2, "dw"))
+        end)
+
+        it("#dw in a comment keeps the punctuation after the blanks", function()
+            _configure({ enabled = true })
+
+            assert.same(
+                { "-- `comment`. It always counts." },
+                _type("lua", { "-- and `comment`. It always counts." }, 0, 3, "dw")
+            )
+        end)
+    end)
+
+    describe("brackets", function()
+        it("#dW keeps a closing ( the range didn't open", function()
+            _configure({ enabled = true })
+
+            assert.same({ "local x = f()" }, _type("lua", { "local x = f(config.a.b)" }, 0, 12, "dW"))
+        end)
+
+        it("#dW keeps a closing [ the range didn't open", function()
+            _configure({ enabled = true })
+
+            assert.same({ "local x = t[]" }, _type("lua", { "local x = t[config.a]" }, 0, 12, "dW"))
+        end)
+
+        it("#dW keeps a closing { the range didn't open", function()
+            _configure({ enabled = true })
+
+            assert.same({ "local x = {}" }, _type("lua", { "local x = {config.a}" }, 0, 11, "dW"))
+        end)
+
+        it("#dW on an opening bracket deletes through its closing one", function()
+            _configure({ enabled = true })
+
+            assert.same({ "local x = f" }, _type("lua", { "local x = f(config.a.b)" }, 0, 11, "dW"))
+            assert.same({ "local x = t" }, _type("lua", { "local x = t[config.a]" }, 0, 11, "dW"))
+            assert.same({ "local x = " }, _type("lua", { "local x = {config.a}" }, 0, 10, "dW"))
+        end)
+
+        it("#dW keeps nested brackets that close inside the range", function()
+            _configure({ enabled = true })
+
+            assert.same({ "local x = f()" }, _type("lua", { "local x = f(g(a).b)" }, 0, 12, "dW"))
+        end)
+
+        it("#cW keeps a closing bracket the range didn't open", function()
+            _configure({ enabled = true })
+
+            assert.same({ "local x = f(X)" }, _type("lua", { "local x = f(config.a.b)" }, 0, 12, "cWX<Esc>"))
+        end)
+
+        it("#dE keeps a closing bracket the range didn't open", function()
+            _configure({ enabled = true })
+
+            assert.same({ "local x = f()" }, _type("lua", { "local x = f(config.a.b)" }, 0, 12, "dE"))
+        end)
+
+        it("#dW on a closing bracket still deletes it", function()
+            _configure({ enabled = true })
+
+            assert.same({ "local x = f(a" }, _type("lua", { "local x = f(a))" }, 0, 13, "dW"))
+        end)
+    end)
+
     describe("line ends", function()
         it("#dw on a line's last word stops at the end of the line", function()
             _configure({ enabled = true })
@@ -473,6 +545,64 @@ describe("operator-pending motions", function()
                 { "{", '  "X" = {', '    source = "rule";', "  };", "}" },
                 _type("nix", lines, 1, 3, "cwX<Esc>")
             )
+        end)
+
+        describe("inherit", function()
+            local inherit = {
+                "{",
+                "  inherit (config.fleet.lib.firewall.statements.analysis)",
+                "    foo",
+                "    ;",
+                "}",
+            }
+
+            ---@param line string The second line.
+            ---@return string[] # `inherit` with `line` as its second line.
+            local function _with_line(line)
+                local result = vim.deepcopy(inherit)
+                result[2] = line
+
+                return result
+            end
+
+            it("#dW keeps the closing )", function()
+                if not _has_parser("nix") then
+                    _skip('no "nix" treesitter parser installed')
+
+                    return
+                end
+
+                _configure({ enabled = true })
+
+                assert.same(_with_line("  inherit ()"), _type("nix", inherit, 1, 11, "dW"))
+            end)
+
+            it("#dW on ( deletes the whole parenthesized expression", function()
+                if not _has_parser("nix") then
+                    _skip('no "nix" treesitter parser installed')
+
+                    return
+                end
+
+                _configure({ enabled = true })
+
+                assert.same(_with_line("  inherit "), _type("nix", inherit, 1, 10, "dW"))
+            end)
+
+            it("#dw on the path's last attribute keeps the closing )", function()
+                if not _has_parser("nix") then
+                    _skip('no "nix" treesitter parser installed')
+
+                    return
+                end
+
+                _configure({ enabled = true })
+
+                assert.same(
+                    _with_line("  inherit (config.fleet.lib.firewall.statements.)"),
+                    _type("nix", inherit, 1, 48, "dw")
+                )
+            end)
         end)
     end)
 end)
