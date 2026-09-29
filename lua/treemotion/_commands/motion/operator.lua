@@ -69,6 +69,16 @@ local function _first_non_blank(from_row, from_column, to_row, to_column)
     return nil, nil
 end
 
+--- Check whether the current buffer has a treesitter parser.
+---
+--- Without one there are no units anywhere, which is different from being
+--- past the last unit.
+---
+---@return boolean
+local function _has_parser()
+    return vim.treesitter.get_parser(0, nil, { error = false }) ~= nil
+end
+
 --- Check whether the cursor sits on a non-blank character.
 ---
 ---@return boolean
@@ -188,7 +198,7 @@ end
 --- current unit. Further counts step like `e`/`E`.
 ---
 ---@param units treemotion._UnitSource
----@param unit treemotion.MotionUnit `units.current_unit(true)` at the cursor.
+---@param unit treemotion.MotionUnit? `units.current_unit(true)` at the cursor, `nil` past the last unit.
 ---@param cursor_leaf TSNode? The leaf that same call started from.
 ---@param count integer
 ---@return treemotion.OperatorRange
@@ -197,7 +207,7 @@ local function _change_to_end_range(units, unit, cursor_leaf, count)
     local start_row, start_column = position.cursor_position()
     local end_row, end_column
 
-    if position.contains(unit, start_row, start_column) then
+    if unit and position.contains(unit, start_row, start_column) then
         end_row, end_column = unit:end_()
     else
         end_row, end_column = _skipped_text_end(units, unit, cursor_leaf)
@@ -229,8 +239,11 @@ end
 ---   last word (`:help word`'s "Another special case"). On an empty line
 ---   the range is the line break itself, as with Vim's `dw` there.
 ---
---- A range the trimming would empty, and a motion that found nowhere to go
---- from outside every unit, keep the plain motion's range.
+--- Past the buffer's last unit (its last word, trailing blanks, or skipped
+--- text such as a final `=`) the motion has nowhere to go, so the range
+--- runs to the end of the line before it's trimmed, like Vim's `dw` at the
+--- end of the buffer. Without a parser, and when trimming would empty the
+--- range, it's the plain motion's.
 ---
 --- Moves the cursor while measuring, since `units` works from the cursor;
 --- `M.apply` puts it where the range needs it.
@@ -245,8 +258,7 @@ function M.forward_range(units, count, settings, move)
     local start_row, start_column = position.cursor_position()
     local unit, cursor_leaf = units.current_unit(true)
 
-    if not unit then
-        -- No parser, or nothing left to move to: same as the plain motion.
+    if not unit and not _has_parser() then
         move(units, count)
 
         return _range_to_cursor(start_row, start_column)
@@ -256,23 +268,16 @@ function M.forward_range(units, count, settings, move)
         return _change_to_end_range(units, unit, cursor_leaf, count)
     end
 
-    if count > 1 then
+    if unit and count > 1 then
         -- Only the final step is trimmed, so take the others as they are.
         move(units, count - 1)
         unit, cursor_leaf = units.current_unit(true)
-
-        if not unit then
-            return _range_to_cursor(start_row, start_column)
-        end
     end
 
     local step_row, step_column = position.cursor_position()
     local tail_row, tail_column = step_row, step_column
-    ---@type treemotion.MotionUnit?
-    local departed
 
-    if position.contains(unit, step_row, step_column) then
-        departed = unit
+    if unit and position.contains(unit, step_row, step_column) then
         tail_row, tail_column = unit:end_()
 
         if settings.skipped_text == constant.SkippedText.keep_between_tokens then
@@ -291,13 +296,9 @@ function M.forward_range(units, count, settings, move)
     local target_row, target_column = position.cursor_position()
 
     if not position.is_before(step_row, step_column, target_row, target_column) then
-        if not departed then
-            return _range_to_cursor(start_row, start_column)
-        end
-
-        -- The final step found nowhere to go (the buffer's last unit): the
-        -- range still covers the rest of the unit.
-        target_row, target_column = tail_row, tail_column
+        -- Nowhere to go: this is the buffer's end. Vim's `dw` there acts
+        -- up to the end of the line.
+        target_row, target_column = tail_row, #codepoint.line(tail_row)
     end
 
     local end_row, end_column = target_row, target_column

@@ -70,6 +70,28 @@ local function _type(filetype, lines, row, column, keys)
     return result
 end
 
+--- Type `keys` at `row`/`column` with Neovim's built-in motions: no mappings, no parser.
+---
+---@param lines string[]
+---@param row integer 0-indexed row.
+---@param column integer 0-indexed column.
+---@param keys string Keys to type, in `:help keycodes` notation.
+---@return string[] # The buffer's lines afterwards.
+local function _type_builtin(lines, row, column, keys)
+    local buffer = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_lines(buffer, 0, -1, false, lines)
+    vim.api.nvim_set_current_buf(buffer)
+    grammar_helpers.set_cursor(row, column)
+    vim.api.nvim_feedkeys(vim.keycode(keys), "xt", false)
+    vim.cmd("stopinsert")
+
+    local result = vim.api.nvim_buf_get_lines(buffer, 0, -1, false)
+
+    grammar_helpers.remove_buffer(buffer)
+
+    return result
+end
+
 ---@param filetype string
 ---@return boolean # Whether `filetype` has a treesitter parser here.
 local function _has_parser(filetype)
@@ -209,6 +231,29 @@ describe("operator-pending motions", function()
 
             assert.same({ "local x = local y = 2" }, _type("lua", { "local x = foo", "  local y = 2" }, 0, 10, "dw"))
         end)
+    end)
+
+    describe("end of the buffer, like the built-in", function()
+        for _, case in ipairs({
+            { "#dw on the last word takes the blanks after it", { "x = foo  " }, 0, 4, "dw" },
+            { "#dw on trailing blanks", { "local x = foo  " }, 0, 13, "dw" },
+            { "#dw on trailing blanks in a comment", { "-- c  " }, 0, 5, "dw" },
+            { "#dw on trailing blanks on a later line", { "local x = foo =  ", "  " }, 1, 1, "dw" },
+            { "#dw on a final =", { "local x = foo =  " }, 0, 14, "dw" },
+            { "#dw on an empty last line", { "local x = foo", "" }, 1, 0, "dw" },
+            { "#d3w past the last word", { "x = foo  bar" }, 0, 4, "d3w" },
+            { "#cw on a final =", { "local x = foo =  " }, 0, 14, "cwX<Esc>" },
+            { "#cw on a final ==", { "local x = foo ==  " }, 0, 14, "cwX<Esc>" },
+            { "#cw on trailing blanks", { "local x = foo  ", "  " }, 0, 13, "cwX<Esc>" },
+        }) do
+            local description, lines, row, column, keys = unpack(case)
+
+            it(description, function()
+                _configure({ enabled = true }, { lua = { "=", "==" } })
+
+                assert.same(_type_builtin(lines, row, column, keys), _type("lua", lines, row, column, keys))
+            end)
+        end
     end)
 
     describe("change", function()

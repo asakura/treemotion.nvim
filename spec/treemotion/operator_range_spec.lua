@@ -264,20 +264,85 @@ describe("operator range calculation", function()
             assert.same({ { 0, 0 }, { 0, 0 }, false }, _flat(range))
         end)
 
-        it("keeps the plain motion's range when a count's first steps leave no unit ahead", function()
+        it("runs to the end of the line when a count's first steps leave no unit ahead", function()
             _initialize_buffer({ "local x = foo  " }, 0, 10)
 
             local range = operator.forward_range(_units(), 2, _settings(), _move_to(0, 14))
 
-            assert.same({ { 0, 10 }, { 0, 14 }, false }, _flat(range))
+            assert.same({ { 0, 10 }, { 0, 15 }, false }, _flat(range))
         end)
 
-        it("keeps the plain motion's range when a step from outside every unit goes nowhere", function()
-            _initialize_buffer({ "local foo = bar" }, 0, 10)
+        describe("at the end of the buffer", function()
+            -- Expected ranges match Neovim's built-in `dw`/`cw` on the same text.
 
-            local range = operator.forward_range(_units({ "=" }), 1, _settings(), _move_to(0, 10))
+            it("covers the last unit and the blanks after it", function()
+                _initialize_buffer({ "x = foo  " }, 0, 4)
 
-            assert.same({ { 0, 10 }, { 0, 10 }, false }, _flat(range))
+                local range = operator.forward_range(_units(), 1, _settings(), shape.forward_to_start)
+
+                assert.same({ { 0, 4 }, { 0, 9 }, false }, _flat(range))
+            end)
+
+            it("covers trailing blanks", function()
+                _initialize_buffer({ "local x = foo  " }, 0, 13)
+
+                local range = operator.forward_range(_units(), 1, _settings(), shape.forward_to_start)
+
+                assert.same({ { 0, 13 }, { 0, 15 }, false }, _flat(range))
+            end)
+
+            it("covers trailing blanks inside a comment", function()
+                _initialize_buffer({ "-- c  " }, 0, 5)
+
+                local range = operator.forward_range(_units(), 1, _settings(), shape.forward_to_start)
+
+                assert.same({ { 0, 5 }, { 0, 6 }, false }, _flat(range))
+            end)
+
+            it("covers trailing blanks on a later line", function()
+                _initialize_buffer({ "local x = foo =  ", "  " }, 1, 1)
+
+                local range = operator.forward_range(_units({ "=" }), 1, _settings(), shape.forward_to_start)
+
+                assert.same({ { 1, 1 }, { 1, 2 }, false }, _flat(range))
+            end)
+
+            it("covers skipped text and the blanks after it", function()
+                _initialize_buffer({ "local x = foo =  " }, 0, 14)
+
+                local range = operator.forward_range(_units({ "=" }), 1, _settings(), shape.forward_to_start)
+
+                assert.same({ { 0, 14 }, { 0, 17 }, false }, _flat(range))
+            end)
+
+            it("covers the rest of the line for a count past the last unit", function()
+                _initialize_buffer({ "x = foo  bar" }, 0, 4)
+
+                local range = operator.forward_range(_units(), 3, _settings(), shape.forward_to_start)
+
+                assert.same({ { 0, 4 }, { 0, 12 }, false }, _flat(range))
+            end)
+
+            it("covers only skipped text for #change_to_end", function()
+                _initialize_buffer({ "local x = foo ==  " }, 0, 14)
+
+                local range = operator.forward_range(
+                    _units({ "==" }),
+                    1,
+                    _settings({ change = true, change_to_end = true }),
+                    shape.forward_to_start
+                )
+
+                assert.same({ { 0, 14 }, { 0, 15 }, true }, _flat(range))
+            end)
+
+            it("is empty on an empty last line", function()
+                _initialize_buffer({ "local x = foo", "" }, 1, 0)
+
+                local range = operator.forward_range(_units(), 1, _settings(), shape.forward_to_start)
+
+                assert.same({ { 1, 0 }, { 1, 0 }, false }, _flat(range))
+            end)
         end)
 
         it("clamps a span that ends on the next row to the unit's own line", function()

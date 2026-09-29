@@ -516,6 +516,11 @@ ranges instead:
   the end of that line instead of joining the next one, and `dw` on an empty
   line deletes just its line break, like Vim's `dw` (`:help word`).
 
+At the end of the buffer there's no next word to stop before, so `dw` on the
+last word, on trailing blanks or on skipped text acts up to the end of the
+line, like Vim's own `dw` there. `cw` on skipped text there changes just that
+text.
+
 - **`change_to_end`** (default `true`): `cw`/`cW` on a non-blank character
   change to the end of the current word, like `ce`/`cE`. This is what Vim's
   `cw` does while `'cpoptions'` contains `_` (`:help cw`, `:help cpo-_`), and
