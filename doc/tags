@@ -15,6 +15,7 @@ treemotion.Configuration	treemotion_types.txt	/*treemotion.Configuration*
 treemotion.ConfigurationCommands	treemotion_types.txt	/*treemotion.ConfigurationCommands*
 treemotion.ConfigurationMotion	treemotion_types.txt	/*treemotion.ConfigurationMotion*
 treemotion.ConfigurationMotionGroup	treemotion_types.txt	/*treemotion.ConfigurationMotionGroup*
+treemotion.ConfigurationMotionOperatorPending	treemotion_types.txt	/*treemotion.ConfigurationMotionOperatorPending*
 treemotion.ConfigurationMotionSubwordRules	treemotion_types.txt	/*treemotion.ConfigurationMotionSubwordRules*
 treemotion.LoggingConfiguration	treemotion_types.txt	/*treemotion.LoggingConfiguration*
 treemotion.ResolvedConfiguration	treemotion_types.txt	/*treemotion.ResolvedConfiguration*

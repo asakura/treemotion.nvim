@@ -75,6 +75,9 @@ Fields ~
        configuration needed, as soon as their treesitter parser is installed
        -- see `_OPTIONAL_COMMENT_MARKERS` in `configuration.lua` for the full
        list and `configuration.get_comment_markers` for the resolution order.
+    {operator_pending} |treemotion.ConfigurationMotionOperatorPending|?
+       How the motions behave after an operator (`dw`, `cw`, `de`, ...). Off
+       by default.
     {in|s|ignific|a|nt_|ch|a|r|a|cter||s|} t|a|ble<`(|s|tring)`, (`(|s|tring)`[] | t|a|ble<`(|s|tring)`, `(boole|a|n)`>
    |One| |l|a|ngu|a|ge|'|s| `in|s|ignific|a|nt_|ch|a|r|a|cter||s|` |entry.| U|s|u|a|lly |a| |pl|a|in|
    ``(|s|tring)`[]` (|a| |full| |repl|a|cement| li|s|t, |e.g.| `{ ";" }`) -- |but| |a| `(|s|tring)`
@@ -113,6 +116,41 @@ Fields ~
        `treemotion.InsignificantCharacterList` for how to instead negate just
        one character (e.g. keep Nix's `{`/`}`/`[`/`]` but drop `;`) without
        restating the rest.
+
+------------------------------------------------------------------------------
+*treemotion.ConfigurationMotionOperatorPending*
+   How the motions behave after an operator (`dw`, `cw`, `yW`, `de`, ...).
+   Only read in operator-pending mode without a forced motion type
+   (`dvw`, `dVw` and `d<C-v>w` always get the plain motion), so cursor
+   movement and Visual mode never change.
+
+Fields ~
+    {enabled} `(boolean)`?
+       Whether any of the fields below apply. Defaults to `false`: operators
+       act on exactly the text the plain motion moves over.
+    {skipped_text} ("keep" | "keep_between_tokens" | "delete")?
+       What `dw`/`dW` (and every other operator but `c`, see `change_to_end`)
+       do with non-blank text the motion skips before its next stop:
+       insignificant leaves (`insignificant_characters`), `"skip"`
+       delimiters and comment markers. `"keep"` never includes it: the range
+       ends at the first non-blank character after the word. Defaults to
+       `"keep_between_tokens"`, which keeps text between tokens but still
+       includes skipped delimiters inside the current token, so `dw` on
+       `foo_bar` leaves `bar` rather than `_bar`. `"delete"` includes all of
+       it, like the plain motion.
+    {stop_at_line_end} `(boolean)`?
+       Whether `dw`/`dW` on a line's last word end at that word rather than
+       at the first word of a later line, like Vim's `dw` (`:help word`).
+       Defaults to `true`.
+    {change_to_end} `(boolean)`?
+       Whether `cw`/`cW` on a non-blank character change to the end of the
+       current word, like `ce`/`cE`, the way Vim's `cw` does while
+       `'cpoptions'` contains `_` (`:help cw`, `:help cpo-_`). Defaults to
+       `true`.
+    {inclusive} `(boolean)`?
+       Whether `e`/`E`/`ge`/`gE` include the character they land on, as Vim's
+       do (`:help inclusive`), so `de` deletes the whole word. Defaults to
+       `true`.
 
 ------------------------------------------------------------------------------
 *treemotion.ConfigurationMotionGroup*
