@@ -78,7 +78,7 @@ function M.run(name, count)
     _LOGGER:fmt_debug('Running treemotion motion "%s" (count=%s) from %s:%s.', name, count, start_row, start_column)
 
     local units = motion.units.new_source(settings.resolve(motion.group))
-    local pending = motion.operator and operator.resolve()
+    local pending = motion.operator and settings.resolve_operator()
 
     if pending then
         motion.operator(units, count, pending, motion.move)

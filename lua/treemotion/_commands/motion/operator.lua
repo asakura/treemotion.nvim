@@ -27,7 +27,6 @@
 --- textobject plugins use.
 
 local codepoint = require("treemotion._commands.motion.codepoint")
-local configuration = require("treemotion._core.configuration")
 local constant = require("treemotion._commands.motion.constant")
 local leaf = require("treemotion._commands.motion.leaf")
 local position = require("treemotion._commands.motion.position")
@@ -35,14 +34,12 @@ local shape = require("treemotion._commands.motion.shape")
 
 local M = {}
 
----@alias treemotion._Pending treemotion.ConfigurationMotionOperatorPending
-
 --- How a motion runs under an operator: `M.forward_to_start` or `M.inclusive`.
 ---
 --- `move` is the motion's own `_commands.motion.shape` shape.
 ---
 -- luacheck: push ignore 631
----@alias treemotion._OperatorMove fun(units: treemotion._UnitSource, count: integer, pending: treemotion._Pending, move: treemotion._Move)
+---@alias treemotion._OperatorMove fun(units: treemotion._UnitSource, count: integer, pending: treemotion.OperatorSettings, move: treemotion._Move)
 -- luacheck: pop
 
 --- Check whether `row_a`/`column_a` comes before `row_b`/`column_b`.
@@ -230,32 +227,10 @@ local function _apply_exclusive(start_row, start_column, finish_row, finish_colu
     _select(start_row, start_column, finish_row, codepoint.last_character_column(finish_row, length))
 end
 
---- The settings for the current operator, if its behavior applies at all.
----
---- `vim.fn.mode(true)` is exactly `"no"` for an operator without a forced
---- motion type. `"nov"`/`"noV"`/`"no<C-v>"` (`dvw`, `dVw`, ...) mean the
---- user chose the range's shape themselves, so those get the plain motion.
----
----@return treemotion.ConfigurationMotionOperatorPending? # `nil` when disabled or not operator-pending.
----
-function M.resolve()
-    local settings = configuration.resolve_data().commands.motion.operator_pending
-
-    if not settings or not settings.enabled then
-        return nil
-    end
-
-    if vim.fn.mode(true) ~= "no" then
-        return nil
-    end
-
-    return settings
-end
-
 --- `cw`/`cW`: change to the end of the current unit, like `ce`/`cE`.
 ---
---- Only applies while `'cpoptions'` contains `_` (the default), the same
---- condition Vim's own `cw` checks (`:help cpo-_`).
+--- Only runs while `settings.change_to_end` is set (see
+--- `treemotion.OperatorSettings`).
 ---
 --- On skipped text (see `_skipped_text_end`) that text counts as the
 --- current unit. Further counts step like `e`/`E`.
@@ -305,7 +280,7 @@ end
 ---
 ---@param units treemotion._UnitSource
 ---@param count integer
----@param settings treemotion._Pending
+---@param settings treemotion.OperatorSettings
 ---@param move treemotion._Move `shape.forward_to_start`.
 ---
 function M.forward_to_start(units, count, settings, move)
@@ -320,7 +295,7 @@ function M.forward_to_start(units, count, settings, move)
 
     local on_non_blank = _is_cursor_on_non_blank()
 
-    if settings.change_to_end and vim.v.operator == "c" and on_non_blank and vim.o.cpoptions:find("_", 1, true) then
+    if settings.change_to_end and on_non_blank then
         _change_to_end(units, unit, count)
 
         return
@@ -390,7 +365,7 @@ function M.forward_to_start(units, count, settings, move)
             -- An empty line is a word of its own (`:help word`): Vim's `dw`
             -- there acts on the line break, while `cw` just starts
             -- inserting.
-            if vim.v.operator == "c" then
+            if settings.change then
                 vim.api.nvim_win_set_cursor(0, { start_row + 1, start_column })
             else
                 _select(start_row, start_column, start_row, start_column)
@@ -422,7 +397,7 @@ end
 ---
 ---@param units treemotion._UnitSource
 ---@param count integer
----@param settings treemotion._Pending
+---@param settings treemotion.OperatorSettings
 ---@param move treemotion._Move The `e`/`E`/`ge`/`gE`-shape move.
 ---
 function M.inclusive(units, count, settings, move)
