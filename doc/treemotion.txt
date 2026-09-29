@@ -532,6 +532,9 @@ ranges instead:
     - `"delete"` deletes all of it, like the plain motion.
     With the cursor on skipped text itself (e.g. `=`), `dw` deletes that text and
     the blanks after it.
+    Operators also never take a closing bracket (`)`, `]`, `}`) they didn’t open:
+    `dW` on the `c` of `(config.lib)` leaves `()`, while `dW` on the `(` deletes
+    the whole `(config.lib)`.
 - **stop_at_line_end** (default `true`): `dw` on a line’s last word ends at the
     end of that line instead of joining the next one, and `dw` on an empty line
     deletes just its line break, like Vim’s `dw` (`:help word`).
