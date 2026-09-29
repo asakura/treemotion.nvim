@@ -31,14 +31,19 @@ local configuration = require("treemotion._core.configuration")
 local constant = require("treemotion._commands.motion.constant")
 local leaf = require("treemotion._commands.motion.leaf")
 local position = require("treemotion._commands.motion.position")
+local shape = require("treemotion._commands.motion.shape")
 
 local M = {}
 
----@class treemotion._OperatorShapes
----@field forward_to_start fun(units: treemotion._UnitSource, count: integer): treemotion.MotionUnit?
----    The `w`/`W`-shape move. Returns the unit its final step moved off, or
----    `nil` if that step started outside every unit.
----@field forward_to_end fun(units: treemotion._UnitSource, count: integer): nil The `e`/`E`-shape move.
+---@alias treemotion._Pending treemotion.ConfigurationMotionOperatorPending
+
+--- How a motion runs under an operator: `M.forward_to_start` or `M.inclusive`.
+---
+--- `move` is the motion's own `_commands.motion.shape` shape.
+---
+-- luacheck: push ignore 631
+---@alias treemotion._OperatorMove fun(units: treemotion._UnitSource, count: integer, pending: treemotion._Pending, move: treemotion._Move)
+-- luacheck: pop
 
 --- Check whether `row_a`/`column_a` comes before `row_b`/`column_b`.
 ---
@@ -258,9 +263,8 @@ end
 ---@param units treemotion._UnitSource
 ---@param unit treemotion.MotionUnit `units.current_unit(true)` at the cursor.
 ---@param count integer
----@param shapes treemotion._OperatorShapes
 ---
-local function _change_to_end(units, unit, count, shapes)
+local function _change_to_end(units, unit, count)
     local start_row, start_column = position.cursor_position()
     local end_row, end_column
 
@@ -273,7 +277,7 @@ local function _change_to_end(units, unit, count, shapes)
     vim.api.nvim_win_set_cursor(0, { end_row + 1, codepoint.last_character_column(end_row, end_column) })
 
     if count > 1 then
-        shapes.forward_to_end(units, count - 1)
+        shape.forward_to_end(units, count - 1)
     end
 
     local finish_row, finish_column = position.cursor_position()
@@ -301,15 +305,15 @@ end
 ---
 ---@param units treemotion._UnitSource
 ---@param count integer
----@param settings treemotion.ConfigurationMotionOperatorPending
----@param shapes treemotion._OperatorShapes
+---@param settings treemotion._Pending
+---@param move treemotion._Move `shape.forward_to_start`.
 ---
-function M.forward_to_start(units, count, settings, shapes)
+function M.forward_to_start(units, count, settings, move)
     local unit = units.current_unit(true)
 
     if not unit then
         -- No parser, or nothing left to move to: same as the plain motion.
-        shapes.forward_to_start(units, count)
+        move(units, count)
 
         return
     end
@@ -317,7 +321,7 @@ function M.forward_to_start(units, count, settings, shapes)
     local on_non_blank = _is_cursor_on_non_blank()
 
     if settings.change_to_end and vim.v.operator == "c" and on_non_blank and vim.o.cpoptions:find("_", 1, true) then
-        _change_to_end(units, unit, count, shapes)
+        _change_to_end(units, unit, count)
 
         return
     end
@@ -329,7 +333,7 @@ function M.forward_to_start(units, count, settings, shapes)
         tail_row, tail_column = _skipped_text_end(units, unit)
     end
 
-    local departed = shapes.forward_to_start(units, count)
+    local departed = move(units, count)
     local target_row, target_column = position.cursor_position()
 
     if departed then
@@ -398,14 +402,22 @@ end
 
 --- `de`/`dge`/...: run `move`, then make the range include both ends.
 ---
---- A motion that didn't move leaves the (empty) range alone, rather than
---- operating on the character under the cursor.
+--- Runs `move` unchanged when `settings.inclusive` is off. A motion that
+--- didn't move leaves the (empty) range alone, rather than operating on the
+--- character under the cursor.
 ---
 ---@param units treemotion._UnitSource
 ---@param count integer
----@param move fun(units: treemotion._UnitSource, count: integer): any The `e`/`E`/`ge`/`gE`-shape move.
+---@param settings treemotion._Pending
+---@param move treemotion._Move The `e`/`E`/`ge`/`gE`-shape move.
 ---
-function M.inclusive(units, count, move)
+function M.inclusive(units, count, settings, move)
+    if not settings.inclusive then
+        move(units, count)
+
+        return
+    end
+
     local start_row, start_column = position.cursor_position()
 
     move(units, count)

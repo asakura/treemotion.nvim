@@ -9,7 +9,7 @@
 --- found and split, and how to get past one, so `M.new_source` takes
 --- exactly those as callbacks and builds the `current_unit`/`next_unit`/
 --- `previous_unit` API (see `treemotion._UnitSource` in
---- `_commands.motion.runner`) on top of them.
+--- `_commands.motion.shape`) on top of them.
 ---
 --- A `treemotion.MotionUnit` deliberately stores the *whole* sub-word
 --- split of its span (`_units`) plus an `_index` into it, rather than just

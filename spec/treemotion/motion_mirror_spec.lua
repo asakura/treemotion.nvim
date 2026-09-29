@@ -676,9 +676,8 @@ describe("motion API - w/b, e/ge, W/B, E/gE mirror round-trips with #count, acro
         end, count, row, column)
     end
 
-    -- Only two configs -- `count`'s own looping logic (`runner.lua`'s
-    -- `_move_*` functions each just call their single-step body `count`
-    -- times) isn't rule-sensitive, so it doesn't need the full
+    -- Only two configs -- `count`'s own looping logic (`shape.lua`'s
+    -- shapes each just call their single-step body `count` times) isn't rule-sensitive, so it doesn't need the full
     -- `_CONFIGS` matrix the way splitting behavior itself does (already
     -- covered above); `big.enabled = true` is still worth its own pass, so a
     -- multi-step `W`/`E`/`B`/`gE` jump gets exercised while it's actually

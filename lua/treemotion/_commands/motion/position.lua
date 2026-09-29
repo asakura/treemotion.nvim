@@ -1,5 +1,5 @@
---- Cursor-position helpers shared by `_commands.motion.leaf`, `_commands.motion.unit`
---- and `_commands.motion.runner`.
+--- Cursor-position helpers shared by `_commands.motion.leaf`, `_commands.motion.unit`,
+--- `_commands.motion.shape`, `_commands.motion.operator` and `_commands.motion.runner`.
 
 local M = {}
 

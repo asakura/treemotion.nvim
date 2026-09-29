@@ -6,7 +6,7 @@
 --- `text:sub(i, i)` byte arithmetic lands mid-character the moment a unit
 --- touches a multi-byte UTF-8 character (e.g. an em dash `—`, 3 bytes). This
 --- module is the one place in the plugin that steps across a codepoint
---- boundary -- `_commands.motion.runner`'s "what column is a unit's own last
+--- boundary -- `_commands.motion.shape`'s "what column is a unit's own last
 --- character at" and `_commands.motion.subword`'s "what character sits
 --- immediately before this leaf" both reduce to the same question (see
 --- `M.last_character_column`'s docstring), so both funnel through here
@@ -43,7 +43,7 @@ end
 --- Find the column of the last full character ending at `end_column`
 --- (0-indexed, exclusive), on `row`, in the current buffer.
 ---
---- Two unrelated-looking questions both reduce to this: `_commands.motion.runner`
+--- Two unrelated-looking questions both reduce to this: `_commands.motion.shape`
 --- asks "what column is a unit's own *last* character at" (`end_column` is
 --- the unit's exclusive `:end_()`); `_commands.motion.subword` asks "what
 --- character sits immediately *before* this leaf" (`end_column` is the
