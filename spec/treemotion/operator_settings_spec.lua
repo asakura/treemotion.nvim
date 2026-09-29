@@ -46,7 +46,9 @@ local function _resolve_during(keys)
     vim.api.nvim_feedkeys(vim.keycode(keys .. _KEY), "xt", false)
     vim.cmd("stopinsert")
 
-    assert.is_true(called, "the operator-pending mapping never ran")
+    if not called then
+        error("the operator-pending mapping never ran")
+    end
 
     return result
 end
@@ -113,7 +115,10 @@ describe("settings.resolve_operator", function()
         local ok, result = pcall(_resolve_during, "c")
         vim.o.cpoptions = cpoptions
 
-        assert.is_true(ok, result)
+        if not ok then
+            error(result, 0)
+        end
+
         ---@cast result treemotion.OperatorSettings
         assert.is_true(result.change)
         assert.is_true(result.change_to_end)
@@ -127,7 +132,10 @@ describe("settings.resolve_operator", function()
         local ok, result = pcall(_resolve_during, "c")
         vim.o.cpoptions = cpoptions
 
-        assert.is_true(ok, result)
+        if not ok then
+            error(result, 0)
+        end
+
         ---@cast result treemotion.OperatorSettings
         assert.is_true(result.change)
         assert.is_false(result.change_to_end)

@@ -67,7 +67,9 @@ function M.new_source(settings)
         end,
         after = leaf.next_leaf,
         span_end = function(node)
-            return node:end_()
+            local row, column = node:end_()
+
+            return row, column
         end,
     })
 end

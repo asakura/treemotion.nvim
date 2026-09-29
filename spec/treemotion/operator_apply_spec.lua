@@ -54,7 +54,9 @@ local function _apply(lines, range, selection)
     vim.cmd('execute "normal! \\<Esc>"')
     vim.o.selection = original
 
-    assert.is_true(ok, message)
+    if not ok then
+        error(message, 0)
+    end
 
     return {
         mode,

@@ -221,7 +221,8 @@ function M.class(character)
     local class = _CLASSES[character]
 
     if not class then
-        class = vim.fn.charclass(character)
+        -- Typed `0|1|2|3|'other'`, but `'other'` stands for a class number.
+        class = vim.fn.charclass(character) --[[@as integer]]
         _CLASSES[character] = class
     end
 

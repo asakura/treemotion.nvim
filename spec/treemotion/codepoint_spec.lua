@@ -75,6 +75,36 @@ describe("codepoint.last_character_column", function()
     end)
 end)
 
+--- `fn`'s result for each of `characters`, keyed by the character, so a failure shows which one.
+---
+---@generic T
+---@param characters string[]
+---@param fn fun(character: string): T
+---@return table<string, T>
+local function _map(characters, fn)
+    local result = {}
+
+    for _, character in ipairs(characters) do
+        result[character] = fn(character)
+    end
+
+    return result
+end
+
+--- `"upper"`, `"lower"`, `"both"` or `"none"`, from `codepoint.is_upper`/`codepoint.is_lower`.
+---
+---@param character string
+---@return string
+local function _case(character)
+    local upper, lower = codepoint.is_upper(character), codepoint.is_lower(character)
+
+    if upper and lower then
+        return "both"
+    end
+
+    return upper and "upper" or lower and "lower" or "none"
+end
+
 describe("codepoint.characters", function()
     it("splits ASCII into bytes", function()
         assert.same({ { text = "a", offset = 1 }, { text = "b", offset = 2 } }, codepoint.characters("ab"))
@@ -145,13 +175,14 @@ describe("codepoint.is_alphanumeric", function()
     end)
 
     it("counts letters, emoji and CJK in any script, but not punctuation or blanks", function()
-        for _, character in ipairs({ "é", "Ω", "ж", "日", "😀" }) do
-            assert.is_true(codepoint.is_alphanumeric(character), character)
-        end
-
-        for _, character in ipairs({ "—", "…", "«", "\194\160" }) do
-            assert.is_false(codepoint.is_alphanumeric(character), character)
-        end
+        assert.same(
+            { ["é"] = true, ["Ω"] = true, ["ж"] = true, ["日"] = true, ["😀"] = true },
+            _map({ "é", "Ω", "ж", "日", "😀" }, codepoint.is_alphanumeric)
+        )
+        assert.same(
+            { ["—"] = false, ["…"] = false, ["«"] = false, ["\194\160"] = false },
+            _map({ "—", "…", "«", "\194\160" }, codepoint.is_alphanumeric)
+        )
     end)
 end)
 
@@ -170,21 +201,20 @@ end)
 
 describe("codepoint.is_upper / codepoint.is_lower", function()
     it("knows the case of accented and non-Latin letters", function()
-        for _, character in ipairs({ "A", "É", "Ω", "Ж" }) do
-            assert.is_true(codepoint.is_upper(character), character)
-            assert.is_false(codepoint.is_lower(character), character)
-        end
-
-        for _, character in ipairs({ "a", "é", "ω", "ж" }) do
-            assert.is_true(codepoint.is_lower(character), character)
-            assert.is_false(codepoint.is_upper(character), character)
-        end
+        assert.same(
+            { A = "upper", ["É"] = "upper", ["Ω"] = "upper", ["Ж"] = "upper" },
+            _map({ "A", "É", "Ω", "Ж" }, _case)
+        )
+        assert.same(
+            { a = "lower", ["é"] = "lower", ["ω"] = "lower", ["ж"] = "lower" },
+            _map({ "a", "é", "ω", "ж" }, _case)
+        )
     end)
 
     it("treats caseless characters as neither", function()
-        for _, character in ipairs({ "1", "_", "日", "😀", "—", "\255" }) do
-            assert.is_false(codepoint.is_upper(character), character)
-            assert.is_false(codepoint.is_lower(character), character)
-        end
+        assert.same(
+            { ["1"] = "none", _ = "none", ["日"] = "none", ["😀"] = "none", ["—"] = "none", ["\255"] = "none" },
+            _map({ "1", "_", "日", "😀", "—", "\255" }, _case)
+        )
     end)
 end)

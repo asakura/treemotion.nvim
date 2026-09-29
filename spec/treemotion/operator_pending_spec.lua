@@ -92,6 +92,20 @@ local function _type_builtin(lines, row, column, keys)
     return result
 end
 
+--- Mark the running test pending.
+---
+--- Inside a test busted's `pending` takes just a message, but its type stubs
+--- only describe the `pending(name, block)` form used outside one. Busted
+--- swaps in the in-test `pending` while a test runs, so it's looked up on
+--- each call rather than kept in a local.
+---
+---@param message string
+local function _skip(message)
+    local skip = pending --[[@as fun(message: string)]]
+
+    skip(message)
+end
+
 ---@param filetype string
 ---@return boolean # Whether `filetype` has a treesitter parser here.
 local function _has_parser(filetype)
@@ -234,24 +248,76 @@ describe("operator-pending motions", function()
     end)
 
     describe("end of the buffer, like the built-in", function()
-        for _, case in ipairs({
-            { "#dw on the last word takes the blanks after it", { "x = foo  " }, 0, 4, "dw" },
-            { "#dw on trailing blanks", { "local x = foo  " }, 0, 13, "dw" },
-            { "#dw on trailing blanks in a comment", { "-- c  " }, 0, 5, "dw" },
-            { "#dw on trailing blanks on a later line", { "local x = foo =  ", "  " }, 1, 1, "dw" },
-            { "#dw on a final =", { "local x = foo =  " }, 0, 14, "dw" },
-            { "#dw on an empty last line", { "local x = foo", "" }, 1, 0, "dw" },
-            { "#d3w past the last word", { "x = foo  bar" }, 0, 4, "d3w" },
-            { "#cw on a final =", { "local x = foo =  " }, 0, 14, "cwX<Esc>" },
-            { "#cw on a final ==", { "local x = foo ==  " }, 0, 14, "cwX<Esc>" },
-            { "#cw on trailing blanks", { "local x = foo  ", "  " }, 0, 13, "cwX<Esc>" },
-        }) do
-            local description, lines, row, column, keys = unpack(case)
+        ---@type {description: string, lines: string[], row: integer, column: integer, keys: string}[]
+        local cases = {
+            {
+                description = "#dw on the last word takes the blanks after it",
+                lines = { "x = foo  " },
+                row = 0,
+                column = 4,
+                keys = "dw",
+            },
+            {
+                description = "#dw on trailing blanks",
+                lines = { "local x = foo  " },
+                row = 0,
+                column = 13,
+                keys = "dw",
+            },
+            {
+                description = "#dw on trailing blanks in a comment",
+                lines = { "-- c  " },
+                row = 0,
+                column = 5,
+                keys = "dw",
+            },
+            {
+                description = "#dw on trailing blanks on a later line",
+                lines = { "local x = foo =  ", "  " },
+                row = 1,
+                column = 1,
+                keys = "dw",
+            },
+            { description = "#dw on a final =", lines = { "local x = foo =  " }, row = 0, column = 14, keys = "dw" },
+            {
+                description = "#dw on an empty last line",
+                lines = { "local x = foo", "" },
+                row = 1,
+                column = 0,
+                keys = "dw",
+            },
+            { description = "#d3w past the last word", lines = { "x = foo  bar" }, row = 0, column = 4, keys = "d3w" },
+            {
+                description = "#cw on a final =",
+                lines = { "local x = foo =  " },
+                row = 0,
+                column = 14,
+                keys = "cwX<Esc>",
+            },
+            {
+                description = "#cw on a final ==",
+                lines = { "local x = foo ==  " },
+                row = 0,
+                column = 14,
+                keys = "cwX<Esc>",
+            },
+            {
+                description = "#cw on trailing blanks",
+                lines = { "local x = foo  ", "  " },
+                row = 0,
+                column = 13,
+                keys = "cwX<Esc>",
+            },
+        }
 
-            it(description, function()
+        for _, case in ipairs(cases) do
+            it(case.description, function()
                 _configure({ enabled = true }, { lua = { "=", "==" } })
 
-                assert.same(_type_builtin(lines, row, column, keys), _type("lua", lines, row, column, keys))
+                assert.same(
+                    _type_builtin(case.lines, case.row, case.column, case.keys),
+                    _type("lua", case.lines, case.row, case.column, case.keys)
+                )
             end)
         end
     end)
@@ -295,7 +361,10 @@ describe("operator-pending motions", function()
             local ok, result = pcall(_type, "lua", { "local foo = bar" }, 0, 6, "cwX<Esc>")
             vim.o.cpoptions = cpoptions
 
-            assert.is_true(ok, result)
+            if not ok then
+                error(result, 0)
+            end
+
             assert.same({ "local X= bar" }, result)
         end)
 
@@ -333,7 +402,10 @@ describe("operator-pending motions", function()
             local ok, result = pcall(_type, "lua", { "local fooBar = 1" }, 0, 6, "de")
             vim.o.selection = selection
 
-            assert.is_true(ok, result)
+            if not ok then
+                error(result, 0)
+            end
+
             assert.same({ "local Bar = 1" }, result)
         end)
 
@@ -378,7 +450,7 @@ describe("operator-pending motions", function()
 
         it("#dw keeps the quotes and the rest of the binding", function()
             if not _has_parser("nix") then
-                pending('no "nix" treesitter parser installed')
+                _skip('no "nix" treesitter parser installed')
 
                 return
             end
@@ -390,7 +462,7 @@ describe("operator-pending motions", function()
 
         it("#cw changes only the attribute name", function()
             if not _has_parser("nix") then
-                pending('no "nix" treesitter parser installed')
+                _skip('no "nix" treesitter parser installed')
 
                 return
             end

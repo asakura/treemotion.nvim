@@ -124,7 +124,9 @@ function M.new_source(settings)
         end,
         after = _after_run,
         span_end = function(node)
-            return run.run_end(node):end_()
+            local row, column = run.run_end(node):end_()
+
+            return row, column
         end,
     })
 end
