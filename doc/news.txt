@@ -6,6 +6,13 @@ Notable changes since TreeMotion 0 (in development)
 ===============================================================================
 NEW FEATURES                                     *treemotion-new-features*
 
+- `commands.motion.operator_pending` (off by default) gives operators Vim's
+  own ranges. `dw` keeps text the motion skips (`skipped_text`) and stops at
+  a line's last word (`stop_at_line_end`), `cw` works like `ce`
+  (`change_to_end`), and `de`/`dge` include the character they land on
+  (`inclusive`). With Nix's defaults, `cw` on `origin` in `"origin" = {` now
+  changes just `origin`.
+
 - `w`/`e`/`b`/`ge` now step through naming-convention sub-words inside a
   treesitter leaf, e.g. `fooBar-bazQux` is four stops: `foo`, `Bar`, `baz`,
   `Qux`. Comments and string content (or any other `@spell`- or

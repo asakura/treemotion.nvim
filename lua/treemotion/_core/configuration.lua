@@ -44,6 +44,13 @@ local _DEFAULTS = {
                 lua = { "-" },
             },
             insignificant_characters = {},
+            operator_pending = {
+                enabled = false,
+                skipped_text = motion_constant.SkippedText.keep_between_tokens,
+                stop_at_line_end = true,
+                change_to_end = true,
+                inclusive = true,
+            },
             small = {
                 backtick_identifiers = true,
                 code = {

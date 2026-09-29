@@ -25,6 +25,7 @@
 local logging = require("mega.logging")
 
 local codepoint = require("treemotion._commands.motion.codepoint")
+local operator = require("treemotion._commands.motion.operator")
 local position = require("treemotion._commands.motion.position")
 local bigword = require("treemotion._commands.motion.bigword")
 local settings = require("treemotion._commands.motion.settings")
@@ -131,6 +132,7 @@ end
 ---@field current_unit fun(forward: boolean): treemotion.MotionUnit?
 ---@field next_unit fun(unit: treemotion.MotionUnit): treemotion.MotionUnit?
 ---@field previous_unit fun(unit: treemotion.MotionUnit): treemotion.MotionUnit?
+---@field span_end fun(node: TSNode): integer, integer
 
 --- `w`/`W`-shape move: unconditionally advance to the start of the next unit.
 ---
@@ -143,27 +145,37 @@ end
 ---
 ---@param units treemotion._UnitSource From `word.new_source` or `bigword.new_source`.
 ---@param count integer How many units to move over.
+---@return treemotion.MotionUnit? # The unit the final step moved off (or tried to, at the
+---    buffer's last unit), `nil` if that step started outside every unit.
+---    Only `_commands.motion.operator` reads it.
 ---
 local function _move_forward_to_start(units, count)
+    ---@type treemotion.MotionUnit?
+    local departed
+
     for _ = 1, count do
         local unit = units.current_unit(true)
 
         if not unit then
-            return
+            return departed
         end
 
         if not _is_cursor_inside(unit) then
+            departed = nil
             _set_cursor_to_start(unit)
         else
+            departed = unit
             local next_ = units.next_unit(unit)
 
             if not next_ then
-                return
+                return departed
             end
 
             _set_cursor_to_start(next_)
         end
     end
+
+    return departed
 end
 
 --- `ge`/`gE`-shape move: unconditionally retreat to the end of the previous unit.
@@ -245,8 +257,40 @@ local function _move_backward_to_start(units, count)
     end
 end
 
+--- How each motion shape runs under an operator (see `_commands.motion.operator`).
+---
+--- `w`/`W` trim their range; `e`/`E`/`ge`/`gE` become inclusive, like
+--- Vim's; `b`/`B` are exclusive in Vim too, so they have no entry.
+---
+---@alias treemotion._Pending treemotion.ConfigurationMotionOperatorPending
+---@alias treemotion._OperatorMove fun(units: treemotion._UnitSource, count: integer, pending: treemotion._Pending)
+
+---@type table<function, treemotion._OperatorMove>
+local _OPERATOR_MOVES = {
+    [_move_forward_to_start] = function(units, count, pending)
+        operator.forward_to_start(units, count, pending, {
+            forward_to_start = _move_forward_to_start,
+            forward_to_end = _move_forward_to_end,
+        })
+    end,
+    [_move_forward_to_end] = function(units, count, pending)
+        if pending.inclusive then
+            operator.inclusive(units, count, _move_forward_to_end)
+        else
+            _move_forward_to_end(units, count)
+        end
+    end,
+    [_move_backward_to_end] = function(units, count, pending)
+        if pending.inclusive then
+            operator.inclusive(units, count, _move_backward_to_end)
+        else
+            _move_backward_to_end(units, count)
+        end
+    end,
+}
+
 ---@class treemotion._Motion
----@field move fun(units: treemotion._UnitSource, count: integer): nil One of the `_move_*` helpers above.
+---@field move fun(units: treemotion._UnitSource, count: integer): any One of the `_move_*` helpers above.
 ---@field units {new_source: fun(settings: treemotion.SplitSettings): treemotion._UnitSource}
 ---    `_commands.motion.word` or `_commands.motion.bigword`.
 ---@field group "small"|"big" Which `commands.motion` group configures `units`.
@@ -282,6 +326,10 @@ local _MOTIONS = {
 --- `_commands.motion.settings`), and handed down to the splitter, so a
 --- `count` of several units reads it only once.
 ---
+--- In operator-pending mode, with `commands.motion.operator_pending.enabled`,
+--- the motion runs through `_commands.motion.operator` instead (see
+--- `_OPERATOR_MOVES`).
+---
 ---@param name string The motion's Vim-facing name (`"w"`, `"gE"`, ...).
 ---@param count number? A 1-or-more value. How many units to move over.
 ---
@@ -298,7 +346,15 @@ function M.run(name, count)
 
     _LOGGER:fmt_debug('Running treemotion motion "%s" (count=%s) from %s:%s.', name, count, start_row, start_column)
 
-    motion.move(motion.units.new_source(settings.resolve(motion.group)), count)
+    local units = motion.units.new_source(settings.resolve(motion.group))
+    local operator_move = _OPERATOR_MOVES[motion.move]
+    local pending = operator_move and operator.resolve()
+
+    if pending then
+        operator_move(units, count, pending)
+    else
+        motion.move(units, count)
+    end
 
     local end_row, end_column = position.cursor_position()
 

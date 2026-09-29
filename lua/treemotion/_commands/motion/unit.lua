@@ -114,6 +114,8 @@ end
 ---    span with any units. Returns that span's first leaf and its units --
 ---    both `nil` if none remain.
 ---@field after fun(node: TSNode): TSNode? Given a span's first leaf, the leaf right after the span.
+---@field span_end fun(node: TSNode): integer, integer Where the span containing the leaf `node`
+---    ends (exclusive): `node`'s own end for a one-leaf span, its run's end for a run.
 
 --- Build a `treemotion._UnitSource` stepping through the spans `spans` describes.
 ---
@@ -227,6 +229,17 @@ function M.new_source(spans)
         units = assert(units)
 
         return _log(name, _new_unit(node, units, #units))
+    end
+
+    --- Where the span containing the leaf `node` ends (exclusive).
+    ---
+    --- Operator-pending motions use this to tell text inside the current
+    --- token from text between tokens (see `_commands.motion.operator`).
+    ---
+    ---@param node TSNode Any leaf, e.g. a `treemotion.MotionUnit`'s `_leaf`.
+    ---@return integer, integer
+    function source.span_end(node)
+        return spans.span_end(node)
     end
 
     return source

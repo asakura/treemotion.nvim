@@ -228,6 +228,16 @@ M.SCHEMA = _section({
                 _section({
                     { "comment_markers", _comment_markers() },
                     { "insignificant_characters", _insignificant_characters() },
+                    {
+                        "operator_pending",
+                        _section({
+                            { "enabled", _boolean() },
+                            { "skipped_text", _enum(motion_constant.SkippedText) },
+                            { "stop_at_line_end", _boolean() },
+                            { "change_to_end", _boolean() },
+                            { "inclusive", _boolean() },
+                        }),
+                    },
                     { "small", _group(false) },
                     { "big", _group(true) },
                 }),
