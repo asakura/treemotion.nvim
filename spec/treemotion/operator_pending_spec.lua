@@ -11,26 +11,24 @@
 --- Expected results for `dw` at a line's end, on an empty line, and for
 --- `cw` on whitespace or a word's last character were taken from Neovim's
 --- built-in `dw`/`cw` on the same text.
+---
+--- These are end-to-end checks of the mappings. The range rules themselves
+--- are tested directly in `operator_range_spec.lua`.
 
 local configuration = require("treemotion._core.configuration")
 local grammar_helpers = require("treemotion.grammar_helpers")
 local treemotion = require("treemotion")
 
-local _DEFAULT_OPERATOR_PENDING = {
-    enabled = false,
-    skipped_text = "keep_between_tokens",
-    stop_at_line_end = true,
-    change_to_end = true,
-    inclusive = true,
-}
-
+--- Apply `operator_pending` and `insignificant_characters` on top of the
+--- defaults (every test starts from them, see `after_each` below).
+---
 ---@param operator_pending table? Overrides for `commands.motion.operator_pending`.
 ---@param insignificant_characters table? `commands.motion.insignificant_characters`.
 local function _configure(operator_pending, insignificant_characters)
     treemotion.setup({
         commands = {
             motion = {
-                operator_pending = vim.tbl_extend("force", _DEFAULT_OPERATOR_PENDING, operator_pending or {}),
+                operator_pending = operator_pending or {},
                 insignificant_characters = insignificant_characters or {},
             },
         },
@@ -90,15 +88,20 @@ describe("operator-pending motions", function()
 
     after_each(function()
         -- `setup()` deep-merges, so it can't remove the `lua` entries these
-        -- tests add to `insignificant_characters`. Every change replaces
-        -- `configuration.DATA` rather than editing it, so the saved table
-        -- is still the original.
+        -- tests add to `insignificant_characters`. Restore the snapshot
+        -- instead, as `configuration_spec.lua` does: every change replaces
+        -- `configuration.DATA` rather than editing it, so the saved table is
+        -- still the original.
         configuration.DATA = original
     end)
 
     describe("disabled (the default)", function()
+        it("is off by default", function()
+            assert.is_false(configuration.resolve_data().commands.motion.operator_pending.enabled)
+        end)
+
         it("leaves #dw deleting everything up to the next stop", function()
-            _configure({ enabled = false }, { lua = { "=" } })
+            _configure({}, { lua = { "=" } })
 
             assert.same({ "local bar" }, _type("lua", { "local foo = bar" }, 0, 6, "dw"))
         end)
