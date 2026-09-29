@@ -204,32 +204,49 @@ local function _select(start_row, start_column, finish_row, finish_column)
     vim.api.nvim_win_set_cursor(0, { finish_row + 1, finish_column })
 end
 
---- Make the operator act on `[start, finish)`.
+--- The text an operator should act on.
 ---
---- A `finish` at the end of a non-empty line can't hold the cursor outside
---- Visual/Insert mode, so that case selects up to the line's last
---- character instead.
+--- `start` is where the cursor was before the motion. `finish` is where the
+--- range ends: the character after it for an exclusive range (as with a
+--- plain motion), its last character for an inclusive one.
 ---
+---@class treemotion.OperatorRange
+---@field start_row integer
+---@field start_column integer
+---@field finish_row integer
+---@field finish_column integer
+---@field inclusive boolean
+
 ---@param start_row integer
 ---@param start_column integer
 ---@param finish_row integer
 ---@param finish_column integer
+---@param inclusive boolean
+---@return treemotion.OperatorRange
+local function _range(start_row, start_column, finish_row, finish_column, inclusive)
+    return {
+        start_row = start_row,
+        start_column = start_column,
+        finish_row = finish_row,
+        finish_column = finish_column,
+        inclusive = inclusive,
+    }
+end
+
+--- The plain motion's range: from `start` to wherever the cursor is now.
 ---
-local function _apply_exclusive(start_row, start_column, finish_row, finish_column)
-    local length = #_line(finish_row)
+---@param start_row integer
+---@param start_column integer
+---@return treemotion.OperatorRange
+local function _range_to_cursor(start_row, start_column)
+    local row, column = position.cursor_position()
 
-    if finish_column == 0 or finish_column < length then
-        vim.api.nvim_win_set_cursor(0, { finish_row + 1, finish_column })
-
-        return
-    end
-
-    _select(start_row, start_column, finish_row, codepoint.last_character_column(finish_row, length))
+    return _range(start_row, start_column, row, column, false)
 end
 
 --- `cw`/`cW`: change to the end of the current unit, like `ce`/`cE`.
 ---
---- Only runs while `settings.change_to_end` is set (see
+--- Only used while `settings.change_to_end` is set (see
 --- `treemotion.OperatorSettings`).
 ---
 --- On skipped text (see `_skipped_text_end`) that text counts as the
@@ -238,8 +255,9 @@ end
 ---@param units treemotion._UnitSource
 ---@param unit treemotion.MotionUnit `units.current_unit(true)` at the cursor.
 ---@param count integer
+---@return treemotion.OperatorRange
 ---
-local function _change_to_end(units, unit, count)
+local function _change_to_end_range(units, unit, count)
     local start_row, start_column = position.cursor_position()
     local end_row, end_column
 
@@ -257,10 +275,10 @@ local function _change_to_end(units, unit, count)
 
     local finish_row, finish_column = position.cursor_position()
 
-    _select(start_row, start_column, finish_row, finish_column)
+    return _range(start_row, start_column, finish_row, finish_column, true)
 end
 
---- `dw`/`yW`/...: run the `w`/`W` motion, then trim the range per `settings`.
+--- The range `dw`/`cw`/`yW`/... should act on: the `w`/`W` motion's, trimmed per `settings`.
 ---
 --- The range starts at the cursor and would end where the motion lands.
 --- Its tail is trimmed from the end of the last unit moved over:
@@ -278,30 +296,29 @@ end
 --- A range the trimming would empty, and a motion that found nowhere to go
 --- from outside every unit, keep the plain motion's range.
 ---
+--- Moves the cursor while measuring, since `units` works from the cursor;
+--- `M.apply` puts it where the range needs it.
+---
 ---@param units treemotion._UnitSource
 ---@param count integer
 ---@param settings treemotion.OperatorSettings
 ---@param move treemotion._Move `shape.forward_to_start`.
+---@return treemotion.OperatorRange
 ---
-function M.forward_to_start(units, count, settings, move)
+function M.forward_range(units, count, settings, move)
+    local start_row, start_column = position.cursor_position()
     local unit = units.current_unit(true)
 
     if not unit then
         -- No parser, or nothing left to move to: same as the plain motion.
         move(units, count)
 
-        return
+        return _range_to_cursor(start_row, start_column)
     end
 
-    local on_non_blank = _is_cursor_on_non_blank()
-
-    if settings.change_to_end and on_non_blank then
-        _change_to_end(units, unit, count)
-
-        return
+    if settings.change_to_end and _is_cursor_on_non_blank() then
+        return _change_to_end_range(units, unit, count)
     end
-
-    local start_row, start_column = position.cursor_position()
 
     if count > 1 then
         -- Only the final step is trimmed, so take the others as they are.
@@ -309,7 +326,7 @@ function M.forward_to_start(units, count, settings, move)
         unit = units.current_unit(true)
 
         if not unit then
-            return
+            return _range_to_cursor(start_row, start_column)
         end
     end
 
@@ -339,7 +356,7 @@ function M.forward_to_start(units, count, settings, move)
 
     if not _is_before(step_row, step_column, target_row, target_column) then
         if not departed then
-            return
+            return _range_to_cursor(start_row, start_column)
         end
 
         -- The final step found nowhere to go (the buffer's last unit): the
@@ -365,13 +382,7 @@ function M.forward_to_start(units, count, settings, move)
             -- An empty line is a word of its own (`:help word`): Vim's `dw`
             -- there acts on the line break, while `cw` just starts
             -- inserting.
-            if settings.change then
-                vim.api.nvim_win_set_cursor(0, { start_row + 1, start_column })
-            else
-                _select(start_row, start_column, start_row, start_column)
-            end
-
-            return
+            return _range(start_row, start_column, start_row, start_column, not settings.change)
         end
 
         -- Vim's `dw` on a line's last word stops at the end of the line
@@ -381,19 +392,85 @@ function M.forward_to_start(units, count, settings, move)
     end
 
     if not _is_before(start_row, start_column, end_row, end_column) then
-        vim.api.nvim_win_set_cursor(0, { target_row + 1, target_column })
+        return _range(start_row, start_column, target_row, target_column, false)
+    end
+
+    return _range(start_row, start_column, end_row, end_column, false)
+end
+
+--- The range `de`/`dge`/... should act on: the motion's, including both ends.
+---
+--- The plain (exclusive) range when `settings.inclusive` is off. A motion
+--- that didn't move gives an empty range, rather than the character under
+--- the cursor.
+---
+--- Moves the cursor, like `M.forward_range`.
+---
+---@param units treemotion._UnitSource
+---@param count integer
+---@param settings treemotion.OperatorSettings
+---@param move treemotion._Move The `e`/`E`/`ge`/`gE`-shape move.
+---@return treemotion.OperatorRange
+---
+function M.inclusive_range(units, count, settings, move)
+    local start_row, start_column = position.cursor_position()
+
+    move(units, count)
+
+    local target_row, target_column = position.cursor_position()
+    local moved = target_row ~= start_row or target_column ~= start_column
+
+    if not settings.inclusive or not moved then
+        return _range(start_row, start_column, target_row, target_column, false)
+    end
+
+    local first_row, first_column = _min(start_row, start_column, target_row, target_column)
+    local last_row, last_column = _max(start_row, start_column, target_row, target_column)
+
+    return _range(first_row, first_column, last_row, last_column, true)
+end
+
+--- Make the pending operator act on `range`.
+---
+--- An exclusive range just needs the cursor at its `finish`, as for a plain
+--- motion. A `finish` at the end of a non-empty line can't hold the cursor
+--- outside Visual/Insert mode, so that case selects up to the line's last
+--- character instead. An inclusive range is always selected.
+---
+---@param range treemotion.OperatorRange
+---
+function M.apply(range)
+    if range.inclusive then
+        _select(range.start_row, range.start_column, range.finish_row, range.finish_column)
 
         return
     end
 
-    _apply_exclusive(start_row, start_column, end_row, end_column)
+    local length = #_line(range.finish_row)
+
+    if range.finish_column == 0 or range.finish_column < length then
+        vim.api.nvim_win_set_cursor(0, { range.finish_row + 1, range.finish_column })
+
+        return
+    end
+
+    local last_column = codepoint.last_character_column(range.finish_row, length)
+
+    _select(range.start_row, range.start_column, range.finish_row, last_column)
 end
 
---- `de`/`dge`/...: run `move`, then make the range include both ends.
+--- `dw`/`cw`/`yW`/...: act on `M.forward_range`.
 ---
---- Runs `move` unchanged when `settings.inclusive` is off. A motion that
---- didn't move leaves the (empty) range alone, rather than operating on the
---- character under the cursor.
+---@param units treemotion._UnitSource
+---@param count integer
+---@param settings treemotion.OperatorSettings
+---@param move treemotion._Move `shape.forward_to_start`.
+---
+function M.forward_to_start(units, count, settings, move)
+    M.apply(M.forward_range(units, count, settings, move))
+end
+
+--- `de`/`dge`/...: act on `M.inclusive_range`.
 ---
 ---@param units treemotion._UnitSource
 ---@param count integer
@@ -401,26 +478,7 @@ end
 ---@param move treemotion._Move The `e`/`E`/`ge`/`gE`-shape move.
 ---
 function M.inclusive(units, count, settings, move)
-    if not settings.inclusive then
-        move(units, count)
-
-        return
-    end
-
-    local start_row, start_column = position.cursor_position()
-
-    move(units, count)
-
-    local target_row, target_column = position.cursor_position()
-
-    if target_row == start_row and target_column == start_column then
-        return
-    end
-
-    local first_row, first_column = _min(start_row, start_column, target_row, target_column)
-    local last_row, last_column = _max(start_row, start_column, target_row, target_column)
-
-    _select(first_row, first_column, last_row, last_column)
+    M.apply(M.inclusive_range(units, count, settings, move))
 end
 
 return M
