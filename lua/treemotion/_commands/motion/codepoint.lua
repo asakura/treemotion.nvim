@@ -18,6 +18,15 @@
 
 local M = {}
 
+--- The current buffer's text on `row`.
+---
+---@param row integer 0-indexed row.
+---@return string # The row's text, or `""` past the buffer's end.
+---
+function M.line(row)
+    return vim.api.nvim_buf_get_lines(0, row, row + 1, false)[1] or ""
+end
+
 --- How many bytes the UTF-8 codepoint starting at `text`'s `byte_index`
 --- (1-indexed) occupies.
 ---
@@ -53,7 +62,7 @@ end
 --- lands mid-character the moment that boundary follows a multi-byte
 --- character; this walks the byte back to its own lead byte instead.
 ---
---- Confirmed safe on out-of-range rows (`nvim_buf_get_lines` returns `{}`,
+--- Confirmed safe on out-of-range rows (`M.line` returns `""`,
 --- so this falls through to the raw byte, matching `end_column - 1`'s old
 --- behavior for a line that doesn't exist) and on malformed UTF-8
 --- (`vim.str_utf_start` never errors, treats each stray byte as its own lead
@@ -65,9 +74,9 @@ end
 ---
 function M.last_character_column(row, end_column)
     local last_byte = math.max(end_column - 1, 0)
-    local line = vim.api.nvim_buf_get_lines(0, row, row + 1, false)[1]
+    local line = M.line(row)
 
-    if not line or last_byte >= #line then
+    if last_byte >= #line then
         return last_byte
     end
 

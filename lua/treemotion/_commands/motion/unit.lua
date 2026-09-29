@@ -33,6 +33,7 @@ local M = {}
 ---@field _leaf TSNode The span's first leaf, which `_units` was split from.
 ---@field _units treemotion.SubwordUnit[] Every sub-word slice of the span, in document order.
 ---@field _index integer Which of `_units` this `treemotion.MotionUnit` currently wraps.
+---@field _span_end fun(node: TSNode): integer, integer The source's `span_end`.
 local _Unit = {}
 _Unit.__index = _Unit
 
@@ -48,14 +49,25 @@ function _Unit:end_()
     return self._units[self._index]:end_()
 end
 
+--- Where this unit's whole span (its leaf, or its `W` run) ends, exclusive.
+---
+--- Operator-pending motions use this to tell text inside the current
+--- token from text between tokens (see `_commands.motion.operator`).
+---
+---@return integer, integer
+function _Unit:span_end()
+    return self._span_end(self._leaf)
+end
+
 --- Build a `treemotion.MotionUnit` wrapping `units[index]`.
 ---
 ---@param node TSNode The span's first leaf `units` were split from.
 ---@param units treemotion.SubwordUnit[] The span's sub-word units.
 ---@param index integer Which of `units` this `treemotion.MotionUnit` wraps.
+---@param span_end fun(node: TSNode): integer, integer The source's `span_end`.
 ---@return treemotion.MotionUnit
-local function _new_unit(node, units, index)
-    return setmetatable({ _leaf = node, _units = units, _index = index }, _Unit)
+local function _new_unit(node, units, index, span_end)
+    return setmetatable({ _leaf = node, _units = units, _index = index, _span_end = span_end }, _Unit)
 end
 
 --- Find which of `units` contains (or is the closest unit in `forward`'s
@@ -160,12 +172,15 @@ function M.new_source(spans)
     ---    leaf to prefer off a leaf (e.g. blank line); also which direction to
     ---    skip empty spans in.
     ---@return treemotion.MotionUnit? # The unit under (or nearest) the cursor, if a parser and a leaf exist that way.
+    ---@return TSNode? # The leaf under (or nearest) the cursor that the search started from, which
+    ---    may have no units of its own (e.g. an insignificant leaf).
     function source.current_unit(forward)
         local name = string.format("current_unit(forward=%s)", forward)
-        local node, units = spans.first_nonempty(leaf.current_leaf(forward), forward)
+        local cursor_leaf = leaf.current_leaf(forward)
+        local node, units = spans.first_nonempty(cursor_leaf, forward)
 
         if not node then
-            return _log(name, nil)
+            return _log(name, nil), cursor_leaf
         end
 
         -- `units` is only `nil` when `node` is (see `spans.first_nonempty`),
@@ -175,7 +190,7 @@ function M.new_source(spans)
 
         local row, column = position.cursor_position()
 
-        return _log(name, _new_unit(node, units, _index_at(units, row, column, forward)))
+        return _log(name, _new_unit(node, units, _index_at(units, row, column, forward), spans.span_end)), cursor_leaf
     end
 
     --- Find the sub-word unit directly after `unit`, in document order.
@@ -191,7 +206,7 @@ function M.new_source(spans)
         local name = string.format("next_unit(unit %s/%s)", unit._index, #unit._units)
 
         if unit._index < #unit._units then
-            return _log(name, _new_unit(unit._leaf, unit._units, unit._index + 1))
+            return _log(name, _new_unit(unit._leaf, unit._units, unit._index + 1, spans.span_end))
         end
 
         local node, units = spans.first_nonempty(spans.after(unit._leaf), true)
@@ -200,7 +215,7 @@ function M.new_source(spans)
             return _log(name, nil)
         end
 
-        return _log(name, _new_unit(node, assert(units), 1))
+        return _log(name, _new_unit(node, assert(units), 1, spans.span_end))
     end
 
     --- Find the sub-word unit directly before `unit`, in document order.
@@ -217,7 +232,7 @@ function M.new_source(spans)
         local name = string.format("previous_unit(unit %s/%s)", unit._index, #unit._units)
 
         if unit._index > 1 then
-            return _log(name, _new_unit(unit._leaf, unit._units, unit._index - 1))
+            return _log(name, _new_unit(unit._leaf, unit._units, unit._index - 1, spans.span_end))
         end
 
         local node, units = spans.first_nonempty(leaf.previous_leaf(unit._leaf), false)
@@ -228,15 +243,15 @@ function M.new_source(spans)
 
         units = assert(units)
 
-        return _log(name, _new_unit(node, units, #units))
+        return _log(name, _new_unit(node, units, #units, spans.span_end))
     end
 
     --- Where the span containing the leaf `node` ends (exclusive).
     ---
-    --- Operator-pending motions use this to tell text inside the current
-    --- token from text between tokens (see `_commands.motion.operator`).
+    --- The same as `treemotion.MotionUnit:span_end`, for a leaf that may have
+    --- no units of its own (see `current_unit`'s second return value).
     ---
-    ---@param node TSNode Any leaf, e.g. a `treemotion.MotionUnit`'s `_leaf`.
+    ---@param node TSNode Any leaf.
     ---@return integer, integer
     function source.span_end(node)
         return spans.span_end(node)

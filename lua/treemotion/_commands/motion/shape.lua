@@ -100,19 +100,7 @@ end
 ---@param node TSNode|treemotion.MotionUnit
 ---@return boolean # `true` if the cursor is inside `node`'s range, `false` for a gap `node` substitutes for.
 local function _is_cursor_inside(node)
-    local start_row, start_column = node:start()
-    local end_row, end_column = node:end_()
-    local cursor_row, cursor_column = position.cursor_position()
-
-    if cursor_row < start_row or (cursor_row == start_row and cursor_column < start_column) then
-        return false
-    end
-
-    if cursor_row > end_row or (cursor_row == end_row and cursor_column >= end_column) then
-        return false
-    end
-
-    return true
+    return position.contains(node, position.cursor_position())
 end
 
 --- The unit-stepping API `_commands.motion.word` and `_commands.motion.bigword` share.
@@ -124,10 +112,11 @@ end
 --- `_commands.motion.unit.new_source`.
 ---
 ---@class treemotion._UnitSource
----@field current_unit fun(forward: boolean): treemotion.MotionUnit?
+---@field current_unit fun(forward: boolean): treemotion.MotionUnit?, TSNode?
+---    The unit under (or nearest) the cursor, and the leaf under (or nearest) the cursor.
 ---@field next_unit fun(unit: treemotion.MotionUnit): treemotion.MotionUnit?
 ---@field previous_unit fun(unit: treemotion.MotionUnit): treemotion.MotionUnit?
----@field span_end fun(node: TSNode): integer, integer
+---@field span_end fun(node: TSNode): integer, integer Where the span containing the leaf `node` ends.
 
 --- Any one of the shapes below.
 ---

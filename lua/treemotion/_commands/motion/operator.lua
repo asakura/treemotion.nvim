@@ -28,7 +28,6 @@
 
 local codepoint = require("treemotion._commands.motion.codepoint")
 local constant = require("treemotion._commands.motion.constant")
-local leaf = require("treemotion._commands.motion.leaf")
 local position = require("treemotion._commands.motion.position")
 local shape = require("treemotion._commands.motion.shape")
 
@@ -42,56 +41,6 @@ local M = {}
 ---@alias treemotion._OperatorMove fun(units: treemotion._UnitSource, count: integer, pending: treemotion.OperatorSettings, move: treemotion._Move)
 -- luacheck: pop
 
---- Check whether `row_a`/`column_a` comes before `row_b`/`column_b`.
----
----@param row_a integer
----@param column_a integer
----@param row_b integer
----@param column_b integer
----@return boolean
----
-local function _is_before(row_a, column_a, row_b, column_b)
-    return row_a < row_b or (row_a == row_b and column_a < column_b)
-end
-
---- The later of two positions.
----
----@param row_a integer
----@param column_a integer
----@param row_b integer
----@param column_b integer
----@return integer, integer
----
-local function _max(row_a, column_a, row_b, column_b)
-    if _is_before(row_a, column_a, row_b, column_b) then
-        return row_b, column_b
-    end
-
-    return row_a, column_a
-end
-
---- The earlier of two positions.
----
----@param row_a integer
----@param column_a integer
----@param row_b integer
----@param column_b integer
----@return integer, integer
----
-local function _min(row_a, column_a, row_b, column_b)
-    if _is_before(row_a, column_a, row_b, column_b) then
-        return row_a, column_a
-    end
-
-    return row_b, column_b
-end
-
----@param row integer 0-indexed row.
----@return string # The row's text, or `""` past the buffer's end.
-local function _line(row)
-    return vim.api.nvim_buf_get_lines(0, row, row + 1, false)[1] or ""
-end
-
 --- Find the first non-blank character in `[from, to)`.
 ---
 ---@param from_row integer
@@ -103,10 +52,10 @@ end
 local function _first_non_blank(from_row, from_column, to_row, to_column)
     local row, column = from_row, from_column
 
-    while _is_before(row, column, to_row, to_column) do
-        local found = _line(row):find("%S", column + 1)
+    while position.is_before(row, column, to_row, to_column) do
+        local found = codepoint.line(row):find("%S", column + 1)
 
-        if found and _is_before(row, found - 1, to_row, to_column) then
+        if found and position.is_before(row, found - 1, to_row, to_column) then
             return row, found - 1
         end
 
@@ -125,23 +74,9 @@ end
 ---@return boolean
 local function _is_cursor_on_non_blank()
     local row, column = position.cursor_position()
-    local character = _line(row):sub(column + 1, column + 1)
+    local character = codepoint.line(row):sub(column + 1, column + 1)
 
     return character ~= "" and not character:match("%s")
-end
-
---- Check whether `row`/`column` falls within `node`'s range.
----
----@param node TSNode|treemotion.MotionUnit
----@param row integer
----@param column integer
----@return boolean
----
-local function _contains(node, row, column)
-    local start_row, start_column = node:start()
-    local end_row, end_column = node:end_()
-
-    return not _is_before(row, column, start_row, start_column) and _is_before(row, column, end_row, end_column)
 end
 
 --- Where the skipped text under the cursor ends (exclusive).
@@ -154,30 +89,30 @@ end
 ---
 ---@param units treemotion._UnitSource
 ---@param next_unit treemotion.MotionUnit? `units.current_unit(true)` at the cursor.
+---@param cursor_leaf TSNode? The leaf that same call started from.
 ---@return integer, integer
 ---
-local function _skipped_text_end(units, next_unit)
+local function _skipped_text_end(units, next_unit, cursor_leaf)
     local row, column = position.cursor_position()
-    local line = _line(row)
+    local line = codepoint.line(row)
     local end_row, end_column = row, column + codepoint.char_width(line, column + 1)
-    local node = leaf.current_leaf(true)
 
-    if node and _contains(node, row, column) then
-        end_row, end_column = _max(end_row, end_column, units.span_end(node))
+    if cursor_leaf and position.contains(cursor_leaf, row, column) then
+        end_row, end_column = position.max(end_row, end_column, units.span_end(cursor_leaf))
     end
 
     if next_unit then
         local unit_row, unit_column = next_unit:start()
 
-        if _is_before(row, column, unit_row, unit_column) then
-            end_row, end_column = _min(end_row, end_column, unit_row, unit_column)
+        if position.is_before(row, column, unit_row, unit_column) then
+            end_row, end_column = position.min(end_row, end_column, unit_row, unit_column)
         end
     end
 
     local blank = line:find("%s", column + 1)
 
     if blank then
-        end_row, end_column = _min(end_row, end_column, row, blank - 1)
+        end_row, end_column = position.min(end_row, end_column, row, blank - 1)
     end
 
     return end_row, end_column
@@ -198,7 +133,7 @@ local function _select(start_row, start_column, finish_row, finish_column)
     vim.cmd("normal! v")
 
     if vim.o.selection == "exclusive" then
-        finish_column = finish_column + codepoint.char_width(_line(finish_row), finish_column + 1)
+        finish_column = finish_column + codepoint.char_width(codepoint.line(finish_row), finish_column + 1)
     end
 
     vim.api.nvim_win_set_cursor(0, { finish_row + 1, finish_column })
@@ -254,17 +189,18 @@ end
 ---
 ---@param units treemotion._UnitSource
 ---@param unit treemotion.MotionUnit `units.current_unit(true)` at the cursor.
+---@param cursor_leaf TSNode? The leaf that same call started from.
 ---@param count integer
 ---@return treemotion.OperatorRange
 ---
-local function _change_to_end_range(units, unit, count)
+local function _change_to_end_range(units, unit, cursor_leaf, count)
     local start_row, start_column = position.cursor_position()
     local end_row, end_column
 
-    if _contains(unit, start_row, start_column) then
+    if position.contains(unit, start_row, start_column) then
         end_row, end_column = unit:end_()
     else
-        end_row, end_column = _skipped_text_end(units, unit)
+        end_row, end_column = _skipped_text_end(units, unit, cursor_leaf)
     end
 
     vim.api.nvim_win_set_cursor(0, { end_row + 1, codepoint.last_character_column(end_row, end_column) })
@@ -307,7 +243,7 @@ end
 ---
 function M.forward_range(units, count, settings, move)
     local start_row, start_column = position.cursor_position()
-    local unit = units.current_unit(true)
+    local unit, cursor_leaf = units.current_unit(true)
 
     if not unit then
         -- No parser, or nothing left to move to: same as the plain motion.
@@ -317,13 +253,13 @@ function M.forward_range(units, count, settings, move)
     end
 
     if settings.change_to_end and _is_cursor_on_non_blank() then
-        return _change_to_end_range(units, unit, count)
+        return _change_to_end_range(units, unit, cursor_leaf, count)
     end
 
     if count > 1 then
         -- Only the final step is trimmed, so take the others as they are.
         move(units, count - 1)
-        unit = units.current_unit(true)
+        unit, cursor_leaf = units.current_unit(true)
 
         if not unit then
             return _range_to_cursor(start_row, start_column)
@@ -335,26 +271,26 @@ function M.forward_range(units, count, settings, move)
     ---@type treemotion.MotionUnit?
     local departed
 
-    if _contains(unit, step_row, step_column) then
+    if position.contains(unit, step_row, step_column) then
         departed = unit
         tail_row, tail_column = unit:end_()
 
         if settings.skipped_text == constant.SkippedText.keep_between_tokens then
             -- Clamped to the unit's own line, since some grammars end a
             -- leaf at the next row's column 0 (a trailing newline).
-            local span_row, span_column = _min(tail_row, #_line(tail_row), units.span_end(unit._leaf))
+            local span_row, span_column = position.min(tail_row, #codepoint.line(tail_row), unit:span_end())
 
-            tail_row, tail_column = _max(tail_row, tail_column, span_row, span_column)
+            tail_row, tail_column = position.max(tail_row, tail_column, span_row, span_column)
         end
     elseif _is_cursor_on_non_blank() then
-        tail_row, tail_column = _skipped_text_end(units, unit)
+        tail_row, tail_column = _skipped_text_end(units, unit, cursor_leaf)
     end
 
     move(units, 1)
 
     local target_row, target_column = position.cursor_position()
 
-    if not _is_before(step_row, step_column, target_row, target_column) then
+    if not position.is_before(step_row, step_column, target_row, target_column) then
         if not departed then
             return _range_to_cursor(start_row, start_column)
         end
@@ -376,7 +312,7 @@ function M.forward_range(units, count, settings, move)
     end
 
     if settings.stop_at_line_end and end_row > tail_row then
-        local length = #_line(tail_row)
+        local length = #codepoint.line(tail_row)
 
         if length == 0 then
             -- An empty line is a word of its own (`:help word`): Vim's `dw`
@@ -391,7 +327,7 @@ function M.forward_range(units, count, settings, move)
         end_row, end_column = tail_row, length
     end
 
-    if not _is_before(start_row, start_column, end_row, end_column) then
+    if not position.is_before(start_row, start_column, end_row, end_column) then
         return _range(start_row, start_column, target_row, target_column, false)
     end
 
@@ -424,8 +360,8 @@ function M.inclusive_range(units, count, settings, move)
         return _range(start_row, start_column, target_row, target_column, false)
     end
 
-    local first_row, first_column = _min(start_row, start_column, target_row, target_column)
-    local last_row, last_column = _max(start_row, start_column, target_row, target_column)
+    local first_row, first_column = position.min(start_row, start_column, target_row, target_column)
+    local last_row, last_column = position.max(start_row, start_column, target_row, target_column)
 
     return _range(first_row, first_column, last_row, last_column, true)
 end
@@ -446,7 +382,7 @@ function M.apply(range)
         return
     end
 
-    local length = #_line(range.finish_row)
+    local length = #codepoint.line(range.finish_row)
 
     if range.finish_column == 0 or range.finish_column < length then
         vim.api.nvim_win_set_cursor(0, { range.finish_row + 1, range.finish_column })
