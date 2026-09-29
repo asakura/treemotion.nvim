@@ -11,7 +11,9 @@ NEW FEATURES                                     *treemotion-new-features*
   a line's last word (`stop_at_line_end`), `cw` works like `ce`
   (`change_to_end`), and `de`/`dge` include the character they land on
   (`inclusive`). With Nix's defaults, `cw` on `origin` in `"origin" = {` now
-  changes just `origin`.
+  changes just `origin`. Operators never take a closing bracket they didn't
+  open: `dW` on the `c` of `(config.lib)` keeps the `)`, while `dW` on the
+  `(` deletes the whole `(config.lib)`.
 
 - `w`/`e`/`b`/`ge` now step through naming-convention sub-words inside a
   treesitter leaf, e.g. `fooBar-bazQux` is four stops: `foo`, `Bar`, `baz`,

@@ -128,6 +128,60 @@ local function _skipped_text_end(units, next_unit, cursor_leaf)
     return end_row, end_column
 end
 
+---@type table<string, true>
+local _OPENING_BRACKETS = { ["("] = true, ["["] = true, ["{"] = true }
+
+---@type table<string, true>
+local _CLOSING_BRACKETS = { [")"] = true, ["]"] = true, ["}"] = true }
+
+--- Where a range from `start` to `finish` (exclusive) ends without taking a
+--- closing bracket it didn't open.
+---
+--- `dw` on the `c` of `(config.lib)` should leave the `)` behind, while `dw`
+--- on the `(` takes the whole `(config.lib)`. Closing brackets at the very
+--- start of the range are the ones the cursor is on, so they stay in.
+---
+---@param start_row integer
+---@param start_column integer
+---@param finish_row integer
+---@param finish_column integer
+---@return integer, integer # `finish`, or the first unopened closing bracket after `start`.
+---
+local function _before_unopened_bracket(start_row, start_column, finish_row, finish_column)
+    local lines = vim.api.nvim_buf_get_text(0, start_row, start_column, finish_row, finish_column, {})
+    local depth = 0
+    local leading = true
+
+    for index, line in ipairs(lines) do
+        local row = start_row + index - 1
+        local offset = index == 1 and start_column or 0
+
+        if index > 1 then
+            leading = false
+        end
+
+        for byte = 1, #line do
+            local character = line:sub(byte, byte)
+
+            if _CLOSING_BRACKETS[character] then
+                if depth > 0 then
+                    depth = depth - 1
+                elseif not leading then
+                    return row, offset + byte - 1
+                end
+            else
+                leading = false
+
+                if _OPENING_BRACKETS[character] then
+                    depth = depth + 1
+                end
+            end
+        end
+    end
+
+    return finish_row, finish_column
+end
+
 --- Select from `start` to `finish`, both inclusive, for the pending operator.
 ---
 --- With `'selection'` set to `"exclusive"` the Visual area leaves out its
@@ -178,6 +232,43 @@ local function _range(start_row, start_column, finish_row, finish_column, inclus
     }
 end
 
+--- `range`, ending before the first closing bracket it didn't open.
+---
+--- See `_before_unopened_bracket`. Only for ranges that run forward from
+--- the cursor.
+---
+---@param range treemotion.OperatorRange
+---@return treemotion.OperatorRange
+local function _balanced(range)
+    local finish_row, finish_column = range.finish_row, range.finish_column
+
+    if range.inclusive then
+        local line = codepoint.line(finish_row)
+
+        finish_column = math.min(#line, finish_column + codepoint.char_width(line, finish_column + 1))
+    end
+
+    local row, column = _before_unopened_bracket(range.start_row, range.start_column, finish_row, finish_column)
+
+    if row == finish_row and column == finish_column then
+        return range
+    end
+
+    if not range.inclusive then
+        return _range(range.start_row, range.start_column, row, column, false)
+    end
+
+    if column == 0 then
+        -- The bracket starts a line: end on the previous line's last character.
+        row = row - 1
+        column = #codepoint.line(row)
+    end
+
+    column = codepoint.last_character_column(row, column)
+
+    return _range(range.start_row, range.start_column, row, column, true)
+end
+
 --- The plain motion's range: from `start` to wherever the cursor is now.
 ---
 ---@param start_row integer
@@ -221,7 +312,7 @@ local function _change_to_end_range(units, unit, cursor_leaf, count)
 
     local finish_row, finish_column = position.cursor_position()
 
-    return _range(start_row, start_column, finish_row, finish_column, true)
+    return _balanced(_range(start_row, start_column, finish_row, finish_column, true))
 end
 
 --- The range `dw`/`cw`/`yW`/... should act on: the `w`/`W` motion's, trimmed per `settings`.
@@ -283,7 +374,17 @@ function M.forward_range(units, count, settings, move)
         if settings.skipped_text == constant.SkippedText.keep_between_tokens then
             -- Clamped to the unit's own line, since some grammars end a
             -- leaf at the next row's column 0 (a trailing newline).
-            local span_row, span_column = position.min(tail_row, #codepoint.line(tail_row), unit:span_end())
+            local line = codepoint.line(tail_row)
+            local span_row, span_column = position.min(tail_row, #line, unit:span_end())
+
+            -- A token never spans a blank. Prose splits a whole sentence
+            -- out of one leaf, so its span alone would take the `` ` `` in
+            -- "and `code`" along with "and ".
+            local blank = line:find("%s", tail_column + 1)
+
+            if blank then
+                span_row, span_column = position.min(span_row, span_column, tail_row, blank - 1)
+            end
 
             tail_row, tail_column = position.max(tail_row, tail_column, span_row, span_column)
         end
@@ -329,10 +430,10 @@ function M.forward_range(units, count, settings, move)
     end
 
     if not position.is_before(start_row, start_column, end_row, end_column) then
-        return _range(start_row, start_column, target_row, target_column, false)
+        return _balanced(_range(start_row, start_column, target_row, target_column, false))
     end
 
-    return _range(start_row, start_column, end_row, end_column, false)
+    return _balanced(_range(start_row, start_column, end_row, end_column, false))
 end
 
 --- The range `de`/`dge`/... should act on: the motion's, including both ends.
@@ -361,10 +462,11 @@ function M.inclusive_range(units, count, settings, move)
         return _range(start_row, start_column, target_row, target_column, false)
     end
 
-    local first_row, first_column = position.min(start_row, start_column, target_row, target_column)
-    local last_row, last_column = position.max(start_row, start_column, target_row, target_column)
+    if position.is_before(target_row, target_column, start_row, start_column) then
+        return _range(target_row, target_column, start_row, start_column, true)
+    end
 
-    return _range(first_row, first_column, last_row, last_column, true)
+    return _balanced(_range(start_row, start_column, target_row, target_column, true))
 end
 
 --- Make the pending operator act on `range`.
