@@ -156,6 +156,12 @@ describe("operator-pending motions", function()
 
             assert.same({ "local x = " }, _type("lua", { "local x = foo" }, 0, 10, "dw"))
         end)
+
+        it("#d5w running out of units still deletes the last one, like Vim's", function()
+            _configure({ enabled = true })
+
+            assert.same({ "local x " }, _type("lua", { "local x = foo" }, 0, 8, "d5w"))
+        end)
     end)
 
     describe("line ends", function()

@@ -327,33 +327,47 @@ function M.forward_to_start(units, count, settings, move)
     end
 
     local start_row, start_column = position.cursor_position()
-    local tail_row, tail_column = start_row, start_column
 
-    if on_non_blank and not _contains(unit, start_row, start_column) then
-        tail_row, tail_column = _skipped_text_end(units, unit)
+    if count > 1 then
+        -- Only the final step is trimmed, so take the others as they are.
+        move(units, count - 1)
+        unit = units.current_unit(true)
+
+        if not unit then
+            return
+        end
     end
 
-    local departed = move(units, count)
-    local target_row, target_column = position.cursor_position()
+    local step_row, step_column = position.cursor_position()
+    local tail_row, tail_column = step_row, step_column
+    ---@type treemotion.MotionUnit?
+    local departed
 
-    if departed then
-        tail_row, tail_column = departed:end_()
+    if _contains(unit, step_row, step_column) then
+        departed = unit
+        tail_row, tail_column = unit:end_()
 
         if settings.skipped_text == constant.SkippedText.keep_between_tokens then
             -- Clamped to the unit's own line, since some grammars end a
             -- leaf at the next row's column 0 (a trailing newline).
-            local span_row, span_column = _min(tail_row, #_line(tail_row), units.span_end(departed._leaf))
+            local span_row, span_column = _min(tail_row, #_line(tail_row), units.span_end(unit._leaf))
 
             tail_row, tail_column = _max(tail_row, tail_column, span_row, span_column)
         end
+    elseif _is_cursor_on_non_blank() then
+        tail_row, tail_column = _skipped_text_end(units, unit)
     end
 
-    if not _is_before(start_row, start_column, target_row, target_column) then
+    move(units, 1)
+
+    local target_row, target_column = position.cursor_position()
+
+    if not _is_before(step_row, step_column, target_row, target_column) then
         if not departed then
             return
         end
 
-        -- The motion found nowhere to go (the buffer's last unit): the
+        -- The final step found nowhere to go (the buffer's last unit): the
         -- range still covers the rest of the unit.
         target_row, target_column = tail_row, tail_column
     end

@@ -144,37 +144,27 @@ end
 ---
 ---@param units treemotion._UnitSource From `word.new_source` or `bigword.new_source`.
 ---@param count integer How many units to move over.
----@return treemotion.MotionUnit? # The unit the final step moved off (or tried to, at the
----    buffer's last unit), `nil` if that step started outside every unit.
----    Only `_commands.motion.operator` reads it.
 ---
 function M.forward_to_start(units, count)
-    ---@type treemotion.MotionUnit?
-    local departed
-
     for _ = 1, count do
         local unit = units.current_unit(true)
 
         if not unit then
-            return departed
+            return
         end
 
         if not _is_cursor_inside(unit) then
-            departed = nil
             _set_cursor_to_start(unit)
         else
-            departed = unit
             local next_ = units.next_unit(unit)
 
             if not next_ then
-                return departed
+                return
             end
 
             _set_cursor_to_start(next_)
         end
     end
-
-    return departed
 end
 
 --- `ge`/`gE`-shape move: unconditionally retreat to the end of the previous unit.
