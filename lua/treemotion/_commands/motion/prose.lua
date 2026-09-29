@@ -9,18 +9,28 @@
 --- before it (see `_merge_opaque_padding`).
 ---
 --- Pure string functions: no buffer, treesitter or configuration access.
+--- (Characters above U+00FF are classified with `vim.fn.charclass()`, see
+--- `_commands.motion.codepoint.class`.)
 
 local case = require("treemotion._commands.motion.case")
+local codepoint = require("treemotion._commands.motion.codepoint")
 
 local M = {}
 
 --- Classify one character the way real Vim's `w` classifies it in a text file.
 ---
---- Real Vim's word motions only recognize three classes: blank, "keyword"
---- (`'iskeyword'`, which defaults to letters/digits/`_`), and everything
---- else -- and critically, *every* non-blank, non-keyword character shares
---- that one "everything else" class, so a run like `?!` is a single word,
---- not two.
+--- For ASCII, real Vim's word motions only recognize three classes: blank,
+--- "keyword" (`'iskeyword'`, which defaults to letters/digits/`_`), and
+--- everything else -- and critically, *every* non-blank, non-keyword
+--- character shares that one "everything else" class, so a run like `?!`
+--- is a single word, not two.
+---
+--- Other characters take their class from `codepoint.class` (`:help word`,
+--- `:help charclass()`): accented and other letters are `"word"`, so
+--- `café` is one word, non-ASCII punctuation (`—`, `…`, `«`) is `"other"`
+--- like `?`, and blanks such as a no-break space are `"blank"`. Emoji and
+--- other Unicode blocks (CJK, subscripts, ...) keep their numeric class, so
+--- a word ends wherever it changes, as in Vim.
 ---
 --- `-`/`:`/`/` are deliberately grouped into `"word"` here too, even though
 --- real Vim's default `'iskeyword'` excludes them: `delimiters.split` is
@@ -33,17 +43,31 @@ local M = {}
 --- `github:NixOS/nixpkgs` or a URL/path from being fragmented at every `:`/`/`
 --- before `colon_case`/`slash_case` ever get a say.
 ---
----@param char string A single character.
----@return "blank"|"word"|"other"
+---@param char string A single character (see `codepoint.characters`).
+---@return "blank"|"word"|"other"|integer
 ---
 local function _char_class(char)
-    if char:match("%s") then
-        return "blank"
-    elseif char:match("[%w_%-:/]") then
-        return "word"
+    if char:byte(1) < 128 then
+        if char:match("%s") then
+            return "blank"
+        elseif char:match("[%w_%-:/]") then
+            return "word"
+        end
+
+        return "other"
     end
 
-    return "other"
+    local class = codepoint.class(char)
+
+    if class == codepoint.BLANK then
+        return "blank"
+    elseif class == codepoint.WORD then
+        return "word"
+    elseif class == codepoint.PUNCTUATION then
+        return "other"
+    end
+
+    return class
 end
 
 --- Split `text` into Vim-style words: runs of keyword chars, or runs of
@@ -61,11 +85,13 @@ function M.split_words(text)
     local chunks = {}
     local start = 1
 
-    ---@type "blank"|"word"|"other"?
+    ---@type "blank"|"word"|"other"|integer?
     local class = nil
 
-    for index = 1, #text do
-        local current_class = _char_class(text:sub(index, index))
+    ---@param index integer
+    ---@param character string
+    local function step(index, character)
+        local current_class = _char_class(character)
 
         if current_class ~= class then
             if class ~= nil and class ~= "blank" then
@@ -74,6 +100,16 @@ function M.split_words(text)
 
             start = index
             class = current_class
+        end
+    end
+
+    if codepoint.is_ascii(text) then
+        for index = 1, #text do
+            step(index, text:sub(index, index))
+        end
+    else
+        for _, character in ipairs(codepoint.characters(text)) do
+            step(character.offset, character.text)
         end
     end
 

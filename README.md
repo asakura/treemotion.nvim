@@ -482,6 +482,63 @@ here too, just scoped to a whole run of leaves instead of one leaf).
 `enabled = false` (the default) is exactly today's behavior, byte-for-byte;
 none of `commands.motion.big`'s other fields have any effect until you flip it.
 
+### Operators (`dw`, `cw`, `de`, ...)
+
+By default an operator acts on exactly the text the motion moves over. That
+differs from Vim's own `w`/`e` in ways that show up once a motion skips
+text. With Nix's default `insignificant_characters`, `cw` on `origin` in
+`"origin" = {` deletes up to the next stop, `source` on the following line,
+so `" = {` and the line break go with it.
+
+Set `commands.motion.operator_pending.enabled = true` to give operators Vim's
+ranges instead:
+
+```nix
+  "origin" = {
+#  ^ cursor on the "o"
+# dw -> "" = {
+# cw -> "" = {    (inserting between the quotes)
+```
+
+- **`skipped_text`**: what `dw`/`dW` do with non-blank text the motion skips
+  over: insignificant leaves, `"skip"` delimiters and comment markers.
+
+  - `"keep_between_tokens"` (the default) keeps text between tokens but still
+    deletes skipped delimiters inside the current token, so `dw` on `foo_bar`
+    leaves `bar`.
+  - `"keep"` never deletes skipped text, so `dw` on `foo_bar` leaves `_bar`.
+  - `"delete"` deletes all of it, like the plain motion.
+
+  With the cursor on skipped text itself (e.g. `=`), `dw` deletes that text
+  and the blanks after it.
+
+- **`stop_at_line_end`** (default `true`): `dw` on a line's last word ends at
+  the end of that line instead of joining the next one, and `dw` on an empty
+  line deletes just its line break, like Vim's `dw` (`:help word`).
+
+At the end of the buffer there's no next word to stop before, so `dw` on the
+last word, on trailing blanks or on skipped text acts up to the end of the
+line, like Vim's own `dw` there. `cw` on skipped text there changes just that
+text.
+
+- **`change_to_end`** (default `true`): `cw`/`cW` on a non-blank character
+  change to the end of the current word, like `ce`/`cE`. This is what Vim's
+  `cw` does while `'cpoptions'` contains `_` (`:help cw`, `:help cpo-_`), and
+  it is skipped when `'cpoptions'` doesn't.
+
+- **`inclusive`** (default `true`): `e`/`E`/`ge`/`gE` include the character
+  they land on, as Vim's do (`:help inclusive`). Without this `de` leaves the
+  word's last character behind.
+
+These rules only look at motion units, leaves and blank characters, never at
+node types, so they apply the same way to every grammar. They only run in
+operator-pending mode without a forced motion type: `dvw`, `dVw` and `d<C-v>w`
+get the plain motion, and cursor movement and Visual mode never change.
+`b`/`B` are exclusive in Vim too, so `db` is unaffected. Ranges that need
+their last character included are made by starting Visual mode from the
+mapping (`:help omap-info`), so they overwrite the `'<`/`'>` marks, just
+like a textobject would.
+
 ## Configuration
 
 `treemotion` exposes a `setup(opts)` function, so lazy.nvim's `opts` table
@@ -556,6 +613,16 @@ works as expected:
                         comment_marker_case = "stop",
                         opaque_token_min_length = 20,
                     },
+                },
+                -- How the motions behave after an operator (`dw`, `cw`,
+                -- `de`, ...). Off by default; see `Operators` above.
+                operator_pending = {
+                    enabled = false,
+                    -- "keep_between_tokens" | "keep" | "delete"
+                    skipped_text = "keep_between_tokens",
+                    stop_at_line_end = true,
+                    change_to_end = true,
+                    inclusive = true,
                 },
                 -- `W`/`E`/`B`/`gE`: sub-word splitting within a whole run of
                 -- contiguous leaves. `enabled = false` (the default) is
@@ -671,7 +738,8 @@ the key once the `<Plug>` mapping is actually defined.
 
 Counts work as usual (e.g. `3w`, `2W`) -- the `<Plug>` mappings read
 `v:count1`. `n`/`x`/`o` modes mean these also compose with operators for
-free (`dw`, `cW`, ...) without a custom `'operatorfunc'`.
+free (`dw`, `cW`, ...) without a custom `'operatorfunc'`. See `Operators`
+above to make those ranges match Vim's own.
 
 ## Commands
 

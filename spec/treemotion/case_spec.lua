@@ -28,6 +28,23 @@ describe("case.split", function()
         assert.same({ "foo", "Bar" }, case.split("fooBar", true, false))
     end)
 
+    it("splits before an accented or non-Latin uppercase letter", function()
+        assert.same({ "café", "Bar" }, case.split("caféBar", true, true))
+        assert.same({ "foo", "État" }, case.split("fooÉtat", true, true))
+        assert.same({ "Ωmega", "Δelta" }, case.split("ΩmegaΔelta", true, true))
+    end)
+
+    it("reads an accented first letter's case", function()
+        assert.same({ "Été", "Bar" }, case.split("ÉtéBar", false, true))
+        assert.same({ "ÉtéBar" }, case.split("ÉtéBar", true, false))
+    end)
+
+    it("doesn't split after a caseless character", function()
+        assert.same({ "日本語Text" }, case.split("日本語Text", true, true))
+        assert.same({ "a😀B" }, case.split("a😀B", true, true))
+        assert.same({ "a\255B" }, case.split("a\255B", true, true))
+    end)
+
     it("leaves text with no case boundary whole", function()
         assert.same({ "foo" }, case.split("foo", true, true))
         assert.same({ "FOO" }, case.split("FOO", true, true))

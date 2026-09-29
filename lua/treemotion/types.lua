@@ -74,6 +74,9 @@
 ---    configuration needed, as soon as their treesitter parser is installed
 ---    -- see `_OPTIONAL_COMMENT_MARKERS` in `configuration.lua` for the full
 ---    list and `configuration.get_comment_markers` for the resolution order.
+---@field operator_pending treemotion.ConfigurationMotionOperatorPending?
+---    How the motions behave after an operator (`dw`, `cw`, `de`, ...). Off
+---    by default.
 ---@field insignificant_characters table<string, treemotion.InsignificantCharacterList>?
 ---    Leaf-level tokens (e.g. `";"`, `"{"`, `"}"`, `"["`, `"]"`) that
 ---    `w`/`e`/`b`/`ge`/`W`/`E`/`B`/`gE` treat as entirely invisible, keyed by
@@ -104,6 +107,40 @@
 ---    `treemotion.InsignificantCharacterList` for how to instead negate just
 ---    one character (e.g. keep Nix's `{`/`}`/`[`/`]` but drop `;`) without
 ---    restating the rest.
+
+---@alias treemotion.SkippedTextMode "keep" | "keep_between_tokens" | "delete"
+
+---@class treemotion.ConfigurationMotionOperatorPending
+---    How the motions behave after an operator (`dw`, `cw`, `yW`, `de`, ...).
+---    Only read in operator-pending mode without a forced motion type
+---    (`dvw`, `dVw` and `d<C-v>w` always get the plain motion), so cursor
+---    movement and Visual mode never change.
+---@field enabled boolean?
+---    Whether any of the fields below apply. Defaults to `false`: operators
+---    act on exactly the text the plain motion moves over.
+---@field skipped_text treemotion.SkippedTextMode?
+---    What `dw`/`dW` (and every other operator but `c`, see `change_to_end`)
+---    do with non-blank text the motion skips before its next stop:
+---    insignificant leaves (`insignificant_characters`), `"skip"`
+---    delimiters and comment markers. `"keep"` never includes it: the range
+---    ends at the first non-blank character after the word. Defaults to
+---    `"keep_between_tokens"`, which keeps text between tokens but still
+---    includes skipped delimiters inside the current token, so `dw` on
+---    `foo_bar` leaves `bar` rather than `_bar`. `"delete"` includes all of
+---    it, like the plain motion.
+---@field stop_at_line_end boolean?
+---    Whether `dw`/`dW` on a line's last word end at that word rather than
+---    at the first word of a later line, like Vim's `dw` (`:help word`).
+---    Defaults to `true`.
+---@field change_to_end boolean?
+---    Whether `cw`/`cW` on a non-blank character change to the end of the
+---    current word, like `ce`/`cE`, the way Vim's `cw` does while
+---    `'cpoptions'` contains `_` (`:help cw`, `:help cpo-_`). Defaults to
+---    `true`.
+---@field inclusive boolean?
+---    Whether `e`/`E`/`ge`/`gE` include the character they land on, as Vim's
+---    do (`:help inclusive`), so `de` deletes the whole word. Defaults to
+---    `true`.
 
 ---@class treemotion.ConfigurationMotionGroup
 ---    Sub-word splitting rules for one motion family (`small` = `w`/`e`/`b`/`ge`,

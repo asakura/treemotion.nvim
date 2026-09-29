@@ -69,9 +69,9 @@ end
 --- word, so `M.split` strips this many characters and the run's only stop
 --- stays in the previous leaf. The result can be `#text` (Rust's lone `/`).
 ---
---- Any non-blank, non-alphanumeric character qualifies. Alphanumerics are
---- excluded because a word or number split across leaves may be two
---- genuinely separate tokens.
+--- Any non-blank, non-alphanumeric character qualifies. Alphanumerics, in
+--- any script (see `codepoint.is_alphanumeric`), are excluded because a
+--- word or number split across leaves may be two genuinely separate tokens.
 ---
 --- Counts whole characters (via `_commands.motion.codepoint`), so the
 --- result is always a character boundary in `text`. A 1-byte `char` takes a
@@ -89,7 +89,7 @@ local function _leading_continuation_length(node, text)
     local char_width = codepoint.char_width(text, 1)
     local char = text:sub(1, char_width)
 
-    if char:match("%s") or char:match("%w") then
+    if codepoint.class(char) == codepoint.BLANK or codepoint.is_alphanumeric(char) then
         return 0
     end
 

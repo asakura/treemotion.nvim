@@ -2,8 +2,12 @@
 --- heuristic that decides when *not* to case-split a chunk.
 ---
 --- Pure string functions: no buffer, treesitter or configuration access.
+--- Letter case is Unicode-aware (see `_commands.motion.codepoint.is_upper`),
+--- so `caféBar` splits like `cafeBar`.
 --- `_commands.motion.subword` calls these on every chunk
 --- `_commands.motion.delimiters` produces.
+
+local codepoint = require("treemotion._commands.motion.codepoint")
 
 local M = {}
 
@@ -56,23 +60,45 @@ end
 --- lowercase letter/digit (`fooBar` -> boundary before `B`) or follows
 --- another uppercase letter that is itself followed by a lowercase letter
 --- (`XMLHttp` -> boundary before the `H` in `Http`, keeping `XML` together).
+--- Letters in any script count (`caféBar`, `fooÉtat`); digits are ASCII only.
 ---
 ---@param text string A run of characters with no snake/kebab delimiters in it.
----@return integer[] # 1-indexed columns (into `text`) where a new subword starts.
+---@return integer[] # 1-indexed byte columns (into `text`) where a new subword starts.
 ---
 local function _case_boundaries(text)
     local boundaries = {}
 
-    for index = 2, #text do
-        local current = text:sub(index, index)
+    if codepoint.is_ascii(text) then
+        for index = 2, #text do
+            local current = text:sub(index, index)
 
-        if current:match("%u") then
-            local previous = text:sub(index - 1, index - 1)
+            if current:match("%u") then
+                local previous = text:sub(index - 1, index - 1)
 
-            if previous:match("[%l%d]") then
-                table.insert(boundaries, index)
-            elseif previous:match("%u") and text:sub(index + 1, index + 1):match("%l") then
-                table.insert(boundaries, index)
+                if previous:match("[%l%d]") then
+                    table.insert(boundaries, index)
+                elseif previous:match("%u") and text:sub(index + 1, index + 1):match("%l") then
+                    table.insert(boundaries, index)
+                end
+            end
+        end
+
+        return boundaries
+    end
+
+    local characters = codepoint.characters(text)
+
+    for index = 2, #characters do
+        local current = characters[index].text
+
+        if codepoint.is_upper(current) then
+            local previous = characters[index - 1].text
+            local following = characters[index + 1]
+
+            if codepoint.is_lower(previous) or previous:match("^%d") then
+                table.insert(boundaries, characters[index].offset)
+            elseif codepoint.is_upper(previous) and following and codepoint.is_lower(following.text) then
+                table.insert(boundaries, characters[index].offset)
             end
         end
     end
@@ -95,7 +121,7 @@ end
 ---@return string[] # `text`, split at each enabled case boundary.
 ---
 function M.split(text, camel_case, pascal_case)
-    local starts_upper = text:sub(1, 1):match("%u") ~= nil
+    local starts_upper = text ~= "" and codepoint.is_upper(text:sub(1, codepoint.char_width(text, 1)))
     local enabled = starts_upper and pascal_case or (not starts_upper and camel_case)
 
     if not enabled then

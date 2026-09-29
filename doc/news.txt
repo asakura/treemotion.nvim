@@ -6,11 +6,24 @@ Notable changes since TreeMotion 0 (in development)
 ===============================================================================
 NEW FEATURES                                     *treemotion-new-features*
 
+- `commands.motion.operator_pending` (off by default) gives operators Vim's
+  own ranges. `dw` keeps text the motion skips (`skipped_text`) and stops at
+  a line's last word (`stop_at_line_end`), `cw` works like `ce`
+  (`change_to_end`), and `de`/`dge` include the character they land on
+  (`inclusive`). With Nix's defaults, `cw` on `origin` in `"origin" = {` now
+  changes just `origin`.
+
 - `w`/`e`/`b`/`ge` now step through naming-convention sub-words inside a
   treesitter leaf, e.g. `fooBar-bazQux` is four stops: `foo`, `Bar`, `baz`,
   `Qux`. Comments and string content (or any other `@spell`- or
   `@string`-tagged span) are treated as prose instead, splitting into words on
   whitespace first, the way real Vim's `w` does in a text file.
+
+- Prose words follow Vim's character classes for non-ASCII text too
+  (|word|, |charclass()|): `café` and `naïve` are one word, `—` and `…` are
+  punctuation, a no-break space is blank, and a word ends where the Unicode
+  class changes (between CJK scripts, emoji, subscripts, ...). camelCase and
+  PascalCase splitting recognizes accented uppercase letters (`caféÉtat`).
 
 - Sub-word splitting is configured separately for code and prose via
   `commands.motion.small.code` / `.prose`. Each has `camel_case` /

@@ -1,5 +1,6 @@
 --- Direct unit tests for `_commands.motion.codepoint`'s encoding-aware
---- primitives -- `M.char_width`, `M.last_character_column` -- isolated from
+--- primitives -- `M.char_width`, `M.last_character_column`, and the
+--- character classification helpers -- isolated from
 --- the motion machinery that consumes them. See
 --- `treemotion_spec.lua`'s "multi-byte (UTF-8) characters" block for an
 --- end-to-end `#e` regression covering the same fix through
@@ -71,5 +72,149 @@ describe("codepoint.last_character_column", function()
     it("never errors on malformed UTF-8, treating a stray continuation byte as its own lead byte", function()
         vim.api.nvim_buf_set_lines(assert(_BUFFER), 0, -1, false, { "x\128y" }) -- a stray 0x80 byte
         assert.same(1, codepoint.last_character_column(0, 2))
+    end)
+end)
+
+--- `fn`'s result for each of `characters`, keyed by the character, so a failure shows which one.
+---
+---@generic T
+---@param characters string[]
+---@param fn fun(character: string): T
+---@return table<string, T>
+local function _map(characters, fn)
+    local result = {}
+
+    for _, character in ipairs(characters) do
+        result[character] = fn(character)
+    end
+
+    return result
+end
+
+--- `"upper"`, `"lower"`, `"both"` or `"none"`, from `codepoint.is_upper`/`codepoint.is_lower`.
+---
+---@param character string
+---@return string
+local function _case(character)
+    local upper, lower = codepoint.is_upper(character), codepoint.is_lower(character)
+
+    if upper and lower then
+        return "both"
+    end
+
+    return upper and "upper" or lower and "lower" or "none"
+end
+
+describe("codepoint.characters", function()
+    it("splits ASCII into bytes", function()
+        assert.same({ { text = "a", offset = 1 }, { text = "b", offset = 2 } }, codepoint.characters("ab"))
+    end)
+
+    it("keeps a multibyte character whole", function()
+        assert.same({ { text = "é", offset = 1 }, { text = "x", offset = 3 } }, codepoint.characters("éx"))
+    end)
+
+    it("keeps a combining accent with the letter before it", function()
+        assert.same(
+            { { text = "e\204\129", offset = 1 }, { text = "x", offset = 4 } },
+            codepoint.characters("e\204\129x")
+        )
+    end)
+
+    it("gives an invalid byte its own character", function()
+        assert.same(
+            { { text = "a", offset = 1 }, { text = "\255", offset = 2 }, { text = "b", offset = 3 } },
+            codepoint.characters("a\255b")
+        )
+    end)
+
+    it("returns nothing for empty text", function()
+        assert.same({}, codepoint.characters(""))
+    end)
+end)
+
+describe("codepoint.class", function()
+    it("classifies ASCII and Latin-1 like the default 'iskeyword', whatever the buffer's", function()
+        local iskeyword = vim.bo.iskeyword
+        vim.bo.iskeyword = "a-z"
+
+        local classes = vim.tbl_map(codepoint.class, { " ", "A", "_", "-", "é", "\194\160", "«", "\255" })
+        vim.bo.iskeyword = iskeyword
+
+        assert.same({
+            codepoint.BLANK,
+            codepoint.WORD,
+            codepoint.WORD,
+            codepoint.PUNCTUATION,
+            codepoint.WORD,
+            codepoint.BLANK,
+            codepoint.PUNCTUATION,
+            codepoint.WORD,
+        }, classes)
+    end)
+
+    it("follows charclass() with the default 'iskeyword'", function()
+        for _, character in ipairs({ "é", "e\204\129", "—", "…", "\194\160", "\227\128\128", "日", "😀", "₂" }) do
+            assert.same(vim.fn.charclass(character), codepoint.class(character), character)
+        end
+    end)
+
+    it("puts accented letters, punctuation and spaces in Vim's classes", function()
+        assert.same(codepoint.WORD, codepoint.class("é"))
+        assert.same(codepoint.PUNCTUATION, codepoint.class("—"))
+        assert.same(codepoint.BLANK, codepoint.class("\194\160")) -- no-break space
+    end)
+end)
+
+describe("codepoint.is_alphanumeric", function()
+    it("counts ASCII letters and digits, but not _", function()
+        assert.is_true(codepoint.is_alphanumeric("a"))
+        assert.is_true(codepoint.is_alphanumeric("7"))
+        assert.is_false(codepoint.is_alphanumeric("_"))
+        assert.is_false(codepoint.is_alphanumeric("-"))
+    end)
+
+    it("counts letters, emoji and CJK in any script, but not punctuation or blanks", function()
+        assert.same(
+            { ["é"] = true, ["Ω"] = true, ["ж"] = true, ["日"] = true, ["😀"] = true },
+            _map({ "é", "Ω", "ж", "日", "😀" }, codepoint.is_alphanumeric)
+        )
+        assert.same(
+            { ["—"] = false, ["…"] = false, ["«"] = false, ["\194\160"] = false },
+            _map({ "—", "…", "«", "\194\160" }, codepoint.is_alphanumeric)
+        )
+    end)
+end)
+
+describe("codepoint.has_alphanumeric", function()
+    it("finds a letter in any script", function()
+        assert.is_true(codepoint.has_alphanumeric("--é"))
+        assert.is_true(codepoint.has_alphanumeric("_a_"))
+    end)
+
+    it("is false for punctuation and blanks only", function()
+        assert.is_false(codepoint.has_alphanumeric("---"))
+        assert.is_false(codepoint.has_alphanumeric("—…\194\160"))
+        assert.is_false(codepoint.has_alphanumeric(""))
+    end)
+end)
+
+describe("codepoint.is_upper / codepoint.is_lower", function()
+    it("knows the case of accented and non-Latin letters", function()
+        assert.same(
+            { A = "upper", ["É"] = "upper", ["Ω"] = "upper", ["Ж"] = "upper" },
+            _map({ "A", "É", "Ω", "Ж" }, _case)
+        )
+        assert.same(
+            { a = "lower", ["é"] = "lower", ["ω"] = "lower", ["ж"] = "lower" },
+            _map({ "a", "é", "ω", "ж" }, _case)
+        )
+    end)
+
+    it("treats caseless characters as neither", function()
+        assert.same(
+            { ["1"] = "none", _ = "none", ["日"] = "none", ["😀"] = "none", ["—"] = "none", ["\255"] = "none" },
+            _map({ "1", "_", "日", "😀", "—", "\255" }, _case)
+        )
     end)
 end)

@@ -66,6 +66,11 @@ function M.new_source(settings)
             return _first_nonempty_split(node, forward, settings)
         end,
         after = leaf.next_leaf,
+        span_end = function(node)
+            local row, column = node:end_()
+
+            return row, column
+        end,
     })
 end
 

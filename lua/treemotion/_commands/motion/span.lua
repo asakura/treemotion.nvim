@@ -5,7 +5,7 @@
 --- the four numbers that bound it, no parent/child/sibling links -- a
 --- sub-word slice isn't a real tree node, it's a range `subword.split`
 --- invents on top of one. Exposing the same `:start()`/`:end_()` shape a
---- `TSNode` has is what lets `_commands.motion.runner` treat this and a
+--- `TSNode` has is what lets `_commands.motion.shape` treat this and a
 --- `TSNode` interchangeably (see its `TSNode|treemotion.MotionUnit` params,
 --- and `_commands.motion.unit`, which wraps these).
 

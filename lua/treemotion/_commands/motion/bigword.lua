@@ -123,6 +123,11 @@ function M.new_source(settings)
             return _first_nonempty_split(node, forward, settings)
         end,
         after = _after_run,
+        span_end = function(node)
+            local row, column = run.run_end(node):end_()
+
+            return row, column
+        end,
     })
 end
 
