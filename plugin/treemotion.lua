@@ -50,14 +50,13 @@ for _, name in ipairs(constant.MOTION_NAMES) do
     end, { desc = description })
 
     -- An `<expr>` mapping, so `dge` can be forced inclusive with `v` (see
-    -- `_commands.motion.runner.force`). The `<Cmd>` is what `.` repeats.
+    -- `_commands.motion.runner.operator_keys`).
     vim.keymap.set("o", plug, function()
         local configuration = require("treemotion._core.configuration")
         local runner = require("treemotion._commands.motion.runner")
 
         configuration.initialize_data_if_needed()
 
-        return runner.force(name, vim.v.count1)
-            .. string.format('<Cmd>lua require("treemotion").run_motion_%s(vim.v.count1)<CR>', name)
+        return runner.operator_keys(name)
     end, { desc = description, expr = true })
 end

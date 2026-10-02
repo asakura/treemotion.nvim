@@ -28,7 +28,7 @@
 --- inclusive range (`dge`) must include the character under the cursor the
 --- operator started from, which no cursor position can do, so the `<Plug>`
 --- mappings force the motion with `v` instead (see
---- `_commands.motion.runner.force`).
+--- `_commands.motion.runner.operator_keys`).
 
 local codepoint = require("treemotion._commands.motion.codepoint")
 local constant = require("treemotion._commands.motion.constant")
@@ -320,8 +320,16 @@ local function _balanced(range)
     end
 
     if column == 0 then
-        -- The bracket starts a line: end on the previous line's last character.
+        -- The bracket starts a line: end on the last character before it,
+        -- keeping the line breaks in between. Empty lines have no last
+        -- character, and ending on one would take its line break (see
+        -- `M.apply`), so they're stepped over, back to the start's line.
         row = row - 1
+
+        while row > range.start_row and #codepoint.line(row) == 0 do
+            row = row - 1
+        end
+
         column = #codepoint.line(row)
     end
 
@@ -505,7 +513,7 @@ end
 ---
 --- A backward range (`dge`) is exclusive too: an inclusive one would have
 --- to include the character the operator started from, which only a forced
---- `v` can do (see `_commands.motion.runner.force`). The `<Plug>` mappings
+--- `v` can do (see `_commands.motion.runner.operator_keys`). The `<Plug>` mappings
 --- add that `v`, and the motion then runs as a plain one.
 ---
 --- Moves the cursor, like `M.forward_range`.

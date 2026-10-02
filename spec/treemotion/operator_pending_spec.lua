@@ -299,6 +299,18 @@ describe("operator-pending motions", function()
             assert.same({ "local x = f()" }, _type("lua", { "local x = f(config.a.b)" }, 0, 12, "dE"))
         end)
 
+        it("#de keeps the empty lines before a closing bracket that starts a line", function()
+            _configure({ enabled = true })
+
+            assert.same({ "foo(", "", ")" }, _type("lua", { "foo(x", "", ")" }, 0, 4, "de"))
+        end)
+
+        it("#de keeps the indent and empty lines before a closing bracket that starts a line", function()
+            _configure({ enabled = true })
+
+            assert.same({ "foo(", "    ", "", ")" }, _type("lua", { "foo(", "    x", "", ")" }, 1, 4, "de"))
+        end)
+
         it("#dW on a closing bracket still deletes it", function()
             _configure({ enabled = true })
 
@@ -572,6 +584,14 @@ describe("operator-pending motions", function()
             _configure({ enabled = true })
 
             assert.same({ "local fz = 1" }, _type("lua", { "local fooBar baz = 1" }, 0, 11, "dge$5h."))
+        end)
+
+        it("repeats #dge with . where #ge can't move without deleting anything", function()
+            _configure({ enabled = true })
+            vim.v.errmsg = ""
+
+            assert.same({ "local fo = 1" }, _type("lua", { "local fooBar = 1" }, 0, 11, "dge0."))
+            assert.equal("", vim.v.errmsg)
         end)
 
         it("#gUge includes the character under the cursor", function()
