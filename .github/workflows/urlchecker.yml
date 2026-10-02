@@ -83,6 +83,7 @@ jobs:
         urlchecker check \
           --branch main \
           --subfolder scripts \
+          --exclude-patterns "https://github.com/folke/lazy.nvim.git" \
           --no-print \
           --file-types .json,.lua,.md,.txt,.vim,.yml \
           --retry-count 1 \
