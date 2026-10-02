@@ -94,13 +94,52 @@ local function _is_non_blank(row, column)
     return character ~= "" and not character:match("%s")
 end
 
+--- Where the token from `row`/`column` ends (exclusive), never before `row`/`column`.
+---
+--- A token runs to `span_row`/`span_column`, the end of its leaf (or `W`
+--- run), but stops at the first of:
+---
+--- - the end of `row`'s line, since some grammars end a leaf at the next
+---   row's column 0 (a trailing newline);
+--- - the first blank from `row`/`column`. Prose splits a whole sentence out
+---   of one leaf, so its span alone would take the `` ` `` in "and `code`"
+---   along with "and ";
+--- - `next_unit`'s start, if given and not before `row`/`column`.
+---
+---@param row integer
+---@param column integer
+---@param span_row integer
+---@param span_column integer
+---@param next_unit treemotion.MotionUnit?
+---@return integer, integer
+---
+local function _token_end(row, column, span_row, span_column, next_unit)
+    local line = codepoint.line(row)
+    local end_row, end_column = position.min(row, #line, span_row, span_column)
+    local blank = line:find("%s", column + 1)
+
+    if blank then
+        end_row, end_column = position.min(end_row, end_column, row, blank - 1)
+    end
+
+    if next_unit then
+        local unit_row, unit_column = next_unit:start()
+
+        if not position.is_before(unit_row, unit_column, row, column) then
+            end_row, end_column = position.min(end_row, end_column, unit_row, unit_column)
+        end
+    end
+
+    return position.max(row, column, end_row, end_column)
+end
+
 --- Where the skipped text at `row`/`column` ends (exclusive).
 ---
 --- Used when the position sits on non-blank text that no unit covers: an
 --- insignificant leaf such as Nix's `=`, or a `"skip"` delimiter such as
 --- the `_` in `foo_bar`. That text is what the operator is aimed at, so it
---- runs until the first of: the end of the leaf (or `W` run) there, the
---- next unit, or a blank character.
+--- is the token there (see `_token_end`): at least its first character, up
+--- to the end of the leaf (or `W` run) there, cut at the next unit.
 ---
 ---@param units treemotion._UnitSource
 ---@param row integer
@@ -110,28 +149,14 @@ end
 ---@return integer, integer
 ---
 local function _skipped_text_end(units, row, column, next_unit, start_leaf)
-    local line = codepoint.line(row)
-    local end_row, end_column = row, column + codepoint.char_width(line, column + 1)
+    local end_column = column + codepoint.char_width(codepoint.line(row), column + 1)
+    local span_row, span_column = row, end_column
 
     if start_leaf and position.contains(start_leaf, row, column) then
-        end_row, end_column = position.max(end_row, end_column, units.span_end(start_leaf))
+        span_row, span_column = units.span_end(start_leaf)
     end
 
-    if next_unit then
-        local unit_row, unit_column = next_unit:start()
-
-        if position.is_before(row, column, unit_row, unit_column) then
-            end_row, end_column = position.min(end_row, end_column, unit_row, unit_column)
-        end
-    end
-
-    local blank = line:find("%s", column + 1)
-
-    if blank then
-        end_row, end_column = position.min(end_row, end_column, row, blank - 1)
-    end
-
-    return end_row, end_column
+    return _token_end(row, end_column, span_row, span_column, next_unit)
 end
 
 --- Each opening bracket's closing bracket.
@@ -394,33 +419,6 @@ end
 ---@field target_row integer
 ---@field target_column integer
 
---- Where the token holding `unit` ends, if that's past `unit` itself.
----
---- A token is the unit's leaf (or `W` run), cut at the first blank and at
---- the end of the unit's line.
----
----@param unit treemotion.MotionUnit
----@return integer, integer
-local function _token_end(unit)
-    local end_row, end_column = unit:end_()
-
-    -- Clamped to the unit's own line, since some grammars end a leaf at
-    -- the next row's column 0 (a trailing newline).
-    local line = codepoint.line(end_row)
-    local span_row, span_column = position.min(end_row, #line, unit:span_end())
-
-    -- A token never spans a blank. Prose splits a whole sentence out of
-    -- one leaf, so its span alone would take the `` ` `` in "and `code`"
-    -- along with "and ".
-    local blank = line:find("%s", end_column + 1)
-
-    if blank then
-        span_row, span_column = position.min(span_row, span_column, end_row, blank - 1)
-    end
-
-    return position.max(end_row, end_column, span_row, span_column)
-end
-
 --- The untrimmed `w`/`W` motion from `start_row`/`start_column`.
 ---
 --- Past the buffer's last unit (its last word, trailing blanks, or skipped
@@ -450,7 +448,7 @@ local function _forward_motion(units, start_row, start_column, unit, start_leaf,
 
     if unit and position.contains(unit, step_row, step_column) then
         tail_row, tail_column = unit:end_()
-        token_end_row, token_end_column = _token_end(unit)
+        token_end_row, token_end_column = _token_end(tail_row, tail_column, unit:span_end())
     elseif _is_non_blank(step_row, step_column) then
         tail_row, tail_column = _skipped_text_end(units, step_row, step_column, unit, start_leaf)
         token_end_row, token_end_column = tail_row, tail_column
