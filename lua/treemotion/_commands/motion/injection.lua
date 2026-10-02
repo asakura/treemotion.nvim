@@ -311,7 +311,7 @@ local _ANNOTATION_ONLY_LANGUAGES = {
 --- that node into a different language.
 ---
 --- Parses lazily: `ltree` is parsed at `node`'s start (one column wide, as
---- in `leaf.current_leaf`) right before its children are checked, so a walk
+--- in `leaf.leaf_at`) right before its children are checked, so a walk
 --- that reaches an injected tree elsewhere in the buffer parses it on
 --- arrival. On a match, `child:parse(true)` parses the whole child
 --- language. Neovim only takes its cheap "entirely valid" path once every

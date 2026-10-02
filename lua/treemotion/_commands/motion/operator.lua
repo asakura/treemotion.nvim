@@ -39,10 +39,10 @@ local M = {}
 
 --- How a motion runs under an operator: `M.forward_to_start` or `M.inclusive`.
 ---
---- `move` is the motion's own `_commands.motion.shape` shape.
+--- `step` is the motion's own `_commands.motion.shape` step.
 ---
 -- luacheck: push ignore 631
----@alias treemotion._OperatorMove fun(units: treemotion._UnitSource, count: integer, pending: treemotion.OperatorSettings, move: treemotion._Move)
+---@alias treemotion._OperatorMove fun(units: treemotion._UnitSource, count: integer, pending: treemotion.OperatorSettings, step: treemotion._Step)
 -- luacheck: pop
 
 --- Find the first non-blank character in `[from, to)`.
@@ -83,36 +83,38 @@ local function _has_parser()
     return vim.treesitter.get_parser(0, nil, { error = false }) ~= nil
 end
 
---- Check whether the cursor sits on a non-blank character.
+--- Check whether `row`/`column` sits on a non-blank character.
 ---
+---@param row integer
+---@param column integer
 ---@return boolean
-local function _is_cursor_on_non_blank()
-    local row, column = position.cursor_position()
+local function _is_non_blank(row, column)
     local character = codepoint.line(row):sub(column + 1, column + 1)
 
     return character ~= "" and not character:match("%s")
 end
 
---- Where the skipped text under the cursor ends (exclusive).
+--- Where the skipped text at `row`/`column` ends (exclusive).
 ---
---- Used when the cursor sits on non-blank text that no unit covers: an
+--- Used when the position sits on non-blank text that no unit covers: an
 --- insignificant leaf such as Nix's `=`, or a `"skip"` delimiter such as
 --- the `_` in `foo_bar`. That text is what the operator is aimed at, so it
---- runs until the first of: the end of the leaf (or `W` run) under the
---- cursor, the next unit, or a blank character.
+--- runs until the first of: the end of the leaf (or `W` run) there, the
+--- next unit, or a blank character.
 ---
 ---@param units treemotion._UnitSource
----@param next_unit treemotion.MotionUnit? `units.current_unit(true)` at the cursor.
----@param cursor_leaf TSNode? The leaf that same call started from.
+---@param row integer
+---@param column integer
+---@param next_unit treemotion.MotionUnit? `units.unit_at(row, column, true)`.
+---@param start_leaf TSNode? The leaf that same call started from.
 ---@return integer, integer
 ---
-local function _skipped_text_end(units, next_unit, cursor_leaf)
-    local row, column = position.cursor_position()
+local function _skipped_text_end(units, row, column, next_unit, start_leaf)
     local line = codepoint.line(row)
     local end_row, end_column = row, column + codepoint.char_width(line, column + 1)
 
-    if cursor_leaf and position.contains(cursor_leaf, row, column) then
-        end_row, end_column = position.max(end_row, end_column, units.span_end(cursor_leaf))
+    if start_leaf and position.contains(start_leaf, row, column) then
+        end_row, end_column = position.max(end_row, end_column, units.span_end(start_leaf))
     end
 
     if next_unit then
@@ -338,55 +340,43 @@ local function _balanced(range)
     return _range(range.start_row, range.start_column, row, column, true)
 end
 
---- The plain motion's range: from `start` to wherever the cursor is now.
----
----@param start_row integer
----@param start_column integer
----@return treemotion.OperatorRange
-local function _range_to_cursor(start_row, start_column)
-    local row, column = position.cursor_position()
-
-    return _range(start_row, start_column, row, column, false)
-end
-
 --- `cw`/`cW`: change to the end of the current unit, like `ce`/`cE`.
 ---
 --- Only used while `settings.change_to_end` is set (see
 --- `treemotion.OperatorSettings`).
 ---
 --- On skipped text (see `_skipped_text_end`) that text counts as the
---- current unit. Further counts step like `e`/`E`.
+--- current unit. Further counts step like `e`/`E` (`shape.next_end`).
 ---
 ---@param units treemotion._UnitSource
----@param unit treemotion.MotionUnit? `units.current_unit(true)` at the cursor, `nil` past the last unit.
----@param cursor_leaf TSNode? The leaf that same call started from.
+---@param start_row integer
+---@param start_column integer
+---@param unit treemotion.MotionUnit? `units.unit_at(start_row, start_column, true)`, `nil` past the last unit.
+---@param start_leaf TSNode? The leaf that same call started from.
 ---@param count integer
 ---@return treemotion.OperatorRange
 ---
-local function _change_to_end_range(units, unit, cursor_leaf, count)
-    local start_row, start_column = position.cursor_position()
+local function _change_to_end_range(units, start_row, start_column, unit, start_leaf, count)
     local end_row, end_column
 
     if unit and position.contains(unit, start_row, start_column) then
         end_row, end_column = unit:end_()
     else
-        end_row, end_column = _skipped_text_end(units, unit, cursor_leaf)
+        end_row, end_column = _skipped_text_end(units, start_row, start_column, unit, start_leaf)
     end
 
-    vim.api.nvim_win_set_cursor(0, { end_row + 1, codepoint.last_character_column(end_row, end_column) })
+    local finish_row, finish_column = position.clamp(end_row, codepoint.last_character_column(end_row, end_column))
 
     if count > 1 then
-        shape.forward_to_end(units, count - 1)
+        finish_row, finish_column = shape.next_end(units, finish_row, finish_column, count - 1)
     end
-
-    local finish_row, finish_column = position.cursor_position()
 
     return _balanced(_range(start_row, start_column, finish_row, finish_column, true))
 end
 
 --- The range `dw`/`cw`/`yW`/... should act on: the `w`/`W` motion's, trimmed per `settings`.
 ---
---- The range starts at the cursor and would end where the motion lands.
+--- The range starts where the operator does and would end where the motion lands.
 --- Its tail is trimmed from the end of the last unit moved over:
 ---
 --- - `skipped_text`: `"keep"` ends the range at the first non-blank
@@ -405,36 +395,38 @@ end
 --- end of the buffer. Without a parser, and when trimming would empty the
 --- range, it's the plain motion's.
 ---
---- Moves the cursor while measuring, since `units` works from the cursor;
---- `M.apply` puts it where the range needs it.
+--- Measured purely from `start_row`/`start_column`: the cursor is neither
+--- read nor moved (see `M.apply`).
 ---
 ---@param units treemotion._UnitSource
+---@param start_row integer Where the operator starts (the cursor, before the motion).
+---@param start_column integer
 ---@param count integer
 ---@param settings treemotion.OperatorSettings
----@param move treemotion._Move `shape.forward_to_start`.
+---@param step treemotion._Step `shape.next_start`.
 ---@return treemotion.OperatorRange
 ---
-function M.forward_range(units, count, settings, move)
-    local start_row, start_column = position.cursor_position()
-    local unit, cursor_leaf = units.current_unit(true)
+function M.forward_range(units, start_row, start_column, count, settings, step)
+    local unit, start_leaf = units.unit_at(start_row, start_column, true)
 
     if not unit and not _has_parser() then
-        move(units, count)
+        local row, column = step(units, start_row, start_column, count)
 
-        return _range_to_cursor(start_row, start_column)
+        return _range(start_row, start_column, row, column, false)
     end
 
-    if settings.change_to_end and _is_cursor_on_non_blank() then
-        return _change_to_end_range(units, unit, cursor_leaf, count)
+    if settings.change_to_end and _is_non_blank(start_row, start_column) then
+        return _change_to_end_range(units, start_row, start_column, unit, start_leaf, count)
     end
+
+    local step_row, step_column = start_row, start_column
 
     if unit and count > 1 then
         -- Only the final step is trimmed, so take the others as they are.
-        move(units, count - 1)
-        unit, cursor_leaf = units.current_unit(true)
+        step_row, step_column = step(units, start_row, start_column, count - 1)
+        unit, start_leaf = units.unit_at(step_row, step_column, true)
     end
 
-    local step_row, step_column = position.cursor_position()
     local tail_row, tail_column = step_row, step_column
 
     if unit and position.contains(unit, step_row, step_column) then
@@ -457,13 +449,11 @@ function M.forward_range(units, count, settings, move)
 
             tail_row, tail_column = position.max(tail_row, tail_column, span_row, span_column)
         end
-    elseif _is_cursor_on_non_blank() then
-        tail_row, tail_column = _skipped_text_end(units, unit, cursor_leaf)
+    elseif _is_non_blank(step_row, step_column) then
+        tail_row, tail_column = _skipped_text_end(units, step_row, step_column, unit, start_leaf)
     end
 
-    move(units, 1)
-
-    local target_row, target_column = position.cursor_position()
+    local target_row, target_column = step(units, step_row, step_column, 1)
 
     if not position.is_before(step_row, step_column, target_row, target_column) then
         -- Nowhere to go: this is the buffer's end. Vim's `dw` there acts
@@ -516,20 +506,18 @@ end
 --- `v` can do (see `_commands.motion.runner.operator_keys`). The `<Plug>` mappings
 --- add that `v`, and the motion then runs as a plain one.
 ---
---- Moves the cursor, like `M.forward_range`.
+--- Measured purely from `start_row`/`start_column`, like `M.forward_range`.
 ---
 ---@param units treemotion._UnitSource
+---@param start_row integer Where the operator starts (the cursor, before the motion).
+---@param start_column integer
 ---@param count integer
 ---@param settings treemotion.OperatorSettings
----@param move treemotion._Move The `e`/`E`/`ge`/`gE`-shape move.
+---@param step treemotion._Step The `e`/`E`/`ge`/`gE`-shape step.
 ---@return treemotion.OperatorRange
 ---
-function M.inclusive_range(units, count, settings, move)
-    local start_row, start_column = position.cursor_position()
-
-    move(units, count)
-
-    local target_row, target_column = position.cursor_position()
+function M.inclusive_range(units, start_row, start_column, count, settings, step)
+    local target_row, target_column = step(units, start_row, start_column, count)
     local moved = target_row ~= start_row or target_column ~= start_column
 
     if
@@ -574,26 +562,30 @@ function M.apply(range)
     _set_cursor_onemore(row, column)
 end
 
---- `dw`/`cw`/`yW`/...: act on `M.forward_range`.
+--- `dw`/`cw`/`yW`/...: act on `M.forward_range`, from the cursor.
 ---
 ---@param units treemotion._UnitSource
 ---@param count integer
 ---@param settings treemotion.OperatorSettings
----@param move treemotion._Move `shape.forward_to_start`.
+---@param step treemotion._Step `shape.next_start`.
 ---
-function M.forward_to_start(units, count, settings, move)
-    M.apply(M.forward_range(units, count, settings, move))
+function M.forward_to_start(units, count, settings, step)
+    local row, column = position.cursor_position()
+
+    M.apply(M.forward_range(units, row, column, count, settings, step))
 end
 
---- `de`/`dge`/...: act on `M.inclusive_range`.
+--- `de`/`dge`/...: act on `M.inclusive_range`, from the cursor.
 ---
 ---@param units treemotion._UnitSource
 ---@param count integer
 ---@param settings treemotion.OperatorSettings
----@param move treemotion._Move The `e`/`E`/`ge`/`gE`-shape move.
+---@param step treemotion._Step The `e`/`E`/`ge`/`gE`-shape step.
 ---
-function M.inclusive(units, count, settings, move)
-    M.apply(M.inclusive_range(units, count, settings, move))
+function M.inclusive(units, count, settings, step)
+    local row, column = position.cursor_position()
+
+    M.apply(M.inclusive_range(units, row, column, count, settings, step))
 end
 
 return M

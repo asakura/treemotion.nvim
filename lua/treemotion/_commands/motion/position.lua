@@ -3,6 +3,8 @@
 --- A position is a 0-indexed row and a 0-indexed byte column, the
 --- convention `TSNode:start()`/`:end_()` use.
 
+local codepoint = require("treemotion._commands.motion.codepoint")
+
 local M = {}
 
 --- Read the cursor's position, converted to `TSNode`'s 0-indexed row convention.
@@ -17,6 +19,31 @@ function M.cursor_position()
     local cursor = vim.api.nvim_win_get_cursor(0)
 
     return cursor[1] - 1, cursor[2]
+end
+
+--- Where the cursor ends up if put at `row`/`column`.
+---
+--- `nvim_win_set_cursor` keeps the cursor on a line's last character
+--- outside Insert and Visual mode, so a position past it (an empty line's
+--- column 0 aside) is pulled back the same way. Code that measures from
+--- positions instead of moving the cursor uses this to see the same
+--- position a cursor move would have read back.
+---
+---@param row integer
+---@param column integer
+---@return integer, integer
+function M.clamp(row, column)
+    local line = codepoint.line(row)
+
+    if column < #line then
+        return row, column
+    end
+
+    if #line == 0 then
+        return row, 0
+    end
+
+    return row, codepoint.last_character_column(row, #line)
 end
 
 --- Check whether `row_a`/`column_a` comes before `row_b`/`column_b`.
