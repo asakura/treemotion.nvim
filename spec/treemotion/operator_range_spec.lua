@@ -294,20 +294,20 @@ describe("operator range calculation", function()
 
             local delete = _forward_range(_units(), 1, _settings(), shape.next_start)
 
-            assert.same({ { 1, 0 }, { 1, 0 }, true }, _flat(delete))
+            assert.same({ { 1, 0 }, { 2, 0 }, true }, _flat(delete))
 
             local change = _forward_range(_units(), 1, _settings({ change = true }), shape.next_start)
 
             assert.same({ { 1, 0 }, { 1, 0 }, false }, _flat(change))
         end)
 
-        it("ends at the unit's last character for #change_to_end", function()
+        it("ends after the unit's last character for #change_to_end", function()
             _initialize_buffer({ "local fooBar = 1" }, 0, 6)
 
             local range =
                 _forward_range(_units(), 1, _settings({ change = true, change_to_end = true }), shape.next_start)
 
-            assert.same({ { 0, 6 }, { 0, 8 }, true }, _flat(range))
+            assert.same({ { 0, 6 }, { 0, 9 }, true }, _flat(range))
         end)
 
         it("only trims after the final step of a count", function()
@@ -405,7 +405,7 @@ describe("operator range calculation", function()
                     shape.next_start
                 )
 
-                assert.same({ { 0, 14 }, { 0, 15 }, true }, _flat(range))
+                assert.same({ { 0, 14 }, { 0, 16 }, true }, _flat(range))
             end)
 
             it("is empty on an empty last line", function()
@@ -441,7 +441,7 @@ describe("operator range calculation", function()
             assert.same({ { 0, 10 }, { 1, 2 }, false }, _flat(range))
         end)
 
-        it("ends at skipped text's last character for #change_to_end", function()
+        it("ends after skipped text's last character for #change_to_end", function()
             _initialize_buffer({ "local foo == bar" }, 0, 10)
 
             local range = _forward_range(
@@ -451,7 +451,7 @@ describe("operator range calculation", function()
                 shape.next_start
             )
 
-            assert.same({ { 0, 10 }, { 0, 11 }, true }, _flat(range))
+            assert.same({ { 0, 10 }, { 0, 12 }, true }, _flat(range))
         end)
 
         it("steps like #e for a count with #change_to_end", function()
@@ -460,7 +460,7 @@ describe("operator range calculation", function()
             local range =
                 _forward_range(_units(), 2, _settings({ change = true, change_to_end = true }), shape.next_start)
 
-            assert.same({ { 0, 6 }, { 0, 11 }, true }, _flat(range))
+            assert.same({ { 0, 6 }, { 0, 12 }, true }, _flat(range))
         end)
 
         it("trims like #dw on blanks with #change_to_end", function()
@@ -488,13 +488,13 @@ describe("operator range calculation", function()
             assert.same({ { 0, 12 }, { 0, 16 }, false }, _flat(range))
         end)
 
-        it("ends at a multibyte unit's first byte for #change_to_end", function()
+        it("ends after a multibyte unit for #change_to_end", function()
             _initialize_buffer({ "-- foo — bar" }, 0, 7)
 
             local range =
                 _forward_range(_units(), 1, _settings({ change = true, change_to_end = true }), shape.next_start)
 
-            assert.same({ { 0, 7 }, { 0, 7 }, true }, _flat(range))
+            assert.same({ { 0, 7 }, { 0, 10 }, true }, _flat(range))
         end)
 
         describe("W", function()
@@ -587,7 +587,7 @@ describe("operator range calculation", function()
             local motion = _motion({ 1, 0 }, { 1, 0 }, { 2, 2 })
             local range = _range({ 1, 0 }, { 2, 2 }, false)
 
-            assert.same({ { 1, 0 }, { 1, 0 }, true }, _flat(operator.stop_at_line_end(motion, range, false)))
+            assert.same({ { 1, 0 }, { 2, 0 }, true }, _flat(operator.stop_at_line_end(motion, range, false)))
             assert.same({ { 1, 0 }, { 1, 0 }, false }, _flat(operator.stop_at_line_end(motion, range, true)))
         end)
 
@@ -610,12 +610,28 @@ describe("operator range calculation", function()
             assert.same({ { 0, 2 }, { 0, 12 }, false }, _flat(range))
         end)
 
-        it("ends an inclusive range on the character before that bracket", function()
+        it("ends an inclusive range before that bracket", function()
             _initialize_buffer({ "f(config.lib)" }, 0, 2)
 
-            local range = operator.balance_brackets(_range({ 0, 2 }, { 0, 12 }, true))
+            local range = operator.balance_brackets(_range({ 0, 2 }, { 0, 13 }, true))
 
-            assert.same({ { 0, 2 }, { 0, 11 }, true }, _flat(range))
+            assert.same({ { 0, 2 }, { 0, 12 }, true }, _flat(range))
+        end)
+
+        it("ends an inclusive range at the end of the line before a bracket that starts a line", function()
+            _initialize_buffer({ "foo(a,", "b", "", ")x" }, 1, 0)
+
+            local range = operator.balance_brackets(_range({ 1, 0 }, { 3, 2 }, true))
+
+            assert.same({ { 1, 0 }, { 1, 1 }, true }, _flat(range))
+        end)
+
+        it("ends an exclusive range at a bracket that starts a line", function()
+            _initialize_buffer({ "foo(a,", "b", "", ")x" }, 1, 0)
+
+            local range = operator.balance_brackets(_range({ 1, 0 }, { 3, 2 }, false))
+
+            assert.same({ { 1, 0 }, { 3, 0 }, false }, _flat(range))
         end)
 
         it("keeps a range that opens its brackets", function()
@@ -626,12 +642,12 @@ describe("operator range calculation", function()
             assert.same({ { 0, 1 }, { 0, 13 }, false }, _flat(range))
         end)
 
-        it("keeps an inclusive range on an empty line", function()
+        it("keeps an inclusive range taking an empty line's line break", function()
             _initialize_buffer({ "local x = foo", "", "  local y = 2" }, 1, 0)
 
-            local range = operator.balance_brackets(_range({ 1, 0 }, { 1, 0 }, true))
+            local range = operator.balance_brackets(_range({ 1, 0 }, { 2, 0 }, true))
 
-            assert.same({ { 1, 0 }, { 1, 0 }, true }, _flat(range))
+            assert.same({ { 1, 0 }, { 2, 0 }, true }, _flat(range))
         end)
     end)
 
@@ -641,7 +657,7 @@ describe("operator range calculation", function()
 
             local range = _inclusive_range(_units(), 1, _settings(), shape.next_end)
 
-            assert.same({ { 0, 6 }, { 0, 8 }, true }, _flat(range))
+            assert.same({ { 0, 6 }, { 0, 9 }, true }, _flat(range))
         end)
 
         it("keeps a backward #ge range exclusive", function()
@@ -674,7 +690,7 @@ describe("operator range calculation", function()
 
             local range = _inclusive_range(_units(), 2, _settings(), shape.next_end)
 
-            assert.same({ { 0, 6 }, { 0, 11 }, true }, _flat(range))
+            assert.same({ { 0, 6 }, { 0, 12 }, true }, _flat(range))
         end)
 
         it("spans lines for #e", function()
@@ -682,7 +698,7 @@ describe("operator range calculation", function()
 
             local range = _inclusive_range(_units(), 1, _settings(), shape.next_end)
 
-            assert.same({ { 0, 8 }, { 1, 4 }, true }, _flat(range))
+            assert.same({ { 0, 8 }, { 1, 5 }, true }, _flat(range))
         end)
 
         it("keeps a backward #ge range across lines exclusive", function()

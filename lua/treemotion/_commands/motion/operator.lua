@@ -22,9 +22,10 @@
 --- same for any grammar.
 ---
 --- Visual mode is never used, so the `'<`/`'>` marks (`gv`) stay the
---- user's. A forward inclusive range is turned into the exclusive range
---- ending one character later. When that's the end of a line, the cursor
---- is put there with `'virtualedit'` briefly set to `"onemore"`. A backward
+--- user's. Every range is kept exclusive (see `treemotion.OperatorRange`),
+--- so a forward inclusive range ends one character after its last one.
+--- When that's the end of a line, the cursor is put there with
+--- `'virtualedit'` briefly set to `"onemore"`. A backward
 --- inclusive range (`dge`) must include the character under the cursor the
 --- operator started from, which no cursor position can do, so the `<Plug>`
 --- mappings force the motion with `v` instead (see
@@ -293,9 +294,13 @@ end
 
 --- The text an operator should act on.
 ---
---- `start` is where the cursor was before the motion. `finish` is where the
---- range ends: the character after it for an exclusive range (as with a
---- plain motion), its last character for an inclusive one.
+--- `start` is where the cursor was before the motion. `finish` is always
+--- the position after the range's last character, as for a plain motion,
+--- so every step works on one form. `inclusive` says whether the operator
+--- sees the range as Vim's inclusive motions do (`:help inclusive`): a
+--- range that would end at a line's start then ends at the previous line's
+--- end instead (see `M.balance_brackets`). Motions that land on a range's
+--- last character (`e`, `ce`) are converted once, by `_after_character`.
 ---
 ---@class treemotion.OperatorRange
 ---@field start_row integer
@@ -320,6 +325,31 @@ local function _range(start_row, start_column, finish_row, finish_column, inclus
     }
 end
 
+--- Where a range whose last character is at `row`/`column` ends (exclusive).
+---
+--- The position after that character. An empty line has no character, so
+--- its line break is taken instead: the range ends at the next line's
+--- start, and Vim makes that linewise when the range starts the line
+--- (`:help exclusive-linewise`), as with its own `dw` on an empty line. On
+--- the buffer's last line there's no line break to take.
+---
+---@param row integer
+---@param column integer
+---@return integer, integer
+local function _after_character(row, column)
+    local line = codepoint.line(row)
+
+    if #line > 0 then
+        return row, column + codepoint.char_width(line, column + 1)
+    end
+
+    if row + 1 < vim.api.nvim_buf_line_count(0) then
+        return row + 1, 0
+    end
+
+    return row, column
+end
+
 --- `range`, ending before the first closing bracket it didn't open.
 ---
 --- See `_before_unopened_bracket`. Only for ranges that run forward from
@@ -328,43 +358,30 @@ end
 ---@param range treemotion.OperatorRange
 ---@return treemotion.OperatorRange
 function M.balance_brackets(range)
-    local finish_row, finish_column = range.finish_row, range.finish_column
+    local row, column =
+        _before_unopened_bracket(range.start_row, range.start_column, range.finish_row, range.finish_column)
 
-    local finish_line = codepoint.line(finish_row)
-
-    -- An empty line has no character to step past: the range ends there,
-    -- as with `M.stop_at_line_end`'s range on one.
-    if range.inclusive and #finish_line > 0 then
-        finish_column = math.min(#finish_line, finish_column + codepoint.char_width(finish_line, finish_column + 1))
-    end
-
-    local row, column = _before_unopened_bracket(range.start_row, range.start_column, finish_row, finish_column)
-
-    if row == finish_row and column == finish_column then
+    if row == range.finish_row and column == range.finish_column then
         return range
     end
 
-    if not range.inclusive then
-        return _range(range.start_row, range.start_column, row, column, false)
-    end
-
-    if column == 0 then
-        -- The bracket starts a line: end on the last character before it,
-        -- keeping the line breaks in between. Empty lines have no last
-        -- character, and ending on one would take its line break (see
-        -- `M.apply`), so they're stepped over, back to the start's line.
+    if range.inclusive and column == 0 and row > range.start_row then
+        -- The bracket starts a line: end after the last character before
+        -- it, keeping the line breaks in between. Ending at its line's
+        -- start would let Vim pull an exclusive end back onto the previous
+        -- line (`:help exclusive`), so empty lines are stepped over too,
+        -- back to the start's line, whose own line break is then taken if
+        -- it's empty (see `_after_character`).
         row = row - 1
 
         while row > range.start_row and #codepoint.line(row) == 0 do
             row = row - 1
         end
 
-        column = #codepoint.line(row)
+        row, column = _after_character(row, codepoint.last_character_column(row, #codepoint.line(row)))
     end
 
-    column = codepoint.last_character_column(row, column)
-
-    return _range(range.start_row, range.start_column, row, column, true)
+    return _range(range.start_row, range.start_column, row, column, range.inclusive)
 end
 
 --- `cw`/`cW`: change to the end of the current unit, like `ce`/`cE`.
@@ -392,11 +409,13 @@ local function _change_to_end_range(units, start_row, start_column, unit, start_
         end_row, end_column = _skipped_text_end(units, start_row, start_column, unit, start_leaf)
     end
 
-    local finish_row, finish_column = position.clamp(end_row, codepoint.last_character_column(end_row, end_column))
+    local last_row, last_column = position.clamp(end_row, codepoint.last_character_column(end_row, end_column))
 
     if count > 1 then
-        finish_row, finish_column = shape.next_end(units, finish_row, finish_column, count - 1)
+        last_row, last_column = shape.next_end(units, last_row, last_column, count - 1)
     end
+
+    local finish_row, finish_column = _after_character(last_row, last_column)
 
     return M.balance_brackets(_range(start_row, start_column, finish_row, finish_column, true))
 end
@@ -553,7 +572,13 @@ function M.stop_at_line_end(motion, range, change)
     if length == 0 then
         -- An empty line is a word of its own (`:help word`): Vim's `dw`
         -- there acts on the line break, while `cw` just starts inserting.
-        return _range(motion.start_row, motion.start_column, motion.start_row, motion.start_column, not change)
+        if change then
+            return _range(motion.start_row, motion.start_column, motion.start_row, motion.start_column, false)
+        end
+
+        local finish_row, finish_column = _after_character(motion.start_row, motion.start_column)
+
+        return _range(motion.start_row, motion.start_column, finish_row, finish_column, true)
     end
 
     return _trimmed(motion, motion.tail_row, length)
@@ -638,38 +663,23 @@ function M.inclusive_range(units, start_row, start_column, count, settings, step
         return _range(start_row, start_column, target_row, target_column, false)
     end
 
-    return M.balance_brackets(_range(start_row, start_column, target_row, target_column, true))
+    local finish_row, finish_column = _after_character(target_row, target_column)
+
+    return M.balance_brackets(_range(start_row, start_column, finish_row, finish_column, true))
 end
 
 --- Make the pending operator act on `range`.
 ---
---- An exclusive range just needs the cursor at its `finish`, as for a plain
---- motion, even at the end of a line (see `_set_cursor_onemore`). An
---- inclusive range (always a forward one, see `M.inclusive_range`) becomes
---- the exclusive range ending after its last character, so an empty line's
---- `finish` takes its line break: the cursor goes to the next line's start,
---- and Vim makes that linewise when the range starts the line (`:help
---- exclusive-linewise`), as with its own `dw` on an empty line. On the
---- buffer's last line there's no line break to take.
+--- `finish` is always exclusive (see `treemotion.OperatorRange`), so the
+--- cursor just goes there, as for a plain motion, even at the end of a line
+--- (see `_set_cursor_onemore`).
 ---
 --- Never starts Visual mode, so `'<`/`'>` are left alone.
 ---
 ---@param range treemotion.OperatorRange
 ---
 function M.apply(range)
-    local row, column = range.finish_row, range.finish_column
-
-    if range.inclusive then
-        local line = codepoint.line(row)
-
-        if #line > 0 then
-            column = column + codepoint.char_width(line, column + 1)
-        elseif row + 1 < vim.api.nvim_buf_line_count(0) then
-            row, column = row + 1, 0
-        end
-    end
-
-    _set_cursor_onemore(row, column)
+    _set_cursor_onemore(range.finish_row, range.finish_column)
 end
 
 --- `dw`/`cw`/`yW`/...: act on `M.forward_range`, from the cursor.

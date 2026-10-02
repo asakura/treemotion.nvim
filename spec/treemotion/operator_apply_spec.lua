@@ -1,8 +1,7 @@
 --- Make sure `_commands.motion.operator.apply` sets up the range it's given.
 ---
---- `apply` only moves the cursor: to an exclusive range's end, or just past
---- an inclusive range's last character, which can be past a line's last
---- character. It never starts Visual mode, so `'<`/`'>` (`gv`) stay put.
+--- `apply` only moves the cursor to the range's (always exclusive) end,
+--- which can be past a line's last character. It never starts Visual mode, so `'<`/`'>` (`gv`) stay put.
 --- These call it outside operator-pending mode and check the mode, the
 --- cursor, the Visual marks and `'virtualedit'`, so they need no parser.
 --- `operator_pending_spec.lua` checks the text operators then act on.
@@ -90,29 +89,7 @@ describe("operator.apply", function()
         end)
     end)
 
-    describe("inclusive", function()
-        it("moves the cursor past the finish", function()
-            assert.same({ 0, 5 }, _apply({ "foo bar" }, _range(0, 1, 0, 4, true)))
-        end)
-
-        it("moves the cursor past the finish across lines", function()
-            assert.same({ 1, 2 }, _apply({ "foo", "bar" }, _range(0, 2, 1, 1, true)))
-        end)
-
-        it("moves the cursor past a finish on the line's last character", function()
-            assert.same({ 0, 7 }, _apply({ "foo bar" }, _range(0, 4, 0, 6, true)))
-        end)
-
-        it("moves the cursor past a multibyte finish", function()
-            assert.same({ 0, 7 }, _apply({ "foo —" }, _range(0, 0, 0, 4, true)))
-        end)
-
-        it("takes an empty line's line break", function()
-            assert.same({ 1, 0 }, _apply({ "", "bar" }, _range(0, 0, 0, 0, true)))
-        end)
-
-        it("has no line break to take on an empty last line", function()
-            assert.same({ 1, 0 }, _apply({ "foo", "" }, _range(1, 0, 1, 0, true)))
-        end)
+    it("ignores #inclusive, since the finish is already exclusive", function()
+        assert.same({ 0, 7 }, _apply({ "foo bar" }, _range(0, 4, 0, 7, true)))
     end)
 end)
