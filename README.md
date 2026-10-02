@@ -602,6 +602,11 @@ LuaCATS type stubs, and every lint/format/doc tool, all pinned by the flake):
 nix develop
 ```
 
+Before changing the motion code, read [DESIGN.md](DESIGN.md): it records the
+grammar shapes, Neovim API quirks and measurements the code depends on, and
+which optimizations were tried and rejected. [CLAUDE.md](CLAUDE.md) summarizes
+the layout, commands and conventions.
+
 Run every check in one shot (sandboxed, offline):
 
 ```sh
@@ -615,7 +620,7 @@ nix run .#test               # busted .
 nix run .#stylua             # auto-formats lua/plugin/scripts/spec in place
 nix run .#luacheck           # lints lua/plugin/scripts/spec
 nix run .#llscheck           # type-checks against .luarc.json
-nix run .#mdformat           # formats README.md + markdown/manual/docs/index.md
+nix run .#mdformat           # formats README.md, DESIGN.md, CLAUDE.md + the manual
 nix run .#coverage-html      # busted under luacov, writes luacov_html/
 nix run .#api-documentation  # regenerates doc/treemotion_api.txt + doc/treemotion_types.txt
 nix run .#user-documentation # regenerates doc/treemotion.txt + doc/tags from README.md via panvimdoc

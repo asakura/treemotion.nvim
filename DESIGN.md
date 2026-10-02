@@ -10,6 +10,11 @@ Module and function names match `lua/treemotion/_commands/motion/` as of this
 writing. Numbers come from headless Neovim benchmarks on synthetic buffers
 (timed with `vim.uv.hrtime()`). Read them as ratios, not absolutes.
 
+The longer write-ups this file condenses, with raw `:help` extracts and every
+benchmark run, are in git history: `git show 6df1730:notes/<file>` for
+`injection-parse-performance.md`, `motion-traversal-hotspots.md` and
+`motion-design-notes.md`, and the pre-trim docstrings in the same commit.
+
 ## Grammar shapes
 
 The motions never look at node type names. These are the shapes that made the

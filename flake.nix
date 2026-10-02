@@ -320,7 +320,7 @@
 
           mdformat =
             mkCheck "mdformat" # bash
-              "mdformat --check README.md markdown/manual/docs/index.md";
+              "mdformat --check README.md DESIGN.md CLAUDE.md markdown/manual/docs/index.md";
 
           test =
             mkCheck "test" # bash
@@ -347,9 +347,10 @@
               "nixfmt flake.nix";
 
           mdformat =
-            mkApp "mdformat" "Auto-format README.md and markdown/manual/docs/index.md with mdformat"
+            mkApp "mdformat"
+              "Auto-format README.md, DESIGN.md, CLAUDE.md and markdown/manual/docs/index.md with mdformat"
               # bash
-              "mdformat README.md markdown/manual/docs/index.md";
+              "mdformat README.md DESIGN.md CLAUDE.md markdown/manual/docs/index.md";
 
           luacheck =
             mkApp "luacheck" "Lint lua/plugin/scripts/spec with luacheck"
