@@ -102,27 +102,13 @@ jobs:
       run: |
         luarocks test treemotion.nvim-scm-1.rockspec --prepare
 
-    # `--prepare` only installs `test_dependencies` (busted itself). Without
-    # this, `treemotion._core.configuration` and friends can never be
-    # `require()`-d because `mega.cmdparse`/`mega.logging` (this rockspec's
-    # actual `dependencies`) are never installed anywhere on the Lua path.
+    # `--prepare` installs only busted, not `mega.cmdparse`/`mega.logging`.
     - name: Install Runtime Dependencies
       run: |
         luarocks make --only-deps treemotion.nvim-scm-1.rockspec
 
-    # `treemotion.nvim` calls `vim.*` at require-time (e.g.
-    # `configuration.lua`'s `vim.g`, `mega.logging`'s own `vim.*` calls), so
-    # plain `lua`/`luajit` can never load it -- busted must run under `nvim -l`
-    # the same way `nix run .#test` does locally (see `flake.nix`'s
-    # `bustedConfig`). `busted` reads `.busted` from the working directory by
-    # default, so writing it here is enough; the `Test` step below needs no
-    # changes.
-    #
-    # On Windows, `luarocks path --lr-path` returns backslash-separated
-    # paths (e.g. `C:\Users\...\?.lua`); embedded verbatim into the Lua
-    # string literal below, those backslashes are parsed as escape
-    # sequences and `.busted` fails to load. Forward slashes work fine as
-    # path separators on Windows too, so normalize before embedding.
+    # The plugin needs `vim.*`, so busted runs under `nvim -l`. Backslashes
+    # in Windows paths would be escapes in the Lua string, so use `/`.
     - name: Write Busted Config
       shell: bash
       run: |

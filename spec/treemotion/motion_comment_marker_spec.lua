@@ -1,58 +1,13 @@
---- Make sure `commands.motion.small.prose.comment_marker_case` behaves the
---- same way regardless of what a grammar's comment-opener punctuation looks
---- like, or whether that punctuation is its own leaf (Lua's `--`, split from
---- `comment_content`) or embedded in one larger leaf's text alongside the
---- comment body (C/Vim/query, whose `comment` node is a single leaf with no
---- children at all). This is the fix that motivated cross-grammar testing
---- in the first place: `M.split`'s old "no units -> fall back to the whole
---- leaf" rule silently re-added a stop that `comment_marker_case = "skip"`
---- was supposed to remove, but only for grammars/shapes where the marker
---- was its own leaf -- see `subword.lua`'s `M.split` docstring. See
---- `grammar_helpers.lua` for the shared plumbing.
+--- `comment_marker_case` behaves the same whether the marker is its own leaf
+--- (Lua's `--`) or part of a single comment leaf (C, Vim, query).
 ---
---- `_FIXTURES` also aims for broad `comment_markers` language coverage --
---- both the remaining `_DEFAULTS` entries and a representative slice of
---- `_OPTIONAL_COMMENT_MARKERS` (see `configuration.lua`) -- not only the
---- four grammars that originally motivated cross-grammar testing above.
---- `grammar.wrap` turns a fixture for a filetype with no parser installed
---- into a `pending()` test, so adding fixtures here is safe in any
---- environment; the Nix-driven suite's `treesitterAllGrammars` (see
---- `flake.nix`) is what actually makes nearly all of their *parsers*
---- available.
+--- Fixtures cover the default languages and a slice of the optional ones;
+--- a fixture whose parser is missing is pending. Highlight queries for
+--- non-bundled grammars aren't installed, so those fixtures set
+--- `comment_node`, and `grammar.wrap` adds a `(comment_node) @spell` query.
 ---
---- Parser availability alone isn't enough, though: `comment_marker_case`
---- only fires on `@spell`-tagged ("prose") leaves (see `classify.lua`'s
---- `is_prose`), and `@spell` comes from a language's own
---- `queries/<lang>/highlights.scm` -- which `treesitterAllGrammars`
---- deliberately does *not* vendor (only compiled `parser/<lang>.so` files;
---- see `flake.nix`'s comment on that binding). Concretely: without a real
---- highlight query, every fixture below other than `lua`/`c`/`vim`/`query`
---- (whose queries ship inside Neovim itself) would silently fall back to
---- "code" leaf handling instead of "prose", producing a *different* stop
---- pattern than these tests assert -- not a skipped/pending test, an
---- actively wrong one that happened to pass locally on a machine with a
---- personal, non-Nix nvim-treesitter install providing those queries by
---- coincidence (that's genuinely how the first version of this file's
---- broader fixture list was validated, and why it was wrong). So each
---- non-bundled fixture below sets `comment_node` to that language's
---- comment node type name (from its parse tree, e.g. `"comment"` or
---- `"line_comment"`), which `grammar.wrap` uses to register a synthetic
---- `(comment_node) @spell` query before starting the parser -- exercising
---- the plugin's real prose-detection code path deterministically, without
---- depending on any real highlight query being present in the environment.
----
---- `r`, `haskell`, and `matlab` are deliberately excluded from
---- `_OPTIONAL_COMMENT_MARKERS`'s slice tested here: even with a synthetic
---- `@spell` query, `r`'s parser doesn't produce a same-line stop before the
---- next line (its `# foo`/`# bar` two-line fixture collapses the first
---- line's stop away entirely), and `haskell`/`matlab` merge two
---- consecutive line-comments into a single parse-tree node instead of two,
---- breaking the row/column assumptions below regardless of `@spell`. None
---- of this reflects on `_OPTIONAL_COMMENT_MARKERS` itself (those three
---- languages' entries there are still correct and still tested via
---- `configuration_spec.lua`'s `get_comment_markers` tests) -- it's purely
---- that these three don't fit this file's generic two-line stop/skip
---- assertion shape.
+--- `r`, `haskell` and `matlab` don't fit the two-line shape (their parsers
+--- merge or drop consecutive comments) and are left out.
 
 local grammar = require("treemotion.grammar_helpers")
 local treemotion = require("treemotion")
@@ -75,19 +30,14 @@ local _FIXTURES = {
     { filetype = "vim", marker = '"', lines = { '" foo', '" bar' } },
     { filetype = "query", marker = ";", lines = { "; foo", "; bar" } },
 
-    -- Remaining `_DEFAULTS` languages (`sh`/`tex` skipped -- their
-    -- treesitter *language* is actually `bash`/`latex`, already covered
-    -- below, since nvim-treesitter maps those filetypes onto the same
-    -- parser; see this module's docstring).
+    -- The remaining default languages. `sh`/`tex` use the `bash`/`latex` parsers.
     { filetype = "cpp", marker = "//", comment_node = "comment", lines = { "// foo", "// bar" } },
     { filetype = "rust", marker = "//", comment_node = "line_comment", lines = { "// foo", "// bar" } },
     { filetype = "python", marker = "#", comment_node = "comment", lines = { "# foo", "# bar" } },
     { filetype = "bash", marker = "#", comment_node = "comment", lines = { "# foo", "# bar" } },
     { filetype = "latex", marker = "%", comment_node = "line_comment", lines = { "% foo", "% bar" } },
 
-    -- A representative slice of `_OPTIONAL_COMMENT_MARKERS`, grouped the
-    -- same way as that table (`r`/`haskell`/`matlab` excluded -- see this
-    -- module's docstring).
+    -- A slice of `_OPTIONAL_COMMENT_MARKERS`.
     -- "#"
     { filetype = "toml", marker = "#", comment_node = "comment", lines = { "# foo", "# bar" } },
     { filetype = "yaml", marker = "#", comment_node = "comment", lines = { "# foo", "# bar" } },
@@ -139,11 +89,7 @@ describe("motion API - comment_marker_case, across grammars", function()
     end)
 
     for _, fixture in ipairs(_FIXTURES) do
-        -- `foo`'s column, on either line: right after the marker and the
-        -- space following it. Varies by marker width (1 char for vim's `"`
-        -- and query's `;`, 2 for lua's `--` and c's `//`), unlike the
-        -- marker's own start (always 0) and the next line's marker (always
-        -- row+1, column 0).
+        -- `foo`'s column: after the marker and one space.
         local foo_column = #fixture.marker + 1
 
         _it_per_grammar(

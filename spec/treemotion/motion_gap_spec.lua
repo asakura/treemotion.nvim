@@ -1,11 +1,5 @@
---- Make sure the three "not an ordinary leaf" node shapes `leaf.lua` has to
---- special-case -- a blank-line gap, a leaf that genuinely spans multiple
---- rows, and a leaf with a partial-coverage child -- are handled the same
---- way regardless of grammar. Each gets at least a second, structurally
---- different grammar beyond the Lua case that originally motivated the fix,
---- to prove the fix generalizes rather than just happening to work for the
---- one shape it was written against. See `grammar_helpers.lua` for the
---- shared plumbing.
+--- Blank-line gaps, multi-row leaves and partially covered nodes behave the
+--- same across grammars.
 
 local grammar = require("treemotion.grammar_helpers")
 local treemotion = require("treemotion")
@@ -21,11 +15,7 @@ local function _it_per_grammar(fixture, description, body)
 end
 
 describe("motion API - blank line gaps, across grammars", function()
-    -- A blank line has no treesitter node of its own, so `get_node()` there
-    -- lands on the smallest node that still covers it (the whole buffer, if
-    -- there's nothing more specific) -- which has no useful next/previous
-    -- sibling. Every motion below exercises the fallback that climbs to a
-    -- real leaf instead of getting stuck.
+    -- A blank line has no node, so the motion must climb to a real leaf.
 
     _it_per_grammar(
         { filetype = "lua", lines = { "local a = 1", "", "local b = 2" } },
@@ -125,19 +115,8 @@ describe("motion API - blank line gaps, across grammars", function()
 end)
 
 describe("motion API - genuinely multi-row leaves, across grammars", function()
-    -- A leaf that itself spans more than one row (not just a gap between
-    -- rows) is still one single `leaf.lua`-level leaf, not split at the row
-    -- boundary -- but that's no longer the same thing as one single `w`/`b`
-    -- *stop*: both fixtures below are `@string`/`@spell`-tagged (see
-    -- `classify.is_prose`), i.e. prose by this plugin's own
-    -- classification, and `subword.split()` already divides a *single-row*
-    -- prose leaf word-by-word -- multi-row prose used to be the one place
-    -- that stopped short, collapsing into one giant unit purely because it
-    -- happened to span more than one row (see
-    -- `motion_markdown_paragraph_spec.lua` for the real-world case that
-    -- bug came from: a hard/soft-wrapped markdown paragraph). Now it's
-    -- split the same way single-row prose already was, consistently
-    -- crossing the row boundary instead of stopping at it.
+    -- A multi-row prose leaf is one leaf but is still split word by word
+    -- across its rows.
 
     _it_per_grammar(
         { filetype = "lua", lines = { "local x = [[foo", "bar]]" } },
@@ -167,12 +146,8 @@ describe("motion API - genuinely multi-row leaves, across grammars", function()
         { filetype = "c", lines = { "int x = 1; /* foo", "bar */ int y = 2;" } },
         "#w/#b split a multi-row block comment word-by-word, the same as a single-row one would",
         function()
-            -- `;`(0,9) then one `comment` leaf spanning (0,11) - (1,6),
-            -- `@spell`-tagged, then `int`(1,7). `/`/`*` each land as their
-            -- own bare punctuation stop either side of the comment's real
-            -- words -- see `motion_gap_spec.lua`'s `*text*` case (and
-            -- `_char_class`'s docstring) for why `/` and `*` fall into
-            -- different classes and so never merge into one run together.
+            -- `;`(0,9), a `comment` (0,11)-(1,6), then `int`(1,7). `/` and `*`
+            -- are separate punctuation stops.
             grammar.set_cursor(0, 9) -- start of `;`
 
             local w_expected = { { 0, 11 }, { 0, 12 }, { 0, 14 }, { 1, 0 }, { 1, 4 }, { 1, 5 }, { 1, 7 } }
@@ -195,26 +170,15 @@ describe("motion API - genuinely multi-row leaves, across grammars", function()
 end)
 
 describe("motion API - leaves with a partial-coverage child, across grammars", function()
-    -- A node can have children that don't cover its whole span, leaving
-    -- real (non-blank) text with no node of its own -- `_has_uncovered_text`
-    -- must settle such a node as one whole leaf rather than treating that
-    -- uncovered text as an invisible gap. See `leaf.lua`'s docstring.
+    -- Text no child covers must stay reachable, not become a gap.
 
     _it_per_grammar(
         { filetype = "lua", lines = { [[local x = "foo\nbar"]] } },
         "#w/#e/#b treat string_content as one whole leaf around its embedded escape_sequence",
         function()
-            -- `"foo\nbar"` (a literal backslash-n) parses as `string_content`
-            -- (11-19) with exactly one child, `escape_sequence` (14-16, the
-            -- `\n`) -- `"foo"` (11-14) and `"bar"` (16-19) have no node of
-            -- their own at all. `string_content` is also `@string`-tagged
-            -- (see `classify.is_prose`), so `subword` splits
-            -- its text like prose: `foo`(11-14, word-class), `\`(14-15,
-            -- its own "other"-class run), `nbar`(15-19, `n` and `bar` are
-            -- both word-class with nothing between them, so they're one
-            -- run) -- proving the escape sequence's uncovered text on
-            -- *both* sides survives as real, reachable content, not a
-            -- silent gap, regardless of where `subword` itself then splits.
+            -- `string_content` (11-19) has one child, `escape_sequence`
+            -- (14-16). As prose it splits into `foo`(11-14), `\`(14-15) and
+            -- `nbar`(15-19), so the text on both sides is reachable.
             grammar.set_cursor(0, 11) -- start of `foo`, uncovered by `escape_sequence`
 
             local w_expected = { 14, 15, 19 } -- `\`, `nbar`, straight to the closing `"`
@@ -248,16 +212,8 @@ describe("motion API - leaves with a partial-coverage child, across grammars", f
         { filetype = "markdown", lines = { "some *text* here" } },
         "#w/#e/#b treat inline markup text as real content around its `*` marker children",
         function()
-            -- `some *text* here` parses as one `inline` node (0-16) whose
-            -- only two children are the anonymous `*` markers (5-6 and
-            -- 10-11) -- "some "(0-5), "text"(6-10) and " here"(11-16) have
-            -- no node of their own, the same partial-coverage shape as the
-            -- Lua case above, just arising from markdown's emphasis syntax
-            -- instead of an escape sequence. `(inline) @spell` makes this
-            -- leaf prose, so `subword` further splits it on whitespace and
-            -- bare punctuation (each `*` is its own bare, non-alnum run, so
-            -- `comment_marker_case`'s default "stop" makes it a landing
-            -- stop too -- see `delimiters.split`).
+            -- `some *text* here` is one `inline` node (0-16) whose only
+            -- children are the two `*` (5-6, 10-11). Each `*` is a stop.
             grammar.set_cursor(0, 0)
             local w_expected = { 5, 6, 10, 12 } -- `some`, `*`, `text`, `*`->`here`
             for _, column in ipairs(w_expected) do

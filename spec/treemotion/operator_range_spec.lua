@@ -1,17 +1,6 @@
---- Make sure `_commands.motion.operator`'s range calculation follows its rules.
----
---- These call `operator.forward_range`/`operator.inclusive_range` and the
---- forward range's steps (`operator.trim_skipped_text`,
---- `operator.stop_at_line_end`, `operator.balance_brackets`) directly
---- with a hand-built `treemotion.OperatorSettings`, motion or range, so
---- they need neither operator-pending mode nor the global configuration. A few branches no
---- bundled grammar or real step reaches get a wrapped unit source or a
---- stand-in step instead.
----
---- Ranges are measured from a position, not the cursor: the cursor stays at
---- the buffer's start, and every measurement checks it's never moved.
---- `operator_pending_spec.lua` covers the same rules end to end, through
---- the `<Plug>` mappings.
+--- Range rules in `_commands.motion.operator`, called directly with
+--- hand-built settings. Ranges are measured from a position; every test
+--- checks the cursor never moves.
 
 local grammar_helpers = require("treemotion.grammar_helpers")
 local operator = require("treemotion._commands.motion.operator")

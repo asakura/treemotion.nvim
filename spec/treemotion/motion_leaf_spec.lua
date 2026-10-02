@@ -1,19 +1,6 @@
---- Make sure `w`/`e`/`b`/`ge` (leaf) and `W`/`E`/`B`/`gE` (contiguous-run)
---- motions work the same way regardless of which treesitter grammar parsed
---- the buffer -- the motion logic only ever looks at generic node shape and
---- leaf text, never a language's specific node type names, so the same
---- assertions run once per fixture filetype below instead of being
---- hand-duplicated per grammar. See `grammar_helpers.lua` for the shared
---- plumbing and why a missing parser becomes a pending test rather than a
---- failure.
----
---- Every fixture is one line of punctuation-separated tokens, chosen per
---- grammar so its leaf sequence is unambiguous from a `nvim --headless`
---- treesitter dump; expected columns were captured from the plugin's own
---- output (not hand-derived), since grammars disagree in surprising ways --
---- e.g. `query`'s `(` is a single-character leaf, so `e`'s first press from
---- column 0 skips straight to the *second* leaf's end, matching real Vim's
---- "already on the last character of this word" rule.
+--- The leaf and run motions behave the same on every grammar. Expected
+--- columns were recorded from the plugin's output on one line of
+--- punctuation-separated tokens per grammar.
 
 local grammar = require("treemotion.grammar_helpers")
 local treemotion = require("treemotion")
@@ -97,12 +84,9 @@ local _LEAF_FIXTURES = {
         ge = { 14, 11, 9, 8, 5, 3, 0, 0 },
     },
     {
-        -- Unlike the other fixtures, `vimdoc`'s own grammar barely tokenizes
-        -- at all: it has only 3 whitespace-delimited `word` leaves here
-        -- (`foo-bar_baz`(0-11), `qux`(12-15), `quux`(16-20)). Every extra
-        -- stop below comes entirely from `subword.lua` splitting `-`/`_`
-        -- *inside* that first leaf's text -- proving the motions work even
-        -- when a grammar's own leaf granularity is this coarse.
+        -- vimdoc has only three `word` leaves here (`foo-bar_baz`(0-11),
+        -- `qux`(12-15), `quux`(16-20)); the other stops come from sub-word
+        -- splitting.
         filetype = "vimdoc",
         lines = { "foo-bar_baz qux quux" },
         w_start = 0,

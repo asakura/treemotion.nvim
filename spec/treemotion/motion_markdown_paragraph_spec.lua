@@ -1,37 +1,5 @@
---- Regression test for `w`/`e`/`b`/`ge` swallowing an entire wrapped
---- markdown paragraph in one motion, instead of stepping word by word.
----
---- Neovim's bundled `markdown_inline` grammar doesn't tokenize plain prose
---- into per-word nodes: a paragraph parses as one `inline` node whose only
---- children are markup delimiters (`*`, `` ` ``, ...) -- the prose text
---- itself has no node of its own, which is exactly the "leaf with
---- uncovered text" shape `_has_uncovered_text` exists to handle (see
---- `motion_gap_spec.lua`'s "leaves with a partial-coverage child" tests,
---- which cover this correctly for a *single-line* paragraph: `is_prose`
---- (via `@spell`) makes `subword.split()` divide that leaf's text
---- word-by-word).
----
---- That word-splitting used to never run at all once the paragraph wrapped
---- across more than one line, though: `subword.lua`'s `split()` checked
---- `start_row ~= end_row` before ever consulting `is_prose`, and -- since
---- trimming trailing blanks can't collapse a leaf whose extra rows hold real
---- content, not just trailing blanks -- fell back to treating the *entire*
---- multi-row node as a single unit. That fallback is still correct for a
---- genuinely atomic multi-row leaf (a Lua long string, a C block comment --
---- see `motion_gap_spec.lua`'s "genuinely multi-row leaves" tests), but a
---- hard/soft-wrapped markdown paragraph was exactly the case where it
---- wasn't: wrapping prose across lines is the normal, common shape for real
---- markdown, not an edge case.
----
---- Fixed by making `split`/`_split_run_segment` fall through to
---- `_split_text` for genuinely multi-row *prose* instead of taking the
---- single-unit fallback, and making `_split_text` itself row/column-aware
---- (`span.position_mapper`) so a unit's start/end can land past
---- a line break instead of assuming flat `start_col + offset` arithmetic.
---- This fixture is confirmed directly against Neovim's own bundled
---- `markdown`/`markdown_inline` grammars (reproduced on unmodified `main`
---- via this exact buffer: a single `#w` from `(0, 0)` used to land straight
---- on `(4, 0)`, the next paragraph, skipping every word in between).
+--- A wrapped Markdown paragraph is one `inline` node spanning several rows.
+--- `w`/`e`/`b`/`ge` must step through its words instead of jumping over it.
 
 local grammar = require("treemotion.grammar_helpers")
 local treemotion = require("treemotion")
@@ -53,12 +21,8 @@ local function _it(description, body)
 end
 
 describe("motion API - markdown paragraph wrapped across multiple lines", function()
-    -- Every word boundary across all three lines, in document order --
-    -- `-` (from `hard-wrapped`) is its own landing stop too, the same as
-    -- `motion_gap_spec.lua`'s `*text*` case: a bare punctuation run gets
-    -- `comment_marker_case`'s default `"stop"` treatment. Reaching `(4, 0)`
-    -- (`Second`) only as the *last* step, after every real word, is what
-    -- proves the paragraph is no longer swallowed whole.
+    -- Every word boundary on all three lines, `-` included. `Second` (4, 0)
+    -- comes only last.
     local positions = {
         { 0, 5 }, -- is
         { 0, 8 }, -- a

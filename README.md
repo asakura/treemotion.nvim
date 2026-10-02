@@ -1,6 +1,6 @@
 # treemotion.nvim
 
-Treesitter-driven `w`/`e`/`b`/`ge`/`W`/`E`/`B`/`gE` motions, per filetype.
+Treesitter-driven `w`/`e`/`b`/`ge`/`W`/`E`/`B`/`gE` motions for any language.
 
 [![test](https://img.shields.io/github/actions/workflow/status/asakura/treemotion.nvim/test.yml?branch=main&style=for-the-badge&label=Test)](https://github.com/asakura/treemotion.nvim/actions/workflows/test.yml)
 [![documentation](https://img.shields.io/github/actions/workflow/status/asakura/treemotion.nvim/documentation.yml?branch=main&style=for-the-badge&label=Documentation)](https://github.com/asakura/treemotion.nvim/actions/workflows/documentation.yml)
@@ -67,13 +67,8 @@ nixpkgs.overlays = [
 
 #### With lazyvim-nix
 
-[lazyvim-nix](https://github.com/pfassina/lazyvim-nix) drives lazy.nvim's
-`plugins.<key>` option with plain Lua-spec strings, so a plugin sourced from
-the Nix store (rather than fetched by lazy.nvim itself over the network)
-just needs a `dir = "..."` field pointing at the derivation, the same way
-lazyvim-nix's own bundled plugins are wired. Apply this flake's overlay to
-get `pkgs.vimPlugins.treemotion-nvim` (plus `mega-cmdparse`/`mega-logging`),
-then reference their store paths:
+With [lazyvim-nix](https://github.com/pfassina/lazyvim-nix), apply the overlay
+and point each plugin's `dir` at its Nix store path:
 
 ```nix
 programs.lazyvim = {
@@ -97,136 +92,75 @@ programs.lazyvim = {
 
 ## Motions
 
-`treemotion` moves the cursor over treesitter nodes instead of Vim's character
-classes -- no per-filetype configuration needed, since it walks whatever
-parser is already attached to the buffer. It provides two families
-of motions, `w`/`e`/`b`/`ge` and `W`/`E`/`B`/`gE`, both exposed as
-`:TreeMotion motion {name} [--count=N]` and as `<Plug>` mappings (see `Keymaps`
-below).
+`treemotion` moves over treesitter nodes instead of Vim's character classes,
+using whatever parser the buffer already has. There are two families,
+`w`/`e`/`b`/`ge` and `W`/`E`/`B`/`gE`, available as
+`:TreeMotion motion {name} [--count=N]` and as `<Plug>` mappings (see
+`Keymaps` below).
 
 ### `w` / `e` / `b` / `ge` (leaf motions)
 
-Move one treesitter leaf at a time -- an identifier, a number, or a single
-punctuation token like `.` or `,`.
-
-Within a leaf, they also move one naming-convention sub-word at a time,
-e.g. `fooBar-bazQux` is four stops: `foo`, `Bar`, `baz`, `Qux`.
+Move one treesitter leaf at a time: an identifier, a number, or a
+punctuation token like `.` or `,`. Inside a leaf they also stop at
+naming-convention sub-words, so `fooBar-bazQux` has four stops: `foo`, `Bar`,
+`baz`, `Qux`.
 
 #### Comments and prose
 
-Comments and string content (or any other span a language's treesitter
-query tags `@spell` or `@string`) are treated as prose instead of code:
-they first split into individual words on whitespace, the way real Vim's
-`w` does in a text file, before naming-convention splitting applies to each
-word. String content counts as prose because it just as often holds free
-text -- a description, an error message, a URL -- as it does an
-identifier-like slug, and most treesitter highlight queries only ever tag
-comments (not strings) `@spell`.
+Comments and strings (anything highlighted `@spell` or `@string`) are prose.
+Prose is first split into words on whitespace and punctuation, like Vim's `w`
+in a text file, and each word is then split by the `prose` rules instead of
+the `code` rules.
 
-A run of that language's comment-opener punctuation -- e.g. Python/Bash
-`#`, C/Rust `/` (Rust's `///`), LaTeX `%`, Vim `"`, a treesitter query
-file's `;`, or Lua's `-` (its `--` opener, or a `-----` separator) -- is one
-stop by default, the same as a `-`/`_` inside an identifier. Set
-`comment_marker_case = "skip"` to jump straight past it to the next real
-word instead, independently of `kebab_case`/`snake_case` (which govern
-`-`/`_` next to a real letter or digit, e.g. `hello-world`, and keep
-governing even a bare `-`/`_` run in any language that hasn't listed that
-character as a comment marker -- see below). See
-`commands.motion.small.code` / `.prose` under `Configuration` to control
-`comment_marker_case` itself per context.
+A run of the language's comment-marker punctuation, such as Python's `#`,
+Rust's `///` or Lua's `--`, is one stop. Set `comment_marker_case = "skip"` to
+jump past it. `kebab_case`/`snake_case` govern `-`/`_` next to letters or
+digits; a bare run of them falls under `comment_marker_case` only in
+languages that list that character as a marker.
 
 #### Structured prose tokens
 
-`:` and `/` never produce their own landing stop or block a word run within
-prose -- `colon_case`/`slash_case` both default to `"skip"` there -- so a
-reference like `github:NixOS/nixpkgs`, a URL (`https://host/path`), or a
-filesystem path (`/a/b/c`, `./a/b/c`) stays readable as one structured token
-instead of fragmenting at every `:`/`/`. (`code`'s `colon_case`/`slash_case`
-default to `"none"` instead, since real identifiers essentially never
-contain a literal `:`/`/` -- inert there by default.)
+In prose, `colon_case` and `slash_case` default to `"skip"`, so
+`github:NixOS/nixpkgs`, `https://host/path` and `./a/b/c` don't stop at every
+`:` or `/`. In code they default to `"none"`.
 
-A run that looks like an opaque hash or digest -- a hex string, or a
-base64-alphabet string with both an uppercase and a lowercase letter, at
-least `opaque_token_min_length` characters long (default `20`, comfortably
-under a 40-character sha1 hex digest or a 44-character base64 sha256
-digest) -- is treated as one unit and never split internally on case, e.g.
-`A8YgMXtKnd9nSsRClkfz8cUbKHIUTRN2vudge6EfSgU` stays whole instead of
-fragmenting at every case transition. This is a pure charset-and-length
-heuristic, not a list of known algorithms, so it also matches things that
-merely look hash-shaped. A trailing `=` (base64 padding) is folded into the
-same unit rather than becoming its own tiny stop.
+A token that looks like a hash is never split: at least
+`opaque_token_min_length` characters (default `20`) of hex, or base64 with an
+uppercase letter, a lowercase letter and a digit. Trailing `=` padding stays
+part of it. So `A8YgMXtKnd9nSsRClkfz8cUbKHIUTRN2vudge6EfSgU` is one stop.
 
-**Known caveat:** `kebab_case` still governs `-`, and prose's default for it
-is `"stop"` (deliberate, for ordinary hyphenated English compounds like
-"well-known"). That means `github:NixOS/nixpkgs/nixos-unstable` splits into
-`github`, `Nix`, `OS`, `nixpkgs`, `nixos`, `-`, `unstable` out of the box --
-the `-` in `nixos-unstable` (and in a `sha256-...` prefix) still lands as
-its own stop. Set `kebab_case = "skip"` for prose if you want hyphens
-ignored the same way `:`/`/` already are.
+Prose's `kebab_case` defaults to `"stop"` for words like "well-known", so the
+`-` in `nixos-unstable` is still a stop. Set it to `"skip"` to ignore hyphens
+too.
 
 #### Backtick-enclosed identifiers
 
-Within prose, a backtick-enclosed span that's exactly one Vim word --
-`` `fooBar` ``, `` `foo-bar` `` -- is treated as a code identifier: `code`'s
-`camel_case`/`pascal_case`/`kebab_case`/`snake_case`/`comment_marker_case`
-rules apply to it instead of `prose`'s, and the backticks themselves are
-never landing stops, the same way a `comment_marker_case = "skip"` run
-already isn't. A backtick pair that isn't exactly one word (multiple words,
-e.g. `` `foo bar` ``, or an empty pair with nothing between them) is left as
-ordinary prose text, backticks included, with no behavior change.
-
-This is on by default; set `commands.motion.small.backtick_identifiers = false`.
+In prose, a single word in backticks (`` `fooBar` ``, `` `foo-bar` ``) uses the
+`code` rules, and the backticks are not stops. Backticks around several
+words, or around nothing, are ordinary prose. Turn this off with
+`commands.motion.small.backtick_identifiers = false`.
 
 #### Comment-marker characters
 
-Which characters count as comment-marker punctuation -- `-`/`_` included,
-exactly like every other character -- is configured per treesitter
-language, via `commands.motion.comment_markers` (see
-`Configuration` below). A language with no entry has no comment-marker
-characters at all, so `comment_marker_case` is a no-op there until you add
-one. This is deliberate, not an oversight, since the same punctuation means
-unrelated things in different grammars (`"` opens a comment in Vimscript
-but closes a string everywhere else).
-
-`:checkhealth treemotion` warns if a language _you_ added to
-`comment_markers` has no treesitter parser installed (a likely typo, or a
-parser you haven't installed yet) -- it stays silent about the shipped
-defaults, since most setups won't have every one of those parsers installed
-and that isn't a problem.
-
-Beyond the shipped defaults and anything you configure yourself, 124
-additional languages are supported automatically, with no configuration
-needed, as soon as their treesitter parser is installed -- see
-`_OPTIONAL_COMMENT_MARKERS` in `lua/treemotion/_core/configuration.lua`, or
-the table below, for the full list.
+Comment-marker characters are configured per treesitter language in
+`commands.motion.comment_markers`, since the same character means different
+things in different languages (`"` starts a Vimscript comment but ends a
+string elsewhere). A language with no entry has no markers.
+`:checkhealth treemotion` warns when a language you added has no parser
+installed.
 
 #### Supported languages
 
-The `w`/`e`/`b`/`ge`/`W`/`E`/`B`/`gE` motions themselves work with **any**
-treesitter grammar Neovim can parse -- they only look at generic node shape
-(leaf, blank-line gap, partial-coverage child) and generic leaf text, never
-a language's specific node type names. The two columns below track the two
-things that _are_ per-language:
+The motions work with any treesitter grammar. Two things are per language:
 
-- **Comment markers** -- whether `comment_marker_case` (see above) knows
-  that language's comment-opener punctuation at all.
-- **Prose (`@spell`)** -- whether comments additionally get full _prose_
-  treatment (splitting into words on whitespace, governed by `prose.*`
-  instead of `code.*` settings -- see `Comments and prose` above). This
-  needs the grammar's own treesitter _highlight query_ to tag the comment
-  `@spell`, which lives in a separate `queries/<lang>/highlights.scm` file,
-  not the parser. `✓` here means Neovim itself ships that query, so it
-  works with zero extra setup; a `-` still gets comment-marker recognition,
-  just governed by `code.comment_marker_case` until you install a plugin
-  (typically `nvim-treesitter`) that provides one for that language.
+- **Comment markers**: whether `comment_marker_case` knows the language's
+  comment punctuation.
+- **Prose (`@spell`)**: whether comments are treated as prose. This needs a
+  highlight query that tags comments `@spell`. `✓` means Neovim ships one;
+  otherwise install one, typically with `nvim-treesitter`. Strings are prose
+  through `@string`, which nearly every query has.
 
-String content gets full prose treatment too, via `@string` rather than
-`@spell` -- unlike `@spell`, virtually every language's highlight query
-already tags strings this way, so it isn't tracked as a separate column
-below.
-
-11 languages ship with comment-marker support built in, active regardless
-of what other treesitter parsers you have installed:
+These languages have comment markers built in:
 
 | Language | Comment markers | Prose (`@spell`) |
 | -------- | --------------- | ---------------- |
@@ -243,7 +177,7 @@ of what other treesitter parsers you have installed:
 | `vim` | `✓` | `✓` |
 
 <details>
-<summary>124 more languages, auto-detected once their treesitter parser is installed</summary>
+<summary>124 more languages, used once their parser is installed</summary>
 
 | Language | Comment markers | Prose (`@spell`) |
 | -------------------- | --------------- | ---------------- |
@@ -374,21 +308,15 @@ of what other treesitter parsers you have installed:
 
 </details>
 
-Markup/template languages with block-only or multi-character comment
-delimiters (HTML, XML, JSON, Jinja/Twig/Liquid, Markdown, reStructuredText)
-and dozens of very niche grammars are deliberately excluded from both
-tables rather than guessed at; add them yourself via
-`commands.motion.comment_markers` if you need them (see
-`Configuration` below).
+Languages with block-only or multi-character comment syntax (HTML, XML,
+JSON, templates, Markdown, reStructuredText) are left out; add them in
+`commands.motion.comment_markers` if you need them.
 
 #### Insignificant characters
 
-Punctuation like `.`, `=`, `{`, `}`, `;`, `[`, `]` is usually its own leaf,
-so `w`/`e`/`b`/`ge` stop on it just like any other leaf by default -- real
-treesitter-driven motion, but noisier than skimming past it entirely.
-`commands.motion.insignificant_characters`, keyed by treesitter language
-name (same convention as `comment_markers`), lists leaf texts that should be
-invisible to word motions instead:
+Punctuation like `.`, `=`, `{` or `;` is usually its own leaf, so `w` stops on
+it. `commands.motion.insignificant_characters` lists tokens to pass over
+instead, per language:
 
 ```lua
 commands = {
@@ -400,98 +328,51 @@ commands = {
 },
 ```
 
-With that set, `w`/`b` glide straight past a `;` leaf to the next/previous
-real leaf, the same way a `comment_marker_case = "skip"` run already isn't a
-landing stop. It's still real buffer text -- `x`, `dd`, highlighting, and
-everything else are unaffected; only word-motion traversal ignores it. An
-entry has to match a leaf's **entire** text exactly, not merely appear
-inside it, so a multi-character token (`"->"`, `"::"`) works too, not just a
-single character.
+An entry must match a leaf's whole text, so `"->"` works too. Only motions
+are affected; the text is still there for `x`, `dd` and highlighting. It
+applies to code only: named prose leaves are never skipped, though unnamed
+tokens such as a string's quotes can be.
 
-This applies to **code** leaves only -- a *named* leaf tagged `@spell`/`@string`
-(prose, or string content) never has any of its characters treated as
-insignificant, since prose already does its own punctuation-is-a-word
-splitting (see `Comments and prose` above). A `;` inside a comment or string
-still stops `w` as normal. An *unnamed* leaf -- a fixed grammar token, like a
-string's own quote delimiters, rather than a rule that captures real text --
-is fair game even when it's `@string`/`@spell`-tagged too: highlight queries
-often paint a string's quotes the same color as its content for a uniform
-look (`(string) @string` in Lua, `(string_expression "\"" @string)` in Nix),
-but that's a coloring choice, not a claim that the quote itself is prose.
-
-Unlike `comment_markers`, this ships with **no** defaults for almost every
-language -- comment syntax is an objective fact about a grammar, but which
-punctuation counts as "insignificant" is a personal taste call (some setups
-want `w` to stop on `{`/`}` to jump between blocks), so it's opt-in only.
-`:checkhealth treemotion` warns the same way `comment_markers` does if a
-language you add here has no treesitter parser installed.
-
-The one exception is a small, curated set of near-universal cases, resolved
-the same way `comment_markers`' own auto-detected languages are (see above):
-auto-detected once that language's treesitter parser is installed, with no
-configuration needed.
+This is empty by default because it is a matter of taste, except for these
+languages once their parser is installed:
 
 | Language | `{` | `}` | `[` | `]` | `;` | `"` | `''` | `=` | `.` |
 | -------- | --- | --- | --- | --- | --- | --- | ---- | --- | --- |
 | `nix` | `✓` | `✓` | `✓` | `✓` | `✓` | `✓` | `✓` | `✓` | `✓` |
 
-A user-configured `insignificant_characters` entry for a language normally
-overrides this table entirely, same as `comment_markers`. To keep most of an
-auto-detected (or shipped) list but drop just one character, map it to
-`false` instead of writing out a full replacement list -- a plain Lua `nil`
-can't survive as a table value (`:help vim.NIL`), so `false` is the
-explicit "remove this one" marker:
+Your own entry replaces a language's list. To remove one character and keep
+the rest, set it to `false`:
 
 ```lua
 commands = {
     motion = {
         insignificant_characters = {
-            -- Keeps Nix's auto-detected `{`/`}`/`[`/`]`, drops only `;`.
+            -- Keep Nix's other characters, drop `;`.
             nix = { [";"] = false },
         },
     },
 },
 ```
 
-A `false` entry can be combined with ordinary string elements in the same
-table, e.g. `nix = { ",", [";"] = false }` drops `;` and adds `,` on top of
-the rest of the auto-detected list.
+You can add characters in the same table: `nix = { ",", [";"] = false }`.
 
-`W`/`E`/`B`/`gE` (below) respect the same setting too: an insignificant
-leaf that would otherwise form its own isolated run (e.g. `foo ; bar`, with
-whitespace on both sides of `;`) is no longer its own stop either. A run
-that mixes an insignificant leaf with others and no whitespace (`foo;bar`)
-is unaffected either way -- it was already one stop before this setting
-existed, since `W`/`E`/`B`/`gE` never stopped on punctuation glued to its
-neighbors in the first place.
+`W`/`E`/`B`/`gE` also skip a run made only of insignificant tokens, such as
+the `;` in `foo ; bar`.
 
 ### `W` / `E` / `B` / `gE` (WORD motions)
 
-Move one contiguous _run_ of leaves at a time -- a run is a maximal
-sequence of leaves with no whitespace between them, mirroring how Vim's
-real `W` ignores punctuation inside a WORD while `w` stops on it. By
-default these ignore sub-words entirely, the same way real `W` ignores
-punctuation -- a whole run is always one stop.
-
-Set `commands.motion.big.enabled = true` to opt in to real,
-case/delimiter-aware sub-splitting within each run too, configured via
-`commands.motion.big.code` / `.prose` -- the same shape as `commands.motion.small`'s
-(see `Comments and prose`, `Structured prose tokens`, and
-`Backtick-enclosed identifiers` above; everything documented there applies
-here too, just scoped to a whole run of leaves instead of one leaf).
-`enabled = false` (the default) is exactly today's behavior, byte-for-byte;
-none of `commands.motion.big`'s other fields have any effect until you flip it.
+Move one run of contiguous leaves at a time, like Vim's `W`. A run is one
+stop by default. Set `commands.motion.big.enabled = true` to split runs too,
+with `commands.motion.big.code` / `.prose`, which work like `small`'s.
 
 ### Operators (`dw`, `cw`, `de`, ...)
 
-By default an operator acts on exactly the text the motion moves over. That
-differs from Vim's own `w`/`e` in ways that show up once a motion skips
-text. With Nix's default `insignificant_characters`, `cw` on `origin` in
-`"origin" = {` deletes up to the next stop, `source` on the following line,
-so `" = {` and the line break go with it.
+By default an operator acts on exactly the text the motion moves over, which
+differs from Vim once a motion skips text. With Nix's default
+`insignificant_characters`, `cw` on `origin` in `"origin" = {` changes up to
+the next stop on the following line.
 
-Set `commands.motion.operator_pending.enabled = true` to give operators Vim's
-ranges instead:
+Set `commands.motion.operator_pending.enabled = true` to get Vim's ranges:
 
 ```nix
   "origin" = {
@@ -500,50 +381,33 @@ ranges instead:
 # cw -> "" = {    (inserting between the quotes)
 ```
 
-- **`skipped_text`**: what `dw`/`dW` do with non-blank text the motion skips
-  over: insignificant leaves, `"skip"` delimiters and comment markers.
+- **`skipped_text`**: what `dw` does with skipped non-blank text
+  (insignificant tokens, `"skip"` delimiters, comment markers).
 
-  - `"keep_between_tokens"` (the default) keeps text between tokens but still
-    deletes skipped delimiters inside the current token, so `dw` on `foo_bar`
-    leaves `bar`.
-  - `"keep"` never deletes skipped text, so `dw` on `foo_bar` leaves `_bar`.
-  - `"delete"` deletes all of it, like the plain motion.
+  - `"keep_between_tokens"` (default) keeps it between tokens but deletes it
+    inside one, so `dw` on `foo_bar` leaves `bar`.
+  - `"keep"` never deletes it, so `dw` on `foo_bar` leaves `_bar`.
+  - `"delete"` deletes it, like the plain motion.
 
-  With the cursor on skipped text itself (e.g. `=`), `dw` deletes that text
-  and the blanks after it.
+  On skipped text itself (e.g. `=`), `dw` deletes it and the blanks after it.
+  Operators never take a closing bracket they didn't open: `dW` on the `c` of
+  `(config.lib)` leaves `()`, while on the `(` it deletes all of it.
 
-  Operators also never take a closing bracket (`)`, `]`, `}`) they didn't
-  open: `dW` on the `c` of `(config.lib)` leaves `()`, while `dW` on the `(`
-  deletes the whole `(config.lib)`.
+- **`stop_at_line_end`** (default `true`): `dw` on a line's last word stops at
+  the line's end, and on an empty line deletes the line break, like Vim's
+  (`:help word`). At the end of the buffer `dw` acts up to the end of the line.
 
-- **`stop_at_line_end`** (default `true`): `dw` on a line's last word ends at
-  the end of that line instead of joining the next one, and `dw` on an empty
-  line deletes just its line break, like Vim's `dw` (`:help word`).
-
-At the end of the buffer there's no next word to stop before, so `dw` on the
-last word, on trailing blanks or on skipped text acts up to the end of the
-line, like Vim's own `dw` there. `cw` on skipped text there changes just that
-text.
-
-- **`change_to_end`** (default `true`): `cw`/`cW` on a non-blank character
-  change to the end of the current word, like `ce`/`cE`. This is what Vim's
-  `cw` does while `'cpoptions'` contains `_` (`:help cw`, `:help cpo-_`), and
-  it is skipped when `'cpoptions'` doesn't.
+- **`change_to_end`** (default `true`): `cw` acts like `ce`, as Vim's does
+  while `'cpoptions'` contains `_` (`:help cpo-_`).
 
 - **`inclusive`** (default `true`): `e`/`E`/`ge`/`gE` include the character
-  they land on, as Vim's do (`:help inclusive`). Without this `de` leaves the
-  word's last character behind.
+  they land on (`:help inclusive`), so `de` deletes the whole word.
 
-These rules only look at motion units, leaves and blank characters, never at
-node types, so they apply the same way to every grammar. They only run in
-operator-pending mode without a forced motion type: `dvw`, `dVw` and `d<C-v>w`
-get the plain motion, and cursor movement and Visual mode never change.
-`b`/`B` are exclusive in Vim too, so `db` is unaffected. Visual mode is
-never used, so the `'<`/`'>` marks (`gv`) are left alone, as with Vim's own
-motions. `dge`/`dgE` are made inclusive by forcing the motion with `v`
-(`:help o_v`), which the `<Plug>` mappings do: a mapping that calls
-`require("treemotion").run_motion_ge()` itself acts as if `inclusive` were
-`false` for `ge`/`gE`.
+These rules work the same in every grammar. Forced motions (`dvw`, `dVw`,
+`d<C-v>w`) get the plain motion, `db` is exclusive as in Vim, and the `'<`/`'>`
+marks are never touched. The `<Plug>` mappings make `dge` inclusive by
+forcing it with `v` (`:help o_v`); calling `run_motion_ge()` from your own
+mapping doesn't.
 
 ## Configuration
 
@@ -556,10 +420,7 @@ works as expected:
     opts = {
         commands = {
             motion = {
-                -- Which single characters count as comment-marker
-                -- punctuation, per treesitter language. A language with
-                -- no entry has none at all -- add your own to extend this
-                -- list. Shared by both `small` and `big` below.
+                -- Comment-marker characters per treesitter language.
                 comment_markers = {
                     c = { "/" },
                     cpp = { "/" },
@@ -573,20 +434,12 @@ works as expected:
                     query = { ";" },
                     lua = { "-" },
                 },
-                -- Leaf-level tokens that are invisible to word motions
-                -- entirely, per treesitter language, for code leaves only
-                -- (prose is never affected). Ships empty -- opt-in only,
-                -- unlike `comment_markers` above.
+                -- Code tokens the motions pass over, per language.
                 insignificant_characters = {},
-                -- `w`/`e`/`b`/`ge`: sub-word splitting within one leaf.
+                -- `w`/`e`/`b`/`ge`.
                 small = {
-                    -- Whether a backtick-enclosed single word within prose
-                    -- (`` `fooBar` ``) is treated as a code identifier, with
-                    -- the backticks themselves never landing stops.
+                    -- A single word in backticks in prose uses `code`.
                     backtick_identifiers = true,
-                    -- Identifiers and similar: `-`/`_` divide but are never
-                    -- landed on themselves; `:`/`/` essentially never appear
-                    -- in real identifiers, so they're inert here by default.
                     code = {
                         camel_case = true,
                         pascal_case = true,
@@ -595,19 +448,10 @@ works as expected:
                         colon_case = "none",
                         slash_case = "none",
                         comment_marker_case = "stop",
-                        -- Minimum length (after stripping trailing `=`
-                        -- padding) for a hex/base64-alphabet run to be
-                        -- treated as an opaque hash/digest -- one unit,
-                        -- never split on its internal case transitions.
+                        -- Hashes at least this long are never split.
                         opaque_token_min_length = 20,
                     },
-                    -- Comments, string content, or any other `@spell`-/`@string`-
-                    -- tagged span: mirrors real Vim's own `iskeyword` in a text
-                    -- file, where `-` is punctuation (its own stop) but `_` is a
-                    -- keyword character (doesn't split at all). `:`/`/` are
-                    -- ignored entirely by default, so structured tokens like
-                    -- `github:owner/repo`, a URL, or a filesystem path read as
-                    -- one unit instead of fragmenting at every `:`/`/`.
+                    -- Comments and strings (`@spell`/`@string`).
                     prose = {
                         camel_case = true,
                         pascal_case = true,
@@ -619,8 +463,7 @@ works as expected:
                         opaque_token_min_length = 20,
                     },
                 },
-                -- How the motions behave after an operator (`dw`, `cw`,
-                -- `de`, ...). Off by default; see `Operators` above.
+                -- See `Operators` above.
                 operator_pending = {
                     enabled = false,
                     -- "keep_between_tokens" | "keep" | "delete"
@@ -629,12 +472,8 @@ works as expected:
                     change_to_end = true,
                     inclusive = true,
                 },
-                -- `W`/`E`/`B`/`gE`: sub-word splitting within a whole run of
-                -- contiguous leaves. `enabled = false` (the default) is
-                -- exactly today's behavior -- a run is always one stop,
-                -- ignoring case/delimiters entirely; none of this group's
-                -- other fields have any effect until you flip it to `true`.
-                -- The `code`/`prose` shape is identical to `small`'s above.
+                -- `W`/`E`/`B`/`gE`. The rest of this group only applies
+                -- with `enabled = true`.
                 big = {
                     enabled = false,
                     backtick_identifiers = true,
@@ -670,22 +509,21 @@ works as expected:
 }
 ```
 
-Equivalently, you can set `vim.g.treemotion_configuration` directly (useful
-outside of lazy.nvim, or if you need the values available before `treemotion`
-loads):
+Or set `vim.g.treemotion_configuration` before the plugin loads, for
+example in lazy.nvim's `init`:
 
 ```lua
 {
     "asakura/treemotion.nvim",
-    config = function()
+    init = function()
         vim.g.treemotion_configuration = {
-                logging = {
+            logging = {
                 level = "info",
                 use_console = false,
                 use_file = false,
             },
         }
-    end
+    end,
 }
 ```
 
@@ -800,7 +638,7 @@ nix run .#coverage-html
 ```
 
 This generates a `luacov.stats.out` file and a `luacov_html/` directory
-(`nix flake check`'s `coverage` check enforces a 35.00% minimum). View it with:
+(`nix flake check`'s `coverage` check enforces a 90.00% minimum). View it with:
 
 ```sh
 nix run .#coverage-serve

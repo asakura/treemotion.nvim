@@ -1,19 +1,9 @@
---- Make sure `commands.motion.operator_pending` gives operators (`dw`, `cw`,
---- `de`, ...) Vim's own ranges, and changes nothing while it's disabled.
+--- `commands.motion.operator_pending` gives operators Vim's ranges, end to
+--- end through the `<Plug>` mappings, and changes nothing while disabled.
+--- The range rules themselves are tested in `operator_range_spec.lua`.
 ---
---- Keys go through the real `<Plug>` mappings with `nvim_feedkeys`, since
---- the feature depends on operator-pending mode. Most fixtures are Lua (a
---- bundled parser) with `insignificant_characters` configured, because the
---- rules only look at units, leaves and blanks. The Nix fixtures exercise a
---- grammar whose defaults skip punctuation, and are pending where the Nix
---- parser isn't installed.
----
---- Expected results for `dw` at a line's end, on an empty line, and for
---- `cw` on whitespace or a word's last character were taken from Neovim's
---- built-in `dw`/`cw` on the same text.
----
---- These are end-to-end checks of the mappings. The range rules themselves
---- are tested directly in `operator_range_spec.lua`.
+--- Expected results for `dw` at a line's end, on an empty line, and `cw` on
+--- blanks or a word's last character match Neovim's built-in `dw`/`cw`.
 
 local configuration = require("treemotion._core.configuration")
 local grammar_helpers = require("treemotion.grammar_helpers")
@@ -154,11 +144,8 @@ describe("operator-pending motions", function()
     end)
 
     after_each(function()
-        -- `setup()` deep-merges, so it can't remove the `lua` entries these
-        -- tests add to `insignificant_characters`. Restore the snapshot
-        -- instead, as `configuration_spec.lua` does: every change replaces
-        -- `configuration.DATA` rather than editing it, so the saved table is
-        -- still the original.
+        -- `setup()` deep-merges and can't remove entries, so restore the
+        -- snapshot (writers replace `DATA` rather than edit it).
         configuration.DATA = original
     end)
 
