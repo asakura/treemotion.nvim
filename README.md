@@ -538,10 +538,12 @@ These rules only look at motion units, leaves and blank characters, never at
 node types, so they apply the same way to every grammar. They only run in
 operator-pending mode without a forced motion type: `dvw`, `dVw` and `d<C-v>w`
 get the plain motion, and cursor movement and Visual mode never change.
-`b`/`B` are exclusive in Vim too, so `db` is unaffected. Ranges that need
-their last character included are made by starting Visual mode from the
-mapping (`:help omap-info`), so they overwrite the `'<`/`'>` marks, just
-like a textobject would.
+`b`/`B` are exclusive in Vim too, so `db` is unaffected. Visual mode is
+never used, so the `'<`/`'>` marks (`gv`) are left alone, as with Vim's own
+motions. `dge`/`dgE` are made inclusive by forcing the motion with `v`
+(`:help o_v`), which the `<Plug>` mappings do: a mapping that calls
+`require("treemotion").run_motion_ge()` itself acts as if `inclusive` were
+`false` for `ge`/`gE`.
 
 ## Configuration
 

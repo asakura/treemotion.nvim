@@ -37,12 +37,27 @@ cmdparse.create_user_command(_SUBCOMMANDS, _PREFIX)
 local constant = require("treemotion._commands.motion.constant")
 
 for _, name in ipairs(constant.MOTION_NAMES) do
-    vim.keymap.set({ "n", "x", "o" }, string.format("<Plug>(TreeMotion%s)", name), function()
+    local plug = string.format("<Plug>(TreeMotion%s)", name)
+    local description = string.format('Move like Vim\'s "%s", by treesitter node.', name)
+
+    vim.keymap.set({ "n", "x" }, plug, function()
         local configuration = require("treemotion._core.configuration")
         local treemotion = require("treemotion")
 
         configuration.initialize_data_if_needed()
 
         treemotion["run_motion_" .. name](vim.v.count1)
-    end, { desc = string.format('Move like Vim\'s "%s", by treesitter node.', name) })
+    end, { desc = description })
+
+    -- An `<expr>` mapping, so `dge` can be forced inclusive with `v` (see
+    -- `_commands.motion.runner.force`). The `<Cmd>` is what `.` repeats.
+    vim.keymap.set("o", plug, function()
+        local configuration = require("treemotion._core.configuration")
+        local runner = require("treemotion._commands.motion.runner")
+
+        configuration.initialize_data_if_needed()
+
+        return runner.force(name, vim.v.count1)
+            .. string.format('<Cmd>lua require("treemotion").run_motion_%s(vim.v.count1)<CR>', name)
+    end, { desc = description, expr = true })
 end

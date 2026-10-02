@@ -92,6 +92,37 @@ local function _type_builtin(lines, row, column, keys)
     return result
 end
 
+--- Type `keys` like `_type`, after making a blockwise selection on the last line.
+---
+--- The selection is `<C-v>l` from `lines`' first line's column 6, so `keys`
+--- must leave that line, and the number of lines before it, alone.
+---
+---@param lines string[]
+---@param row integer 0-indexed row.
+---@param column integer 0-indexed column.
+---@param keys string Keys to type, in `:help keycodes` notation.
+---@return table # `{ '<, '>, visualmode() }` afterwards, as `nvim_buf_get_mark` gives them.
+local function _visual_marks_after(lines, row, column, keys)
+    local buffer = grammar_helpers.new_buffer("lua", lines)
+
+    _map_motions(buffer)
+    grammar_helpers.set_cursor(0, 6)
+    vim.api.nvim_feedkeys(vim.keycode("<C-v>l<Esc>"), "xt", false)
+    grammar_helpers.set_cursor(row, column)
+    vim.api.nvim_feedkeys(vim.keycode(keys), "xt", false)
+    vim.cmd("stopinsert")
+
+    local result = {
+        vim.api.nvim_buf_get_mark(buffer, "<"),
+        vim.api.nvim_buf_get_mark(buffer, ">"),
+        vim.fn.visualmode(),
+    }
+
+    grammar_helpers.remove_buffer(buffer)
+
+    return result
+end
+
 --- Mark the running test pending.
 ---
 --- Inside a test busted's `pending` takes just a message, but its type stubs
@@ -515,6 +546,88 @@ describe("operator-pending motions", function()
             _configure({ enabled = true, inclusive = false })
 
             assert.same({ "local oBar = 1" }, _type("lua", { "local fooBar = 1" }, 0, 6, "de"))
+        end)
+    end)
+
+    describe("backward inclusive motions", function()
+        it("#dge counts like #ge", function()
+            _configure({ enabled = true })
+
+            assert.same({ "local fo 1" }, _type("lua", { "local fooBar = 1" }, 0, 13, "d2ge"))
+        end)
+
+        it("#dge across lines includes the character under the cursor", function()
+            _configure({ enabled = true })
+
+            assert.same({ "local foal bar" }, _type("lua", { "local foo", "local bar" }, 1, 2, "dge"))
+        end)
+
+        it("#dge that can't move deletes nothing", function()
+            _configure({ enabled = true })
+
+            assert.same({ "local fooBar = 1" }, _type("lua", { "local fooBar = 1" }, 0, 2, "dge"))
+        end)
+
+        it("repeats #dge with .", function()
+            _configure({ enabled = true })
+
+            assert.same({ "local fz = 1" }, _type("lua", { "local fooBar baz = 1" }, 0, 11, "dge$5h."))
+        end)
+
+        it("#gUge includes the character under the cursor", function()
+            _configure({ enabled = true })
+
+            assert.same({ "local foOBAR = 1" }, _type("lua", { "local fooBar = 1" }, 0, 11, "gUge"))
+        end)
+
+        it("#dgE includes the character under the cursor", function()
+            _configure({ enabled = true })
+
+            assert.same({ "local x.y " }, _type("lua", { "local x.y = a.b" }, 0, 14, "dgE"))
+        end)
+
+        it("#dge stays exclusive with #inclusive = false", function()
+            _configure({ enabled = true, inclusive = false })
+
+            assert.same({ "local for = 1" }, _type("lua", { "local fooBar = 1" }, 0, 11, "dge"))
+        end)
+    end)
+
+    describe("Visual marks", function()
+        local lines = { "local x = 2", "local fooBar = 1", "", "local y = 3" }
+
+        ---@type {description: string, row: integer, column: integer, keys: string}[]
+        local cases = {
+            { description = "#de", row = 1, column = 6, keys = "de" },
+            { description = "#dE", row = 1, column = 6, keys = "dE" },
+            { description = "#dge", row = 1, column = 11, keys = "dge" },
+            { description = "#dgE", row = 1, column = 15, keys = "dgE" },
+            { description = "#dw at a line's end", row = 1, column = 15, keys = "dw" },
+            { description = "#dw on an empty line", row = 2, column = 0, keys = "dw" },
+            { description = "#cw", row = 1, column = 6, keys = "cwx<Esc>" },
+            { description = "#ye", row = 1, column = 6, keys = "ye" },
+        }
+
+        for _, case in ipairs(cases) do
+            it(string.format("%s leaves '< and '> alone (gv)", case.description), function()
+                _configure({ enabled = true })
+
+                assert.same(
+                    { { 1, 6 }, { 1, 7 }, vim.keycode("<C-v>") },
+                    _visual_marks_after(lines, case.row, case.column, case.keys)
+                )
+            end)
+        end
+
+        it("#de then gv selects the earlier selection, like the built-in", function()
+            _configure({ enabled = true })
+
+            local keys = "wviw<Esc>0degvd"
+
+            assert.same(
+                _type_builtin({ "aaa bbb ccc ddd" }, 0, 0, keys),
+                _type("lua", { "aaa bbb ccc ddd" }, 0, 0, keys)
+            )
         end)
     end)
 
