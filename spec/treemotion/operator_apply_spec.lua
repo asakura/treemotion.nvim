@@ -1,9 +1,10 @@
 --- Make sure `_commands.motion.operator.apply` sets up the range it's given.
 ---
---- `apply` either moves the cursor (an exclusive range the cursor can reach)
---- or starts Visual mode (an inclusive range, or one ending past a line's
---- last character). These call it outside operator-pending mode and check
---- the mode, the Visual start and the cursor, so they need no parser.
+--- `apply` only moves the cursor: to an exclusive range's end, or just past
+--- an inclusive range's last character, which can be past a line's last
+--- character. It never starts Visual mode, so `'<`/`'>` (`gv`) stay put.
+--- These call it outside operator-pending mode and check the mode, the
+--- cursor, the Visual marks and `'virtualedit'`, so they need no parser.
 --- `operator_pending_spec.lua` checks the text operators then act on.
 
 local grammar_helpers = require("treemotion.grammar_helpers")
@@ -30,39 +31,31 @@ local function _range(start_row, start_column, finish_row, finish_column, inclus
     }
 end
 
---- Apply `range` in a buffer holding `lines`, with `'selection'` set to `selection`.
+--- Apply `range` in a buffer holding `lines`, with the cursor at the range's start.
+---
+--- `'<`/`'>` are set to the first character beforehand and must be left there.
 ---
 ---@param lines string[]
 ---@param range treemotion.OperatorRange
----@param selection string? `'selection'`, `"inclusive"` if not given.
----@return table # `{ mode, visual_start, cursor }`. `visual_start` is `nil` outside Visual mode.
-local function _apply(lines, range, selection)
+---@return integer[] # The cursor afterwards, 0-indexed.
+local function _apply(lines, range)
     _BUFFER = vim.api.nvim_create_buf(false, true)
     vim.api.nvim_buf_set_lines(_BUFFER, 0, -1, false, lines)
     vim.api.nvim_set_current_buf(_BUFFER)
-    grammar_helpers.set_cursor(0, 0)
+    vim.api.nvim_buf_set_mark(_BUFFER, "<", 1, 0, {})
+    vim.api.nvim_buf_set_mark(_BUFFER, ">", 1, 0, {})
+    grammar_helpers.set_cursor(range.start_row, range.start_column)
 
-    local original = vim.o.selection
-    vim.o.selection = selection or "inclusive"
+    local virtualedit = vim.wo.virtualedit
 
-    local ok, message = pcall(operator.apply, range)
+    operator.apply(range)
 
-    local mode = vim.fn.mode()
-    local visual = vim.fn.getpos("v")
-    local cursor = { grammar_helpers.get_cursor() }
+    assert.equal("n", vim.fn.mode())
+    assert.same({ 1, 0 }, vim.api.nvim_buf_get_mark(_BUFFER, "<"))
+    assert.same({ 1, 0 }, vim.api.nvim_buf_get_mark(_BUFFER, ">"))
+    assert.equal(virtualedit, vim.wo.virtualedit)
 
-    vim.cmd('execute "normal! \\<Esc>"')
-    vim.o.selection = original
-
-    if not ok then
-        error(message, 0)
-    end
-
-    return {
-        mode,
-        mode == "v" and { visual[2] - 1, visual[3] - 1 } or nil,
-        cursor,
-    }
+    return { grammar_helpers.get_cursor() }
 end
 
 describe("operator.apply", function()
@@ -73,45 +66,53 @@ describe("operator.apply", function()
 
     describe("exclusive", function()
         it("moves the cursor to a finish inside the line", function()
-            assert.same({ "n", nil, { 0, 4 } }, _apply({ "foo bar" }, _range(0, 0, 0, 4, false)))
+            assert.same({ 0, 4 }, _apply({ "foo bar" }, _range(0, 0, 0, 4, false)))
         end)
 
         it("moves the cursor to a finish at the next line's start", function()
-            assert.same({ "n", nil, { 1, 0 } }, _apply({ "foo", "bar" }, _range(0, 0, 1, 0, false)))
+            assert.same({ 1, 0 }, _apply({ "foo", "bar" }, _range(0, 0, 1, 0, false)))
         end)
 
         it("moves the cursor onto an empty line", function()
-            assert.same({ "n", nil, { 0, 0 } }, _apply({ "", "bar" }, _range(0, 0, 0, 0, false)))
+            assert.same({ 0, 0 }, _apply({ "", "bar" }, _range(0, 0, 0, 0, false)))
         end)
 
-        it("selects to the last character for a finish at the line's end", function()
-            assert.same({ "v", { 0, 4 }, { 0, 6 } }, _apply({ "foo bar" }, _range(0, 4, 0, 7, false)))
+        it("moves the cursor past the last character for a finish at the line's end", function()
+            assert.same({ 0, 7 }, _apply({ "foo bar" }, _range(0, 4, 0, 7, false)))
         end)
 
-        it("selects to a multibyte last character's first byte", function()
-            assert.same({ "v", { 0, 0 }, { 0, 4 } }, _apply({ "foo —" }, _range(0, 0, 0, 7, false)))
+        it("moves the cursor past a multibyte last character", function()
+            assert.same({ 0, 7 }, _apply({ "foo —" }, _range(0, 0, 0, 7, false)))
         end)
 
-        it("selects past the last character with 'selection' = exclusive", function()
-            assert.same({ "v", { 0, 0 }, { 0, 7 } }, _apply({ "foo —" }, _range(0, 0, 0, 7, false), "exclusive"))
+        it("moves the cursor backward", function()
+            assert.same({ 0, 2 }, _apply({ "foo bar" }, _range(0, 5, 0, 2, false)))
         end)
     end)
 
     describe("inclusive", function()
-        it("selects from start to finish", function()
-            assert.same({ "v", { 0, 1 }, { 0, 4 } }, _apply({ "foo bar" }, _range(0, 1, 0, 4, true)))
+        it("moves the cursor past the finish", function()
+            assert.same({ 0, 5 }, _apply({ "foo bar" }, _range(0, 1, 0, 4, true)))
         end)
 
-        it("selects across lines", function()
-            assert.same({ "v", { 0, 2 }, { 1, 1 } }, _apply({ "foo", "bar" }, _range(0, 2, 1, 1, true)))
+        it("moves the cursor past the finish across lines", function()
+            assert.same({ 1, 2 }, _apply({ "foo", "bar" }, _range(0, 2, 1, 1, true)))
         end)
 
-        it("selects an empty line's line break", function()
-            assert.same({ "v", { 0, 0 }, { 0, 0 } }, _apply({ "", "bar" }, _range(0, 0, 0, 0, true)))
+        it("moves the cursor past a finish on the line's last character", function()
+            assert.same({ 0, 7 }, _apply({ "foo bar" }, _range(0, 4, 0, 6, true)))
         end)
 
-        it("steps past a multibyte finish with 'selection' = exclusive", function()
-            assert.same({ "v", { 0, 0 }, { 0, 7 } }, _apply({ "foo —" }, _range(0, 0, 0, 4, true), "exclusive"))
+        it("moves the cursor past a multibyte finish", function()
+            assert.same({ 0, 7 }, _apply({ "foo —" }, _range(0, 0, 0, 4, true)))
+        end)
+
+        it("takes an empty line's line break", function()
+            assert.same({ 1, 0 }, _apply({ "", "bar" }, _range(0, 0, 0, 0, true)))
+        end)
+
+        it("has no line break to take on an empty last line", function()
+            assert.same({ 1, 0 }, _apply({ "foo", "" }, _range(1, 0, 1, 0, true)))
         end)
     end)
 end)

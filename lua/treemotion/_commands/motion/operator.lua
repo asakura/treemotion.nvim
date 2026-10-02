@@ -21,10 +21,14 @@
 --- blank characters in the buffer, never at node types, so they work the
 --- same for any grammar.
 ---
---- An inclusive range is made by starting Visual mode from the callback
---- (`normal! v`) and moving the cursor to the range's last character: the
---- pending operator then acts on that selection, the same technique
---- textobject plugins use.
+--- Visual mode is never used, so the `'<`/`'>` marks (`gv`) stay the
+--- user's. A forward inclusive range is turned into the exclusive range
+--- ending one character later. When that's the end of a line, the cursor
+--- is put there with `'virtualedit'` briefly set to `"onemore"`. A backward
+--- inclusive range (`dge`) must include the character under the cursor the
+--- operator started from, which no cursor position can do, so the `<Plug>`
+--- mappings force the motion with `v` instead (see
+--- `_commands.motion.runner.operator_keys`).
 
 local codepoint = require("treemotion._commands.motion.codepoint")
 local constant = require("treemotion._commands.motion.constant")
@@ -234,25 +238,30 @@ local function _before_unopened_bracket(start_row, start_column, finish_row, fin
     return finish_row, finish_column
 end
 
---- Select from `start` to `finish`, both inclusive, for the pending operator.
+--- Put the cursor at `row`/`column`, which may be just past a line's last character.
 ---
---- With `'selection'` set to `"exclusive"` the Visual area leaves out its
---- last character, so the cursor goes one character further.
+--- Outside Visual and Insert mode the cursor can't normally go there, so
+--- `'virtualedit'` is set to `"onemore"` for the move. The pending operator
+--- still uses that position after the option is restored. Only the
+--- window-local value is touched, and an unset one (`""`, following the
+--- global value) is put back unset.
 ---
----@param start_row integer
----@param start_column integer
----@param finish_row integer
----@param finish_column integer
+---@param row integer
+---@param column integer
 ---
-local function _select(start_row, start_column, finish_row, finish_column)
-    vim.api.nvim_win_set_cursor(0, { start_row + 1, start_column })
-    vim.cmd("normal! v")
+local function _set_cursor_onemore(row, column)
+    local scope = { scope = "local", win = 0 }
+    local original = vim.api.nvim_get_option_value("virtualedit", scope)
 
-    if vim.o.selection == "exclusive" then
-        finish_column = finish_column + codepoint.char_width(codepoint.line(finish_row), finish_column + 1)
+    vim.api.nvim_set_option_value("virtualedit", "onemore", scope)
+
+    local ok, message = pcall(vim.api.nvim_win_set_cursor, 0, { row + 1, column })
+
+    vim.api.nvim_set_option_value("virtualedit", original, scope)
+
+    if not ok then
+        error(message, 0)
     end
-
-    vim.api.nvim_win_set_cursor(0, { finish_row + 1, finish_column })
 end
 
 --- The text an operator should act on.
@@ -311,8 +320,16 @@ local function _balanced(range)
     end
 
     if column == 0 then
-        -- The bracket starts a line: end on the previous line's last character.
+        -- The bracket starts a line: end on the last character before it,
+        -- keeping the line breaks in between. Empty lines have no last
+        -- character, and ending on one would take its line break (see
+        -- `M.apply`), so they're stepped over, back to the start's line.
         row = row - 1
+
+        while row > range.start_row and #codepoint.line(row) == 0 do
+            row = row - 1
+        end
+
         column = #codepoint.line(row)
     end
 
@@ -494,6 +511,11 @@ end
 --- that didn't move gives an empty range, rather than the character under
 --- the cursor.
 ---
+--- A backward range (`dge`) is exclusive too: an inclusive one would have
+--- to include the character the operator started from, which only a forced
+--- `v` can do (see `_commands.motion.runner.operator_keys`). The `<Plug>` mappings
+--- add that `v`, and the motion then runs as a plain one.
+---
 --- Moves the cursor, like `M.forward_range`.
 ---
 ---@param units treemotion._UnitSource
@@ -510,12 +532,12 @@ function M.inclusive_range(units, count, settings, move)
     local target_row, target_column = position.cursor_position()
     local moved = target_row ~= start_row or target_column ~= start_column
 
-    if not settings.inclusive or not moved then
+    if
+        not settings.inclusive
+        or not moved
+        or position.is_before(target_row, target_column, start_row, start_column)
+    then
         return _range(start_row, start_column, target_row, target_column, false)
-    end
-
-    if position.is_before(target_row, target_column, start_row, start_column) then
-        return _range(target_row, target_column, start_row, start_column, true)
     end
 
     return _balanced(_range(start_row, start_column, target_row, target_column, true))
@@ -524,30 +546,32 @@ end
 --- Make the pending operator act on `range`.
 ---
 --- An exclusive range just needs the cursor at its `finish`, as for a plain
---- motion. A `finish` at the end of a non-empty line can't hold the cursor
---- outside Visual/Insert mode, so that case selects up to the line's last
---- character instead. An inclusive range is always selected.
+--- motion, even at the end of a line (see `_set_cursor_onemore`). An
+--- inclusive range (always a forward one, see `M.inclusive_range`) becomes
+--- the exclusive range ending after its last character, so an empty line's
+--- `finish` takes its line break: the cursor goes to the next line's start,
+--- and Vim makes that linewise when the range starts the line (`:help
+--- exclusive-linewise`), as with its own `dw` on an empty line. On the
+--- buffer's last line there's no line break to take.
+---
+--- Never starts Visual mode, so `'<`/`'>` are left alone.
 ---
 ---@param range treemotion.OperatorRange
 ---
 function M.apply(range)
+    local row, column = range.finish_row, range.finish_column
+
     if range.inclusive then
-        _select(range.start_row, range.start_column, range.finish_row, range.finish_column)
+        local line = codepoint.line(row)
 
-        return
+        if #line > 0 then
+            column = column + codepoint.char_width(line, column + 1)
+        elseif row + 1 < vim.api.nvim_buf_line_count(0) then
+            row, column = row + 1, 0
+        end
     end
 
-    local length = #codepoint.line(range.finish_row)
-
-    if range.finish_column == 0 or range.finish_column < length then
-        vim.api.nvim_win_set_cursor(0, { range.finish_row + 1, range.finish_column })
-
-        return
-    end
-
-    local last_column = codepoint.last_character_column(range.finish_row, length)
-
-    _select(range.start_row, range.start_column, range.finish_row, last_column)
+    _set_cursor_onemore(row, column)
 end
 
 --- `dw`/`cw`/`yW`/...: act on `M.forward_range`.

@@ -28,6 +28,8 @@ local M = {}
 ---@field units {new_source: fun(settings: treemotion.SplitSettings): treemotion._UnitSource}
 ---    `_commands.motion.word` or `_commands.motion.bigword`.
 ---@field group "small"|"big" Which `commands.motion` group configures `units`.
+---@field backward_inclusive boolean? Whether the motion is inclusive while moving
+---    backward (`ge`/`gE`), which needs a forced `v` (see `M.operator_keys`).
 
 --- Every motion, by its Vim-facing name (see `constant.MOTION_NAMES`).
 ---
@@ -37,14 +39,99 @@ local M = {}
 ---@type table<string, treemotion._Motion>
 local _MOTIONS = {
     w = { move = shape.forward_to_start, operator = operator.forward_to_start, units = word, group = "small" },
-    ge = { move = shape.backward_to_end, operator = operator.inclusive, units = word, group = "small" },
+    ge = {
+        move = shape.backward_to_end,
+        operator = operator.inclusive,
+        units = word,
+        group = "small",
+        backward_inclusive = true,
+    },
     e = { move = shape.forward_to_end, operator = operator.inclusive, units = word, group = "small" },
     b = { move = shape.backward_to_start, units = word, group = "small" },
     W = { move = shape.forward_to_start, operator = operator.forward_to_start, units = bigword, group = "big" },
-    gE = { move = shape.backward_to_end, operator = operator.inclusive, units = bigword, group = "big" },
+    gE = {
+        move = shape.backward_to_end,
+        operator = operator.inclusive,
+        units = bigword,
+        group = "big",
+        backward_inclusive = true,
+    },
     E = { move = shape.forward_to_end, operator = operator.inclusive, units = bigword, group = "big" },
     B = { move = shape.backward_to_start, units = bigword, group = "big" },
 }
+
+--- Get the motion called `name`.
+---
+---@param name string The motion's Vim-facing name (`"w"`, `"gE"`, ...).
+---@param level integer The `error` level to report an unknown `name` at.
+---@return treemotion._Motion
+local function _get_motion(name, level)
+    local motion = _MOTIONS[name]
+
+    if not motion then
+        error(string.format('Unknown treemotion motion "%s".', name), level + 1)
+    end
+
+    return motion
+end
+
+--- Cancel the pending operator, the way a motion that fails does.
+---
+--- A `<Cmd>` motion that gives an error cancels the operator. An empty one
+--- does that without showing anything or adding to `:messages`.
+local function _cancel_operator()
+    vim.api.nvim_echo({ { "" } }, false, { err = true })
+end
+
+--- The keys an operator-pending `<Plug>` mapping (an `<expr>` one) runs `name` with.
+---
+--- `dge` must act on the character the operator started from, but the
+--- operator-pending text always stops short of it for a motion that moves
+--- the cursor backward. So while `commands.motion.operator_pending.inclusive`
+--- applies, `ge`/`gE` are forced with `v` (`:help o_v`), which makes them
+--- inclusive the same way `dvb` does, without starting Visual mode, and run
+--- through `M.run_forced`. Everything else runs as typed.
+---
+--- The keys don't depend on the cursor, since `.` repeats them as they are.
+---
+---@param name string The motion's Vim-facing name (`"w"`, `"gE"`, ...).
+---@return string # Keys in `:help keycodes` notation.
+---
+function M.operator_keys(name)
+    local motion = _get_motion(name, 2)
+    local pending = motion.backward_inclusive and settings.resolve_operator()
+
+    if pending and pending.inclusive then
+        return string.format(
+            'v<Cmd>lua require("treemotion._commands.motion.runner").run_forced(%q, vim.v.count1)<CR>',
+            name
+        )
+    end
+
+    return string.format('<Cmd>lua require("treemotion").run_motion_%s(vim.v.count1)<CR>', name)
+end
+
+--- Run the motion called `name` under an operator `M.operator_keys` forced with `v`.
+---
+--- The forced motion runs as a plain one (see `settings.resolve_operator`).
+--- One that doesn't move would still make the operator act on the
+--- character under the cursor, so the operator is cancelled instead, like
+--- Vim's `dge` at the start of the buffer.
+---
+---@param name string The motion's Vim-facing name (`"ge"`, `"gE"`).
+---@param count number? A 1-or-more value. How many units to move over.
+---
+function M.run_forced(name, count)
+    local start_row, start_column = position.cursor_position()
+
+    M.run(name, count)
+
+    local end_row, end_column = position.cursor_position()
+
+    if end_row == start_row and end_column == start_column then
+        _cancel_operator()
+    end
+end
 
 --- Run the motion called `name`, logging the cursor's position before and after.
 ---
@@ -65,11 +152,7 @@ local _MOTIONS = {
 ---@param count number? A 1-or-more value. How many units to move over.
 ---
 function M.run(name, count)
-    local motion = _MOTIONS[name]
-
-    if not motion then
-        error(string.format('Unknown treemotion motion "%s".', name), 2)
-    end
+    local motion = _get_motion(name, 2)
 
     count = count or 1
 

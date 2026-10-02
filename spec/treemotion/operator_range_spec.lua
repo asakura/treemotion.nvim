@@ -485,12 +485,13 @@ describe("operator range calculation", function()
             assert.same({ { 0, 6 }, { 0, 8 }, true }, _flat(range))
         end)
 
-        it("orders a backward #ge range from its target", function()
+        it("keeps a backward #ge range exclusive", function()
+            -- The `<Plug>` mapping forces `dge` inclusive with `v` instead.
             _initialize_buffer({ "local fooBar = 1" }, 0, 11)
 
             local range = operator.inclusive_range(_units(), 1, _settings(), shape.backward_to_end)
 
-            assert.same({ { 0, 8 }, { 0, 11 }, true }, _flat(range))
+            assert.same({ { 0, 11 }, { 0, 8 }, false }, _flat(range))
         end)
 
         it("stays exclusive with #inclusive = false", function()
@@ -525,12 +526,12 @@ describe("operator range calculation", function()
             assert.same({ { 0, 8 }, { 1, 4 }, true }, _flat(range))
         end)
 
-        it("orders a backward #ge range across lines", function()
+        it("keeps a backward #ge range across lines exclusive", function()
             _initialize_buffer({ "local foo", "local bar" }, 1, 2)
 
             local range = operator.inclusive_range(_units(), 1, _settings(), shape.backward_to_end)
 
-            assert.same({ { 0, 8 }, { 1, 2 }, true }, _flat(range))
+            assert.same({ { 1, 2 }, { 0, 8 }, false }, _flat(range))
         end)
     end)
 end)
