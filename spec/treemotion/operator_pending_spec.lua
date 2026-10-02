@@ -273,6 +273,36 @@ describe("operator-pending motions", function()
 
             assert.same({ "local x = f(a" }, _type("lua", { "local x = f(a))" }, 0, 13, "dW"))
         end)
+
+        it("#dW ignores a closing bracket inside a string", function()
+            _configure({ enabled = true })
+
+            assert.same({ "print(.. x)" }, _type("lua", { 'print(")" .. x)' }, 0, 6, "dW"))
+        end)
+
+        it("#dE ignores a closing bracket inside a string", function()
+            _configure({ enabled = true })
+
+            assert.same({ "f( y)" }, _type("lua", { 'f(")", y)' }, 0, 2, "dE"))
+        end)
+
+        it("#dW ignores an opening bracket inside a string", function()
+            _configure({ enabled = true })
+
+            assert.same({ "local x = f()" }, _type("lua", { 'local x = f("("..a)' }, 0, 12, "dW"))
+        end)
+
+        it("#dW matches brackets by kind", function()
+            _configure({ enabled = true })
+
+            assert.same({ "local x = t[]" }, _type("lua", { "local x = t[f(a.b]" }, 0, 12, "dW"))
+        end)
+
+        it("#dw in a comment keeps a closing bracket it didn't open", function()
+            _configure({ enabled = true })
+
+            assert.same({ "-- (foo )" }, _type("lua", { "-- (foo bar)" }, 0, 8, "dw"))
+        end)
     end)
 
     describe("line ends", function()

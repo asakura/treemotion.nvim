@@ -17,9 +17,9 @@
 --- Everything here runs only when `commands.motion.operator_pending.enabled`
 --- is `true` and the operator isn't forced (`dvw` etc. are left alone), so
 --- plain cursor movement, Visual mode and the disabled default are
---- untouched. The rules only look at motion units, leaves and blank
---- characters in the buffer, never at node types, so they work the same for
---- any grammar.
+--- untouched. The rules only look at motion units, leaves, brackets and
+--- blank characters in the buffer, never at node types, so they work the
+--- same for any grammar.
 ---
 --- An inclusive range is made by starting Visual mode from the callback
 --- (`normal! v`) and moving the cursor to the range's last character: the
@@ -128,11 +128,56 @@ local function _skipped_text_end(units, next_unit, cursor_leaf)
     return end_row, end_column
 end
 
----@type table<string, true>
-local _OPENING_BRACKETS = { ["("] = true, ["["] = true, ["{"] = true }
+--- Each opening bracket's closing bracket.
+---
+---@type table<string, string>
+local _CLOSING_BRACKET = { ["("] = ")", ["["] = "]", ["{"] = "}" }
 
 ---@type table<string, true>
 local _CLOSING_BRACKETS = { [")"] = true, ["]"] = true, ["}"] = true }
+
+--- Check whether the bracket at `row`/`column` is part of the code's structure.
+---
+--- Grammars parse real brackets as unnamed tokens (`(`, `[[`, ...). A
+--- bracket inside a named leaf (a string's content, a comment) is just text
+--- in it, so it only counts while the whole range stays inside that leaf,
+--- as when `dw` runs over prose in one comment. A range that runs out of
+--- the leaf treats it as one opaque token: `dW` on the `"` of `")" .. x`
+--- mustn't stop at the `)`.
+---
+--- Without a parser every bracket counts.
+---
+--- The node is looked up with `descendant_for_range()` rather than
+--- `vim.treesitter.get_node()`, whose `include_anonymous` option only exists
+--- on Neovim 0.11+: without it every bracket would resolve to its named
+--- parent and look like text in a leaf.
+---
+---@param parser vim.treesitter.LanguageTree? The buffer's parser, if any.
+---@param row integer
+---@param column integer
+---@param start_row integer
+---@param start_column integer
+---@param finish_row integer
+---@param finish_column integer
+---@return boolean
+---
+local function _is_structural_bracket(parser, row, column, start_row, start_column, finish_row, finish_column)
+    if not parser then
+        return true
+    end
+
+    local tree = parser:tree_for_range({ row, column, row, column + 1 }, { ignore_injections = false })
+    local node = tree and tree:root():descendant_for_range(row, column, row, column + 1)
+
+    if not node or not node:named() then
+        return true
+    end
+
+    local node_start_row, node_start_column, node_end_row, node_end_column = node:range()
+
+    return not position.is_before(start_row, start_column, node_start_row, node_start_column)
+        and not position.is_before(node_end_row, node_end_column, finish_row, finish_column)
+end
 
 --- Where a range from `start` to `finish` (exclusive) ends without taking a
 --- closing bracket it didn't open.
@@ -140,6 +185,8 @@ local _CLOSING_BRACKETS = { [")"] = true, ["]"] = true, ["}"] = true }
 --- `dw` on the `c` of `(config.lib)` should leave the `)` behind, while `dw`
 --- on the `(` takes the whole `(config.lib)`. Closing brackets at the very
 --- start of the range are the ones the cursor is on, so they stay in.
+--- Brackets are matched by kind, so the `]` in `(a]` closes nothing, and
+--- only structural ones count (see `_is_structural_bracket`).
 ---
 ---@param start_row integer
 ---@param start_column integer
@@ -149,8 +196,10 @@ local _CLOSING_BRACKETS = { [")"] = true, ["]"] = true, ["}"] = true }
 ---
 local function _before_unopened_bracket(start_row, start_column, finish_row, finish_column)
     local lines = vim.api.nvim_buf_get_text(0, start_row, start_column, finish_row, finish_column, {})
-    local depth = 0
+    ---@type string[]
+    local expected = {}
     local leading = true
+    local parser = vim.treesitter.get_parser(0, nil, { error = false })
 
     for index, line in ipairs(lines) do
         local row = start_row + index - 1
@@ -162,18 +211,21 @@ local function _before_unopened_bracket(start_row, start_column, finish_row, fin
 
         for byte = 1, #line do
             local character = line:sub(byte, byte)
+            local column = offset + byte - 1
+            local is_bracket = (_CLOSING_BRACKETS[character] or _CLOSING_BRACKET[character]) ~= nil
+                and _is_structural_bracket(parser, row, column, start_row, start_column, finish_row, finish_column)
 
-            if _CLOSING_BRACKETS[character] then
-                if depth > 0 then
-                    depth = depth - 1
-                elseif not leading then
-                    return row, offset + byte - 1
+            if is_bracket and _CLOSING_BRACKETS[character] then
+                if expected[#expected] == character then
+                    expected[#expected] = nil
+                elseif #expected > 0 or not leading then
+                    return row, column
                 end
             else
                 leading = false
 
-                if _OPENING_BRACKETS[character] then
-                    depth = depth + 1
+                if is_bracket then
+                    table.insert(expected, _CLOSING_BRACKET[character])
                 end
             end
         end
