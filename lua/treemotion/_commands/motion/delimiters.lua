@@ -1,29 +1,17 @@
---- Split a word on `-`/`_`/`:`/`/` and comment-marker runs, per the
---- user's `kebab_case`/`snake_case`/`colon_case`/`slash_case`/
---- `comment_marker_case` settings.
----
---- Pure string functions: the caller passes in its subword rules and the
---- current language's comment-marker set (see
---- `_commands.motion.classify.comment_marker_characters`).
+--- Split a word on `-`, `_`, `:`, `/` and comment-marker runs.
 
 local codepoint = require("treemotion._commands.motion.codepoint")
 local motion_constant = require("treemotion._commands.motion.constant")
 
 local M = {}
 
---- Which `treemotion.ConfigurationMotionSubwordRules` field governs each
---- identifier delimiter character.
----
----@type table<string, string>
+---@type table<string, string> Delimiter -> the rules field for it.
 local _DELIMITER_FIELDS = { ["-"] = "kebab_case", ["_"] = "snake_case", [":"] = "colon_case", ["/"] = "slash_case" }
 
---- Look up how `char` should be treated, per `rules`.
----
----@param char string A single character.
----@param rules treemotion.ConfigurationMotionSubwordRules Each delimiter's mode.
----@param comment_marker_characters table<string, true> This language's comment-marker punctuation (see
----    `classify.comment_marker_characters`).
----@return treemotion.SubwordDelimiterMode # `"none"` for any character that isn't covered by one of the above.
+---@param char string
+---@param rules treemotion.ConfigurationMotionSubwordRules
+---@param comment_marker_characters table<string, true>
+---@return treemotion.SubwordDelimiterMode
 ---
 local function _delimiter_mode(char, rules, comment_marker_characters)
     local field = _DELIMITER_FIELDS[char]
@@ -37,10 +25,8 @@ local function _delimiter_mode(char, rules, comment_marker_characters)
     return motion_constant.DelimiterMode.none
 end
 
---- `rules`, with `comment_marker_case` taking over every identifier
---- delimiter the current language also lists as a comment marker.
----
---- Returns `rules` itself (no copy) when no such delimiter is listed.
+--- `rules` with `comment_marker_case` applied to any delimiter that is also
+--- a comment marker in this language. Returns `rules` itself if none is.
 ---
 ---@param rules treemotion.ConfigurationMotionSubwordRules
 ---@param comment_marker_characters table<string, true>
@@ -62,46 +48,18 @@ local function _bare_run_rules(rules, comment_marker_characters)
     return result
 end
 
---- Split `text` on runs of `_`/`-`/comment-marker delimiters, per their configured modes.
+--- Split `text` on delimiter runs. A run of same-mode delimiters is one stop,
+--- as in Vim. `"skip"` drops the run, `"stop"` keeps it as its own chunk,
+--- and `"none"` doesn't split.
 ---
---- A run of consecutive same-mode delimiter characters (e.g. the `---` in a
---- LuaCATS doc comment, or the `///` in a Rust one) is treated as *one*
---- stop, not one per character -- matching real Vim's `w`, where a run of
---- same-class punctuation is always a single word no matter how long it is.
---- In `"skip"` mode the run closes off the chunk before it and starts a new
---- one right after it, without appearing in either chunk -- `w`/`b`/`e`/`ge`
---- skip over it entirely instead of landing on it. `"stop"` does the same,
---- but also inserts the run itself as its own chunk in between, so it
---- *does* become a landing stop. `"none"` isn't a split point at all -- the
---- run just stays embedded in whichever chunk it's already part of.
---- `offset` lets `subword.split` translate each chunk's position back into an
---- absolute buffer column.
+--- Text with no letters or digits (Lua's `--`, a `-----` line) is a bare
+--- punctuation run, so `comment_marker_case` governs any of its delimiters
+--- that the language lists as comment markers.
 ---
---- `kebab_case`/`snake_case` only apply when `text` actually has an
---- identifier to case-split -- i.e. `-`/`_` sit between (or beside) real
---- alphanumeric content, like `hello-world` or `snake_case`. When `text` is
---- *entirely* delimiter characters (no letter or digit anywhere in it --
---- Lua's `--` comment opener, a `---` doc-comment marker, a `-----`
---- separator line), there's no identifier being kebab/snake-cased at all --
---- it's a bare punctuation run, the same kind of thing `#`/`/`/`%` already
---- always are (`prose.words` isolates them into their own word before this
---- function even runs). So for a text like that, `comment_marker_case`
---- takes over for `-`/`_` too, exactly like it already does for `#`/`/`/`%`
---- -- but only if the current language's `comment_markers` actually lists
---- `-`/`_` (see the default `comment_markers.lua = { "-" }`, for Lua's
---- `--`); a language that doesn't list them there leaves `kebab_case`/`snake_case` in charge even for a
---- bare run, the same "no entry means no effect" rule every other marker
---- character already follows -- there's deliberately no special, always-on
---- carve-out for `-`/`_` the way `comment_markers`' other characters don't
---- get one either.
----
----@param text string A word to split (a whole leaf's text, for code; one `prose.split_words` word, for prose).
----@param rules treemotion.ConfigurationMotionSubwordRules Reads `kebab_case`/`snake_case`/`colon_case`/
----    `slash_case` (how to treat `-`/`_`/`:`/`/` next to real identifier content) and `comment_marker_case`
----    (how to treat `comment_marker_characters`, or `text`-wide `-`/`_`/`:`/`/` runs).
----@param comment_marker_characters table<string, true> This language's comment-marker punctuation (see
----    `classify.comment_marker_characters`).
----@return {text: string, offset: integer}[] # Each chunk and its 1-indexed start column in `text`.
+---@param text string
+---@param rules treemotion.ConfigurationMotionSubwordRules
+---@param comment_marker_characters table<string, true>
+---@return {text: string, offset: integer}[] # Chunks and their 1-indexed offsets.
 ---
 function M.split(text, rules, comment_marker_characters)
     if not codepoint.has_alphanumeric(text) then

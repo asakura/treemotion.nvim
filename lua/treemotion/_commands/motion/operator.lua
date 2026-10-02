@@ -1,35 +1,14 @@
---- Operator-pending behavior for the motions (`dw`, `cw`, `de`, `yW`, ...).
+--- Operator-pending ranges for `dw`, `cw`, `de`, `yW`, ...
 ---
---- A `<Plug>` mapping in operator-pending mode only moves the cursor, so
---- the operator acts on exactly the text between the old and new cursor,
---- as an exclusive characterwise motion. That's wrong in two ways Vim's
---- built-in motions avoid:
+--- A `<Plug>` motion only moves the cursor, so the operator would act on an
+--- exclusive range to wherever it lands. Vim's own motions differ: `dw`
+--- stays within a line and doesn't take skipped text, `cw` acts like `ce`,
+--- and `e`/`ge` are inclusive. This module computes those ranges from motion
+--- units, leaves, brackets and blanks only, so it works for any grammar.
 ---
---- - `w`/`W` land past text the motion skips (insignificant leaves,
----   `"skip"` delimiters, comment markers) and past line breaks, so `dw`
----   deletes that text too. Vim's `dw` never crosses into another word
----   and ends at a line's last word (`:help word`), and `cw` works like
----   `ce` (`:help cw`, `:help cpo-_`).
---- - `e`/`E`/`ge`/`gE` are inclusive in Vim (`:help inclusive`), but a
----   mapping that just moves the cursor is exclusive, so `de` leaves the
----   word's last character behind.
----
---- Everything here runs only when `commands.motion.operator_pending.enabled`
---- is `true` and the operator isn't forced (`dvw` etc. are left alone), so
---- plain cursor movement, Visual mode and the disabled default are
---- untouched. The rules only look at motion units, leaves, brackets and
---- blank characters in the buffer, never at node types, so they work the
---- same for any grammar.
----
---- Visual mode is never used, so the `'<`/`'>` marks (`gv`) stay the
---- user's. Every range is kept exclusive (see `treemotion.OperatorRange`),
---- so a forward inclusive range ends one character after its last one.
---- When that's the end of a line, the cursor is put there with
---- `'virtualedit'` briefly set to `"onemore"`. A backward
---- inclusive range (`dge`) must include the character under the cursor the
---- operator started from, which no cursor position can do, so the `<Plug>`
---- mappings force the motion with `v` instead (see
---- `_commands.motion.runner.operator_keys`).
+--- Ranges are always exclusive. An end past a line's last character is
+--- reached with `'virtualedit'` briefly set to `"onemore"`, so Visual mode
+--- and the `'<`/`'>` marks are never touched.
 
 local codepoint = require("treemotion._commands.motion.codepoint")
 local constant = require("treemotion._commands.motion.constant")
@@ -38,21 +17,16 @@ local shape = require("treemotion._commands.motion.shape")
 
 local M = {}
 
---- How a motion runs under an operator: `M.forward_to_start` or `M.inclusive`.
----
---- `step` is the motion's own `_commands.motion.shape` step.
----
+--- `M.forward_to_start` or `M.inclusive`.
 -- luacheck: push ignore 631
 ---@alias treemotion._OperatorMove fun(units: treemotion._UnitSource, count: integer, pending: treemotion.OperatorSettings, step: treemotion._Step)
 -- luacheck: pop
 
---- Find the first non-blank character in `[from, to)`.
----
 ---@param from_row integer
 ---@param from_column integer
 ---@param to_row integer
 ---@param to_column integer
----@return integer?, integer? # Its position, or `nil` if the range is all blank.
+---@return integer?, integer? # The first non-blank in `[from, to)`.
 ---
 local function _first_non_blank(from_row, from_column, to_row, to_column)
     local row, column = from_row, from_column
@@ -74,18 +48,11 @@ local function _first_non_blank(from_row, from_column, to_row, to_column)
     return nil, nil
 end
 
---- Check whether the current buffer has a treesitter parser.
----
---- Without one there are no units anywhere, which is different from being
---- past the last unit.
----
 ---@return boolean
 local function _has_parser()
     return vim.treesitter.get_parser(0, nil, { error = false }) ~= nil
 end
 
---- Check whether `row`/`column` sits on a non-blank character.
----
 ---@param row integer
 ---@param column integer
 ---@return boolean
@@ -95,17 +62,9 @@ local function _is_non_blank(row, column)
     return character ~= "" and not character:match("%s")
 end
 
---- Where the token from `row`/`column` ends (exclusive), never before `row`/`column`.
----
---- A token runs to `span_row`/`span_column`, the end of its leaf (or `W`
---- run), but stops at the first of:
----
---- - the end of `row`'s line, since some grammars end a leaf at the next
----   row's column 0 (a trailing newline);
---- - the first blank from `row`/`column`. Prose splits a whole sentence out
----   of one leaf, so its span alone would take the `` ` `` in "and `code`"
----   along with "and ";
---- - `next_unit`'s start, if given and not before `row`/`column`.
+--- Where the token at `row`/`column` ends (exclusive): the leaf or `W` run's
+--- end at `span_row`/`span_column`, but no later than the line's end, the
+--- next blank (prose leaves hold whole sentences) or `next_unit`'s start.
 ---
 ---@param row integer
 ---@param column integer
@@ -134,19 +93,14 @@ local function _token_end(row, column, span_row, span_column, next_unit)
     return position.max(row, column, end_row, end_column)
 end
 
---- Where the skipped text at `row`/`column` ends (exclusive).
----
---- Used when the position sits on non-blank text that no unit covers: an
---- insignificant leaf such as Nix's `=`, or a `"skip"` delimiter such as
---- the `_` in `foo_bar`. That text is what the operator is aimed at, so it
---- is the token there (see `_token_end`): at least its first character, up
---- to the end of the leaf (or `W` run) there, cut at the next unit.
+--- Where non-blank text that no unit covers (Nix's `=`, a skipped `_`)
+--- ends: at least one character, at most its leaf, cut at the next unit.
 ---
 ---@param units treemotion._UnitSource
 ---@param row integer
 ---@param column integer
----@param next_unit treemotion.MotionUnit? `units.unit_at(row, column, true)`.
----@param start_leaf TSNode? The leaf that same call started from.
+---@param next_unit treemotion.MotionUnit?
+---@param start_leaf TSNode?
 ---@return integer, integer
 ---
 local function _skipped_text_end(units, row, column, next_unit, start_leaf)
@@ -160,31 +114,20 @@ local function _skipped_text_end(units, row, column, next_unit, start_leaf)
     return _token_end(row, end_column, span_row, span_column, next_unit)
 end
 
---- Each opening bracket's closing bracket.
----
 ---@type table<string, string>
 local _CLOSING_BRACKET = { ["("] = ")", ["["] = "]", ["{"] = "}" }
 
 ---@type table<string, true>
 local _CLOSING_BRACKETS = { [")"] = true, ["]"] = true, ["}"] = true }
 
---- Check whether the bracket at `row`/`column` is part of the code's structure.
+--- Whether the bracket at `row`/`column` is code rather than text.
 ---
---- Grammars parse real brackets as unnamed tokens (`(`, `[[`, ...). A
---- bracket inside a named leaf (a string's content, a comment) is just text
---- in it, so it only counts while the whole range stays inside that leaf,
---- as when `dw` runs over prose in one comment. A range that runs out of
---- the leaf treats it as one opaque token: `dW` on the `"` of `")" .. x`
---- mustn't stop at the `)`.
+--- A bracket inside a named leaf (a string, a comment) only counts while
+--- the whole range stays inside that leaf. Without a parser every bracket
+--- counts. `descendant_for_range()` finds anonymous nodes on all supported
+--- Neovim versions.
 ---
---- Without a parser every bracket counts.
----
---- The node is looked up with `descendant_for_range()` rather than
---- `vim.treesitter.get_node()`, whose `include_anonymous` option only exists
---- on Neovim 0.11+: without it every bracket would resolve to its named
---- parent and look like text in a leaf.
----
----@param parser vim.treesitter.LanguageTree? The buffer's parser, if any.
+---@param parser vim.treesitter.LanguageTree?
 ---@param row integer
 ---@param column integer
 ---@param start_row integer
@@ -211,20 +154,15 @@ local function _is_structural_bracket(parser, row, column, start_row, start_colu
         and not position.is_before(node_end_row, node_end_column, finish_row, finish_column)
 end
 
---- Where a range from `start` to `finish` (exclusive) ends without taking a
---- closing bracket it didn't open.
----
---- `dw` on the `c` of `(config.lib)` should leave the `)` behind, while `dw`
---- on the `(` takes the whole `(config.lib)`. Closing brackets at the very
---- start of the range are the ones the cursor is on, so they stay in.
---- Brackets are matched by kind, so the `]` in `(a]` closes nothing, and
---- only structural ones count (see `_is_structural_bracket`).
+--- Where the range ends before a closing bracket it didn't open, so `dw` on
+--- the `c` of `(config.lib)` leaves the `)`. Closing brackets at the very
+--- start of the range are under the cursor and stay in.
 ---
 ---@param start_row integer
 ---@param start_column integer
 ---@param finish_row integer
 ---@param finish_column integer
----@return integer, integer # `finish`, or the first unopened closing bracket after `start`.
+---@return integer, integer
 ---
 local function _before_unopened_bracket(start_row, start_column, finish_row, finish_column)
     local lines = vim.api.nvim_buf_get_text(0, start_row, start_column, finish_row, finish_column, {})
@@ -266,13 +204,8 @@ local function _before_unopened_bracket(start_row, start_column, finish_row, fin
     return finish_row, finish_column
 end
 
---- Put the cursor at `row`/`column`, which may be just past a line's last character.
----
---- Outside Visual and Insert mode the cursor can't normally go there, so
---- `'virtualedit'` is set to `"onemore"` for the move. The pending operator
---- still uses that position after the option is restored. Only the
---- window-local value is touched, and an unset one (`""`, following the
---- global value) is put back unset.
+--- Put the cursor at `row`/`column`, which may be past the line's end.
+--- Only the window-local `'virtualedit'` is touched, and restored after.
 ---
 ---@param row integer
 ---@param column integer
@@ -292,16 +225,8 @@ local function _set_cursor_onemore(row, column)
     end
 end
 
---- The text an operator should act on.
----
---- `start` is where the cursor was before the motion. `finish` is always
---- the position after the range's last character, as for a plain motion,
---- so every step works on one form. `inclusive` says whether the operator
---- sees the range as Vim's inclusive motions do (`:help inclusive`): a
---- range that would end at a line's start then ends at the previous line's
---- end instead (see `M.balance_brackets`). Motions that land on a range's
---- last character (`e`, `ce`) are converted once, by `_after_character`.
----
+--- An operator's range. `finish` is exclusive. `inclusive` is how the
+--- operator sees it (`:help inclusive`).
 ---@class treemotion.OperatorRange
 ---@field start_row integer
 ---@field start_column integer
@@ -325,13 +250,8 @@ local function _range(start_row, start_column, finish_row, finish_column, inclus
     }
 end
 
---- Where a range whose last character is at `row`/`column` ends (exclusive).
----
---- The position after that character. An empty line has no character, so
---- its line break is taken instead: the range ends at the next line's
---- start, and Vim makes that linewise when the range starts the line
---- (`:help exclusive-linewise`), as with its own `dw` on an empty line. On
---- the buffer's last line there's no line break to take.
+--- The exclusive end after the character at `row`/`column`. An empty
+--- line's character is its line break, except on the last line.
 ---
 ---@param row integer
 ---@param column integer
@@ -350,10 +270,7 @@ local function _after_character(row, column)
     return row, column
 end
 
---- `range`, ending before the first closing bracket it didn't open.
----
---- See `_before_unopened_bracket`. Only for ranges that run forward from
---- the cursor. The last step for every forward range, after any trimming.
+--- `range`, ending before its first unopened closing bracket.
 ---
 ---@param range treemotion.OperatorRange
 ---@return treemotion.OperatorRange
@@ -384,19 +301,13 @@ function M.balance_brackets(range)
     return _range(range.start_row, range.start_column, row, column, range.inclusive)
 end
 
---- `cw`/`cW`: change to the end of the current unit, like `ce`/`cE`.
----
---- Only used while `settings.change_to_end` is set (see
---- `treemotion.OperatorSettings`).
----
---- On skipped text (see `_skipped_text_end`) that text counts as the
---- current unit. Further counts step like `e`/`E` (`shape.next_end`).
+--- `cw` as `ce`: to the end of the current unit, or of skipped text.
 ---
 ---@param units treemotion._UnitSource
 ---@param start_row integer
 ---@param start_column integer
----@param unit treemotion.MotionUnit? `units.unit_at(start_row, start_column, true)`, `nil` past the last unit.
----@param start_leaf TSNode? The leaf that same call started from.
+---@param unit treemotion.MotionUnit?
+---@param start_leaf TSNode?
 ---@param count integer
 ---@return treemotion.OperatorRange
 ---
@@ -420,13 +331,8 @@ local function _change_to_end_range(units, start_row, start_column, unit, start_
     return M.balance_brackets(_range(start_row, start_column, finish_row, finish_column, true))
 end
 
---- The `w`/`W` motion an operator runs, before any trimming.
----
---- `start` is where the operator starts and `target` where the motion
---- lands. `tail` is where the last unit moved over ends (or the skipped
---- text the final step started on, see `_skipped_text_end`), the point the
---- trimming steps measure from. `token_end` is `tail` pushed out to the end
---- of that unit's leaf (or `W` run), for `"keep_between_tokens"`.
+--- An untrimmed `w` motion. `tail` is where the last unit (or skipped text)
+--- ends; `token_end` is `tail` pushed to the end of its leaf or run.
 ---
 ---@class treemotion.OperatorMotion
 ---@field start_row integer
@@ -438,19 +344,16 @@ end
 ---@field target_row integer
 ---@field target_column integer
 
---- The untrimmed `w`/`W` motion from `start_row`/`start_column`.
----
---- Past the buffer's last unit (its last word, trailing blanks, or skipped
---- text such as a final `=`) the motion has nowhere to go, so it lands at
+--- Measure the untrimmed `w`/`W` motion. Past the last unit it lands at
 --- the end of the line, like Vim's `dw` at the end of the buffer.
 ---
 ---@param units treemotion._UnitSource
 ---@param start_row integer
 ---@param start_column integer
----@param unit treemotion.MotionUnit? `units.unit_at(start_row, start_column, true)`.
----@param start_leaf TSNode? The leaf that same call started from.
+---@param unit treemotion.MotionUnit?
+---@param start_leaf TSNode?
 ---@param count integer
----@param step treemotion._Step `shape.next_start`.
+---@param step treemotion._Step
 ---@return treemotion.OperatorMotion
 ---
 local function _forward_motion(units, start_row, start_column, unit, start_leaf, count, step)
@@ -491,18 +394,13 @@ local function _forward_motion(units, start_row, start_column, unit, start_leaf,
     }
 end
 
---- `motion`'s range, as an exclusive one ending at `motion`'s target.
----
 ---@param motion treemotion.OperatorMotion
 ---@return treemotion.OperatorRange
 local function _motion_range(motion)
     return _range(motion.start_row, motion.start_column, motion.target_row, motion.target_column, false)
 end
 
---- `motion`'s range ending at `row`/`column` instead.
----
---- A trimming step never empties a range: if `row`/`column` isn't past the
---- start, it's the untrimmed motion's range.
+--- `motion`'s range ending at `row`/`column`, unless that would empty it.
 ---
 ---@param motion treemotion.OperatorMotion
 ---@param row integer
@@ -516,14 +414,8 @@ local function _trimmed(motion, row, column)
     return _range(motion.start_row, motion.start_column, row, column, false)
 end
 
---- `motion`'s range, without the skipped text after its last unit.
----
---- - `"keep"` ends the range at the first non-blank character after
----   `motion`'s tail, so skipped text is never included.
---- - `"keep_between_tokens"` measures from the token's end instead, so
----   skipped delimiters inside the same token (the `_` in `foo_bar`) are
----   still included.
---- - `"delete"` doesn't trim.
+--- `motion`'s range without the skipped text after its last unit.
+--- `"keep_between_tokens"` measures from the token end, so `foo_bar` keeps its `_`.
 ---
 ---@param motion treemotion.OperatorMotion
 ---@param skipped_text treemotion.SkippedTextMode
@@ -550,16 +442,12 @@ function M.trim_skipped_text(motion, skipped_text)
     return _trimmed(motion, kept_row, kept_column)
 end
 
---- `range`, ending at the end of `motion`'s tail line rather than on a later line.
----
---- Like Vim's `dw` on a line's last word (`:help word`'s "Another special
---- case"), which takes any trailing blanks with it, and so does `dw` on
---- those trailing blanks. On an empty line the range is the line break
---- itself, as with Vim's `dw` there, or nothing at all for `change`.
+--- `range`, cut at the end of `motion`'s tail line (`:help word`'s special
+--- case for `dw`). On an empty line, the line break, or nothing for `cw`.
 ---
 ---@param motion treemotion.OperatorMotion
----@param range treemotion.OperatorRange `motion`'s range, from `M.trim_skipped_text`.
----@param change boolean Whether the operator is `c`.
+---@param range treemotion.OperatorRange
+---@param change boolean
 ---@return treemotion.OperatorRange
 ---
 function M.stop_at_line_end(motion, range, change)
@@ -584,27 +472,15 @@ function M.stop_at_line_end(motion, range, change)
     return _trimmed(motion, motion.tail_row, length)
 end
 
---- The range `dw`/`cw`/`yW`/... should act on: the `w`/`W` motion's, trimmed per `settings`.
----
---- The motion is measured once (see `treemotion.OperatorMotion`), then
---- passed through one step per setting:
----
---- - `skipped_text`: `M.trim_skipped_text`.
---- - `stop_at_line_end`: `M.stop_at_line_end`.
---- - always: `M.balance_brackets`.
----
---- `change_to_end` replaces all of that with `ce`'s range. Without a
---- parser it's the plain motion's range.
----
---- Measured purely from `start_row`/`start_column`: the cursor is neither
---- read nor moved (see `M.apply`).
+--- The range for `dw`/`cw`/`yW`/...: the `w` motion, trimmed per `settings`.
+--- Doesn't read or move the cursor.
 ---
 ---@param units treemotion._UnitSource
----@param start_row integer Where the operator starts (the cursor, before the motion).
+---@param start_row integer
 ---@param start_column integer
 ---@param count integer
 ---@param settings treemotion.OperatorSettings
----@param step treemotion._Step `shape.next_start`.
+---@param step treemotion._Step
 ---@return treemotion.OperatorRange
 ---
 function M.forward_range(units, start_row, start_column, count, settings, step)
@@ -630,25 +506,16 @@ function M.forward_range(units, start_row, start_column, count, settings, step)
     return M.balance_brackets(range)
 end
 
---- The range `de`/`dge`/... should act on: the motion's, including both ends.
----
---- The plain (exclusive) range when `settings.inclusive` is off. A motion
---- that didn't move gives an empty range, rather than the character under
---- the cursor.
----
---- A backward range (`dge`) is exclusive too: an inclusive one would have
---- to include the character the operator started from, which only a forced
---- `v` can do (see `_commands.motion.runner.operator_keys`). The `<Plug>` mappings
---- add that `v`, and the motion then runs as a plain one.
----
---- Measured purely from `start_row`/`start_column`, like `M.forward_range`.
+--- The range for `de`/`dge`/...: inclusive when `settings.inclusive` is on
+--- and the motion moved forward. Backward inclusion uses a forced `v`
+--- instead (see `runner.operator_keys`).
 ---
 ---@param units treemotion._UnitSource
----@param start_row integer Where the operator starts (the cursor, before the motion).
+---@param start_row integer
 ---@param start_column integer
 ---@param count integer
 ---@param settings treemotion.OperatorSettings
----@param step treemotion._Step The `e`/`E`/`ge`/`gE`-shape step.
+---@param step treemotion._Step
 ---@return treemotion.OperatorRange
 ---
 function M.inclusive_range(units, start_row, start_column, count, settings, step)
@@ -668,26 +535,16 @@ function M.inclusive_range(units, start_row, start_column, count, settings, step
     return M.balance_brackets(_range(start_row, start_column, finish_row, finish_column, true))
 end
 
---- Make the pending operator act on `range`.
----
---- `finish` is always exclusive (see `treemotion.OperatorRange`), so the
---- cursor just goes there, as for a plain motion, even at the end of a line
---- (see `_set_cursor_onemore`).
----
---- Never starts Visual mode, so `'<`/`'>` are left alone.
----
 ---@param range treemotion.OperatorRange
 ---
 function M.apply(range)
     _set_cursor_onemore(range.finish_row, range.finish_column)
 end
 
---- `dw`/`cw`/`yW`/...: act on `M.forward_range`, from the cursor.
----
 ---@param units treemotion._UnitSource
 ---@param count integer
 ---@param settings treemotion.OperatorSettings
----@param step treemotion._Step `shape.next_start`.
+---@param step treemotion._Step
 ---
 function M.forward_to_start(units, count, settings, step)
     local row, column = position.cursor_position()
@@ -695,12 +552,10 @@ function M.forward_to_start(units, count, settings, step)
     M.apply(M.forward_range(units, row, column, count, settings, step))
 end
 
---- `de`/`dge`/...: act on `M.inclusive_range`, from the cursor.
----
 ---@param units treemotion._UnitSource
 ---@param count integer
 ---@param settings treemotion.OperatorSettings
----@param step treemotion._Step The `e`/`E`/`ge`/`gE`-shape step.
+---@param step treemotion._Step
 ---
 function M.inclusive(units, count, settings, step)
     local row, column = position.cursor_position()

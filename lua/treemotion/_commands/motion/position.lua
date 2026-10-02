@@ -1,33 +1,18 @@
---- Cursor-position and position-comparison helpers shared by the motion modules.
----
---- A position is a 0-indexed row and a 0-indexed byte column, the
---- convention `TSNode:start()`/`:end_()` use.
+--- Positions are a 0-indexed row and byte column, as in `TSNode:start()`.
 
 local codepoint = require("treemotion._commands.motion.codepoint")
 
 local M = {}
 
---- Read the cursor's position, converted to `TSNode`'s 0-indexed row convention.
----
---- `nvim_win_get_cursor` returns a 1-indexed row (matching `:` command-line
---- line numbers), but every `TSNode:start()`/`:end_()` row is 0-indexed --
---- this is the single place that conversion happens, so callers can compare
---- cursor positions against node positions directly.
----
----@return integer, integer # The cursor's 0-indexed row and column.
+---@return integer, integer
 function M.cursor_position()
     local cursor = vim.api.nvim_win_get_cursor(0)
 
     return cursor[1] - 1, cursor[2]
 end
 
---- Where the cursor ends up if put at `row`/`column`.
----
---- `nvim_win_set_cursor` keeps the cursor on a line's last character
---- outside Insert and Visual mode, so a position past it (an empty line's
---- column 0 aside) is pulled back the same way. Code that measures from
---- positions instead of moving the cursor uses this to see the same
---- position a cursor move would have read back.
+--- Pull a position past a line's last character back onto it, as
+--- `nvim_win_set_cursor` does outside Insert and Visual mode.
 ---
 ---@param row integer
 ---@param column integer
@@ -46,8 +31,6 @@ function M.clamp(row, column)
     return row, codepoint.last_character_column(row, #line)
 end
 
---- Check whether `row_a`/`column_a` comes before `row_b`/`column_b`.
----
 ---@param row_a integer
 ---@param column_a integer
 ---@param row_b integer
@@ -58,8 +41,6 @@ function M.is_before(row_a, column_a, row_b, column_b)
     return row_a < row_b or (row_a == row_b and column_a < column_b)
 end
 
---- The earlier of two positions.
----
 ---@param row_a integer
 ---@param column_a integer
 ---@param row_b integer
@@ -74,8 +55,6 @@ function M.min(row_a, column_a, row_b, column_b)
     return row_b, column_b
 end
 
---- The later of two positions.
----
 ---@param row_a integer
 ---@param column_a integer
 ---@param row_b integer
@@ -90,9 +69,9 @@ function M.max(row_a, column_a, row_b, column_b)
     return row_a, column_a
 end
 
---- Check whether `row`/`column` falls within `node`'s range (its end is exclusive).
+--- Whether `row`/`column` is inside `node`'s range (end exclusive).
 ---
----@param node TSNode|treemotion.MotionUnit Anything with `:start()`/`:end_()`.
+---@param node TSNode|treemotion.MotionUnit
 ---@param row integer
 ---@param column integer
 ---@return boolean

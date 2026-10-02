@@ -1,16 +1,4 @@
---- Sub-word-aware unit traversal for `w`/`e`/`b`/`ge`.
----
---- Unlike `W`/`E`/`B`/`gE` (which move by whole treesitter leaves/runs, see
---- `_commands.motion.leaf`), `w`/`e`/`b`/`ge` additionally step through
---- case-convention sub-words *inside* a single leaf (e.g. `fooBar` is two
---- units, `foo` and `Bar`) per `_commands.motion.subword`'s splitting rules.
----
---- This module is the traversal counterpart to `_commands.motion.subword`:
---- `subword.split()` only knows how to slice *one* leaf's text into ranges,
---- it has no notion of "next"/"previous" or of crossing into another leaf --
---- that's what `_commands.motion.unit` adds on top, given the one-leaf
---- spans defined here, mirroring `_commands.motion.leaf`'s
---- `next_leaf`/`previous_leaf` one level finer.
+--- `w`/`e`/`b`/`ge` units: the sub-words of a single leaf.
 
 local leaf = require("treemotion._commands.motion.leaf")
 local subword = require("treemotion._commands.motion.subword")
@@ -20,23 +8,13 @@ local unit = require("treemotion._commands.motion.unit")
 
 local M = {}
 
---- Walk from `node` in `forward`'s direction until finding a leaf
---- `subword.split()` actually produces units for.
+--- From `node` (inclusive), find the first leaf in `forward`'s direction that
+--- splits into any units.
 ---
---- A leaf that is entirely the continuation of the previous leaf's
---- punctuation run (see `subword.split`; e.g. tree-sitter-rust's lone `/`
---- `outer_doc_comment_marker` leaf inside a `///` doc comment) splits into
---- zero units -- it has no content of its own, just the tail of the
---- previous leaf's punctuation run -- so it should never be a landing spot.
---- `node` itself is checked first, so passing a leaf straight from
---- `leaf.leaf_at()` (which may or may not already be empty) works the
---- same as passing one already stepped past a known-empty leaf.
----
----@param node TSNode? Where to start looking.
----@param forward boolean Search after `node` (`leaf.next_leaf`) or before it (`leaf.previous_leaf`).
----@param settings treemotion.SplitSettings Passed to `subword.split`.
----@return TSNode?, treemotion.SubwordUnit[]? # The first leaf with real
----    units, and its units -- both `nil` if none remain.
+---@param node TSNode?
+---@param forward boolean
+---@param settings treemotion.SplitSettings
+---@return TSNode?, treemotion.SubwordUnit[]?
 local function _first_nonempty_split(node, forward, settings)
     local step = forward and leaf.next_leaf or leaf.previous_leaf
 
@@ -53,10 +31,7 @@ local function _first_nonempty_split(node, forward, settings)
     return nil, nil
 end
 
---- Build a `treemotion._UnitSource` stepping through `w`/`e`/`b`/`ge` units.
----
----@param settings treemotion.SplitSettings `commands.motion.small`'s settings
----    (see `_commands.motion.settings.resolve`).
+---@param settings treemotion.SplitSettings
 ---@return treemotion._UnitSource
 ---
 function M.new_source(settings)

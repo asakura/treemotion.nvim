@@ -1,34 +1,12 @@
---- Treesitter language-injection bookkeeping for `_commands.motion.leaf`.
+--- Language-injection lookups for `_commands.motion.leaf`.
 ---
---- `:help treesitter-language-injections` lets one grammar mark part of its
---- source (a Nix `''...''` string after a `# bash` comment, a Lua string
---- passed to `vim.cmd()`, a fenced code block in Markdown, ...) to be
---- re-parsed as another language, in its own `LanguageTree`/`TSTree`.
---- `TSNode:parent()` never crosses that boundary. This module answers what a
---- leaf walk needs to cross it: which injected tree and piece a host node
---- stands in for (`M.injected_content`), which piece a node inside injected
---- content belongs to (`M.enclosing_piece`, `M.within_piece`), and which host
---- node to climb back out to (`M.host_node_for_piece`).
----
---- An injection query can mark `injection.combined`, stitching several
---- non-adjacent stretches of source into one injected tree (e.g. one Nix
---- indented string split around `${...}` interpolations, or even several
---- unrelated strings). Sibling navigation inside such a tree can jump from
---- one stretch to another and skip the host text in between, so walks are
---- bounds-checked against a single "piece": one gapless stretch of injected
---- source.
----
---- A piece is always a
+--- A piece is one gapless stretch of injected source, as
 --- `{start_row, start_column, start_byte, end_row, end_column, end_byte}`
---- array, the same shape `LanguageTree:included_regions()` uses.
+--- (the shape `LanguageTree:included_regions()` uses). Walks check pieces
+--- because an `injection.combined` tree can jump between distant stretches.
 
 local M = {}
 
---- The root treesitter parser for the current buffer, if any.
----
---- A bare `TSNode` can't be mapped back to its `LanguageTree`; the search
---- has to start from the buffer's root parser.
----
 ---@return vim.treesitter.LanguageTree?
 local function _root_parser()
     local success, parser = pcall(vim.treesitter.get_parser, vim.api.nvim_get_current_buf())
@@ -40,24 +18,12 @@ local function _root_parser()
     return parser
 end
 
---- `TSTree` -> owning `LanguageTree`, populated lazily by `_owning_ltree`.
----
---- A leaf walk looks up the owner of every node it touches, and the owner of
---- a `TSTree` never changes. Weak-keyed so trees discarded by a reparse are
---- garbage-collected; a `TSTree` object is never reused for another owner.
+--- `TSTree` -> owning `LanguageTree`. Weak-keyed; a tree's owner never changes.
 local _tree_to_ltree = setmetatable({}, { __mode = "k" })
 
---- The `LanguageTree` that produced `node`: the buffer's root tree, or the
---- injected tree that owns it.
----
---- Matches by `TSTree` identity (`node:tree()`), not by position.
---- `LanguageTree:language_for_range()` reports the deepest language at a
---- point, so a host node that starts where its injected content starts would
---- be attributed to the injected language.
----
---- A cache miss records every `TSTree` the search passes, not just
---- `node`'s, so one walk after a reparse warms the cache for the whole
---- buffer.
+--- The `LanguageTree` whose tree holds `node`. Matches by tree identity,
+--- since `language_for_range()` would credit a host node to the language
+--- injected at its start. A miss caches every tree in the buffer.
 ---
 ---@param node TSNode
 ---@return vim.treesitter.LanguageTree?
@@ -91,21 +57,10 @@ local function _owning_ltree(node)
     return _tree_to_ltree[target]
 end
 
---- Merge `regions` (one `included_regions()` group, i.e. one injected
---- instance) into maximal runs of regions that touch end-to-end.
+--- Merge regions that touch end-to-end. tree-sitter-markdown, for example,
+--- reports each line of a code fence as its own region.
 ---
---- Some grammars report one gapless span as several regions (e.g.
---- tree-sitter-markdown reports each line of a fenced code block as its own
---- region). Unmerged, every such boundary would look like a gap between
---- stitched pieces: walks would climb back out to the host at each line
---- break, and `M.injected_content`'s exact-range match against the host
---- node's single range could never succeed. Regions with a real gap between
---- them stay separate.
----
---- Sorts by start position first, since `included_regions()` doesn't
---- promise document order. A single-region group is returned as-is.
----
----@param regions integer[][]
+---@param regions integer[][] One `included_regions()` group.
 ---@return integer[][]
 local function _merge_contiguous(regions)
     if #regions <= 1 then
@@ -133,22 +88,11 @@ local function _merge_contiguous(regions)
     return merged
 end
 
---- `_sorted_pieces` result cache, weak-keyed by the `included_regions()`
---- table's identity.
----
---- `LanguageTree:included_regions()` returns its internal table rather than
---- a copy, and Neovim replaces that table whenever the regions change
---- (injection discovery, buffer edits). An entry can therefore never be read
---- back once it's stale.
+--- Keyed by the `included_regions()` table, which Neovim replaces whenever
+--- the regions change, so entries never go stale.
 local _sorted_pieces_cache = setmetatable({}, { __mode = "k" })
 
---- Every piece of `ltree` (see `_merge_contiguous`), across all of its
---- `included_regions()` groups, as one array sorted by start position for
---- binary search.
----
---- Sorting across groups is safe: regions of one `LanguageTree` never
---- overlap, and separate groups are separate injected instances, so nothing
---- needs merging across them.
+--- All of `ltree`'s pieces, sorted by start.
 ---
 ---@param ltree vim.treesitter.LanguageTree
 ---@return integer[][]
@@ -177,11 +121,7 @@ local function _sorted_pieces(ltree)
     return pieces
 end
 
---- The rightmost index in `pieces` (see `_sorted_pieces`) whose start is
---- at-or-before `row`/`column`, or `0` if every piece starts later.
----
---- Lets lookups binary-search instead of scanning every injected region of a
---- language on each node a walk touches.
+--- The last index in `pieces` starting at or before `row`/`column`, else `0`.
 ---
 ---@param pieces integer[][]
 ---@param row integer
@@ -206,18 +146,10 @@ local function _floor_index(pieces, row, column)
     return result
 end
 
---- The piece of `ltree` that contains `row`/`column`, e.g. one line of a Nix
---- indented string between two `${...}` interpolations.
----
---- Node ranges inside an injected tree report their true buffer position,
---- so plain coordinate comparison tells pieces apart. Since pieces never
---- overlap, only the piece at `_floor_index` can contain the point.
----
 ---@param ltree vim.treesitter.LanguageTree
 ---@param row integer
 ---@param column integer
----@return integer[]? # `{start_row, start_column, start_byte, end_row, end_column, end_byte}`, or
----    `nil` if `row`/`column` isn't covered by `ltree` at all.
+---@return integer[]? # The piece of `ltree` containing `row`/`column`.
 local function _piece_at(ltree, row, column)
     local pieces = _sorted_pieces(ltree)
     local index = _floor_index(pieces, row, column)
@@ -236,10 +168,7 @@ local function _piece_at(ltree, row, column)
     return nil
 end
 
---- Whether `node`'s start position falls inside `piece`.
----
---- Tells "still inside the piece the walk started in" apart from "a combined
---- tree's navigation jumped to another piece".
+--- Whether `node` starts inside `piece`.
 ---
 ---@param node TSNode
 ---@param piece integer[]
@@ -252,11 +181,8 @@ function M.within_piece(node, piece)
     return after_start and before_end
 end
 
---- If `node` sits inside injected content, the piece containing
---- `row`/`column`, plus the host `LanguageTree` that injected it.
----
---- `nil` when `node` belongs to the buffer's root tree, or when `row`/
---- `column` falls outside every piece of `node`'s injected tree.
+--- For a node in an injected tree, the piece containing `row`/`column` and
+--- the host tree. `nil` for root-tree nodes.
 ---
 ---@param node TSNode
 ---@param row integer
@@ -285,16 +211,9 @@ function M.enclosing_piece(node, row, column)
     return piece, host_ltree
 end
 
---- Injected languages that only highlight fragments of an already
---- meaningful host node (a comment body, a printf-style format string), as
---- opposed to embedding a different program.
----
---- These can cover a host node's entire span exactly, just like a real
---- embedded language (nvim-treesitter injects every C comment as `comment`,
---- for example), so `M.injected_content`'s exact-range check can't filter
---- them out. Nothing in a query marks an injection as highlight-only, hence
---- a denylist by name. Treating them as real injections would split a C
---- block comment word by word instead of keeping it one leaf.
+--- Injections that only highlight part of a meaningful host node. They can
+--- match a node's range exactly (nvim-treesitter injects every C comment as
+--- `comment`), and no query flag tells them apart, hence this list.
 local _ANNOTATION_ONLY_LANGUAGES = {
     comment = true,
     doxygen = true,
@@ -302,22 +221,12 @@ local _ANNOTATION_ONLY_LANGUAGES = {
     re2c = true,
 }
 
---- If `node`'s entire range is exactly an injection's `@injection.content`
---- (see `:help treesitter-language-injections`), the injected tree and the
---- piece `node` stands in for.
+--- If `node`'s range is exactly an injection's content, the injected tree
+--- and the piece `node` stands for.
 ---
---- Only an exact-range match counts, and `_ANNOTATION_ONLY_LANGUAGES` are
---- ignored, so injections that merely highlight part of a node don't turn
---- that node into a different language.
----
---- Parses lazily: `ltree` is parsed at `node`'s start (one column wide, as
---- in `leaf.leaf_at`) right before its children are checked, so a walk
---- that reaches an injected tree elsewhere in the buffer parses it on
---- arrival. On a match, `child:parse(true)` parses the whole child
---- language. Neovim only takes its cheap "entirely valid" path once every
---- region of a language is parsed, so a language being walked is worth
---- parsing in full once, while languages never entered cost nothing. See
---- `notes/injection-parse-performance.md`.
+--- Parses lazily: the host tree at `node`, then the whole child language on
+--- a match. Neovim only takes its cheap path once a language is fully
+--- parsed, and languages never entered cost nothing.
 ---
 ---@param node TSNode
 ---@return vim.treesitter.LanguageTree? child_ltree
@@ -337,10 +246,7 @@ function M.injected_content(node)
             local pieces = _sorted_pieces(child)
             local index = _floor_index(pieces, row1, column1)
 
-            -- `_floor_index` finds the rightmost piece starting at-or-before
-            -- `row1`/`column1`. Walk back over pieces sharing that exact
-            -- start, since pieces from different groups could share a start
-            -- without sharing an end.
+            -- Pieces from different groups can share a start but not an end.
             while index >= 1 do
                 local piece = pieces[index]
 
@@ -361,9 +267,7 @@ function M.injected_content(node)
     return nil
 end
 
---- The host-grammar node an injection query captured to produce `piece`:
---- the node `M.injected_content` matches from the host side, found here from
---- inside the injected tree once `piece` runs out.
+--- The host node that was injected to produce `piece`.
 ---
 ---@param host_ltree vim.treesitter.LanguageTree
 ---@param piece integer[]

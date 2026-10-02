@@ -1,28 +1,7 @@
---- Split a treesitter leaf's (`M.split`), or a whole run's (`M.split_run`),
---- text into case-convention-aware sub-word units.
+--- Split a leaf (`w`) or a run (`W`) into sub-word units.
 ---
---- `M.split` backs `w`/`e`/`b`/`ge` (see `_commands.motion.word`) with
---- `commands.motion.small`'s settings. `M.split_run` backs `W`/`E`/`B`/`gE`
---- (see `_commands.motion.bigword`) with `commands.motion.big`'s, and only
---- splits when `commands.motion.big.enabled` is `true`; otherwise it returns
---- one unit spanning the whole run, the way real Vim's `W` ignores
---- punctuation inside a WORD. Both take a `treemotion.SplitSettings` (see
---- `_commands.motion.settings.resolve`) rather than reading configuration.
----
---- This module only orchestrates: it narrows a leaf or run to the text that
---- is eligible to split, maps offsets back to buffer coordinates, and
---- delegates the rest. `_commands.motion.classify` decides prose vs. code
---- and insignificance; `_commands.motion.prose`, `.delimiters` and `.case`
---- are the pure string splitters.
----
---- Splitting composes up to three passes. Prose text is first divided into
---- words (`prose.words`); code text is one word. Each word is then divided
---- on delimiters (`delimiters.split`) and, unless a chunk looks like a hash
---- (`case.looks_like_hash`), on camelCase/PascalCase boundaries
---- (`case.split`), using the `.code` or `.prose` rules. A backtick-enclosed
---- identifier in prose uses the `.code` rules when `backtick_identifiers` is
---- on. Each `treemotion.SubwordUnit` is only a coordinate range, not a tree
---- node.
+--- Prose is split into words first; code is one word. Each word is then split
+--- on delimiters and, unless it looks like a hash, on camelCase/PascalCase.
 
 local logging = require("mega.logging")
 
@@ -38,19 +17,13 @@ local _LOGGER = logging.get_logger("treemotion._commands.motion.subword")
 
 local M = {}
 
---- Trim `text`'s trailing blank characters, and find where what's left ends.
+--- Strip trailing blanks. Some grammars end a token at the next row's
+--- column 0, so callers check whether the trimmed text is single-row.
 ---
---- Some grammars fold a trailing newline into a token's own span (e.g.
---- tree-sitter-rust's `doc_comment` ends at `(next_row, 0)`), and a run can
---- end in one too. Rather than special-casing node types, callers check
---- whether the trimmed text still ends on `start_row`: if so the span is
---- really single-row. Text with real content on several rows stays
---- multi-row after trimming.
----
----@param text string The span's full text.
----@param start_row integer `text`'s row in the buffer (0-indexed).
----@param start_col integer `text`'s first column in the buffer (0-indexed).
----@return string, integer, integer # The trimmed text, and the row/column one past its last character.
+---@param text string
+---@param start_row integer
+---@param start_col integer
+---@return string, integer, integer # The trimmed text and its exclusive end.
 ---
 local function _trim_span(text, start_row, start_col)
     local trimmed = text:gsub("%s+$", "")
@@ -59,27 +32,14 @@ local function _trim_span(text, start_row, start_col)
     return trimmed, end_row, end_col
 end
 
---- How many of `text`'s leading characters continue a punctuation run that
---- started in the character immediately before `node`, on the same line.
+--- How many leading bytes of `text` continue a punctuation run from the
+--- character just before `node`, such as the third dash of Lua's `---`.
+--- Vim treats such a run as one word, so its only stop stays in the earlier
+--- leaf. May be `#text` (Rust's lone `/` in `///`).
 ---
---- Grammars can split one run of marker punctuation across leaves: Lua's
---- comment opener is a fixed 2-character `--`, so a `---` doc comment's
---- third dash starts `comment_content`; Rust's `///` parses as `//`, a lone
---- `/`, then the text. Real Vim treats a same-class punctuation run as one
---- word, so `M.split` strips this many characters and the run's only stop
---- stays in the previous leaf. The result can be `#text` (Rust's lone `/`).
----
---- Any non-blank, non-alphanumeric character qualifies. Alphanumerics, in
---- any script (see `codepoint.is_alphanumeric`), are excluded because a
---- word or number split across leaves may be two genuinely separate tokens.
----
---- Counts whole characters (via `_commands.motion.codepoint`), so the
---- result is always a character boundary in `text`. A 1-byte `char` takes a
---- plain byte-comparison fast path.
----
----@param node TSNode The leaf `text` came from.
----@param text string `node`'s full text (see `M.split`).
----@return integer # 0 if `text`'s start doesn't continue a punctuation run.
+---@param node TSNode
+---@param text string
+---@return integer
 ---
 local function _leading_continuation_length(node, text)
     if text == "" then
@@ -129,21 +89,12 @@ local function _leading_continuation_length(node, text)
     return length
 end
 
---- Shared tail of `M.split`/`M.split_run`: `text` -> words -> per-word
---- delimiter/case split -> `treemotion.SubwordUnit[]`.
+--- Split `text` into units. Returns `fallback` if `text` has no words. A
+--- text that is only a skipped marker run returns no units.
 ---
---- Word, delimiter and chunk offsets compose into each unit's offset in
---- `text`, which `span.position_mapper` maps back to buffer coordinates
---- (including multi-row prose such as a wrapped Markdown paragraph).
----
---- Text with no words at all (e.g. an all-whitespace prose comment)
---- returns `fallback`. Text made up entirely of a dropped
---- (`comment_marker_case = "skip"`) marker run has words but yields no
---- units, and gets no fallback: the user asked for no stop there.
----
----@param text string The text to split (already narrowed to what's eligible -- see `M.split`/`M.split_run`).
----@param fallback treemotion.SubwordUnit Starts where `text` does; returned as-is if `text` produces no words.
----@param is_prose boolean Whether to use `settings.prose` or `settings.code`.
+---@param text string
+---@param fallback treemotion.SubwordUnit Starts where `text` does.
+---@param is_prose boolean
 ---@param settings treemotion.SplitSettings
 ---@return treemotion.SubwordUnit[]
 ---
@@ -159,9 +110,7 @@ local function _split_text(text, fallback, is_prose, settings)
     local start_row, start_col = fallback:start()
     local position = span.position_mapper(start_row, start_col, text)
 
-    --- Build one unit spanning `length` bytes, starting at `offset` (1-indexed into `text`).
-    ---
-    ---@param offset integer
+    ---@param offset integer 1-indexed into `text`.
     ---@param length integer
     ---@return treemotion.SubwordUnit
     local function make_unit(offset, length)
@@ -193,13 +142,11 @@ local function _split_text(text, fallback, is_prose, settings)
     return units
 end
 
---- Wrap `fn` so each call logs how many units it produced, at debug level.
----
 ---@generic F: function
----@param name string The public function's name, for the log message.
----@param fn F The function doing the actual work, returning `treemotion.SubwordUnit[]`.
----@param describe_args fun(...: any): string Render `fn`'s arguments for the log message.
----@return F # `fn`, plus logging.
+---@param name string
+---@param fn F
+---@param describe_args fun(...: any): string
+---@return F
 ---
 local function _logged(name, fn, describe_args)
     return function(...)
@@ -211,21 +158,12 @@ local function _logged(name, fn, describe_args)
     end
 end
 
---- Split `node`'s text into sub-word units, per `settings` (`commands.motion.small`'s).
+--- Split a leaf. Multi-row code stays one unit; multi-row prose is split
+--- across rows.
 ---
---- A multi-row `node` whose extra rows are only trailing blanks is trimmed
---- to one row (`_trim_span`); other multi-row code stays one whole-leaf
---- unit, while multi-row prose is split across its rows. Leading characters
---- that continue the previous leaf's punctuation run are skipped (see
---- `_leading_continuation_length`); if that is all of `node`, no units are
---- returned and `_commands.motion.word` moves on to the next leaf.
----
----@param node TSNode Any leaf (see `_commands.motion.leaf`).
----@param settings treemotion.SplitSettings See `_commands.motion.settings.resolve`.
----@return treemotion.SubwordUnit[] # Empty when `node` is `classify.is_insignificant`,
----    entirely a punctuation-run continuation of the leaf before it, or
----    entirely a dropped (`"skip"`) delimiter run with no other content;
----    otherwise `node`'s full span if nothing else splits it.
+---@param node TSNode
+---@param settings treemotion.SplitSettings
+---@return treemotion.SubwordUnit[] # Empty when the leaf has no stop of its own.
 ---
 M.split = _logged("split", function(node, settings)
     if classify.is_insignificant(node, settings.insignificant_characters) then
@@ -243,9 +181,6 @@ M.split = _logged("split", function(node, settings)
         if trimmed_end_row == start_row then
             text, end_row, end_col = trimmed, trimmed_end_row, trimmed_end_col
         elseif not is_prose then
-            -- Genuinely multi-row code: sub-word splitting only applies
-            -- within a line. Multi-row prose falls through to `_split_text`,
-            -- which is row-aware.
             return { span.new(start_row, start_col, end_row, end_col) }
         end
     end
@@ -270,16 +205,11 @@ end, function(node)
     return string.format("%s at %s:%s", node:type(), row, column)
 end)
 
---- Break the run from `start_node` to `end_node` into maximal stretches of
---- leaves that share the same `classify.is_prose` classification.
+--- Break a run into stretches of leaves that are all prose or all code,
+--- such as Lua's `foo"bar"`, so each gets its own rules.
 ---
---- A run can put code and prose leaves side by side with no whitespace (Lua's
---- `foo"bar"` is an identifier followed by a string). Splitting each stretch
---- with its own rules keeps `.code` settings out of the string and vice
---- versa.
----
----@param start_node TSNode The run's first leaf.
----@param end_node TSNode The run's last leaf.
+---@param start_node TSNode
+---@param end_node TSNode
 ---@return {is_prose: boolean, start_row: integer, start_col: integer, end_row: integer, end_col: integer}[]
 ---
 local function _run_segments(start_node, end_node)
@@ -319,14 +249,6 @@ local function _run_segments(start_node, end_node)
     end
 end
 
---- Split one `_run_segments` segment into sub-word units.
----
---- `pcall` guards `nvim_buf_get_text`: a leaf's `:end_()` can sit one row
---- past the buffer's last line (a root node covering the implicit trailing
---- newline), which isn't a readable range. A run has no single `TSNode` to
---- hand to `vim.treesitter.get_node_text`, which handles that case itself.
---- On failure the whole segment becomes one unit.
----
 ---@param segment {is_prose: boolean, start_row: integer, start_col: integer, end_row: integer, end_col: integer}
 ---@param settings treemotion.SplitSettings
 ---@return treemotion.SubwordUnit[]
@@ -335,6 +257,7 @@ local function _split_run_segment(segment, settings)
     local start_row, start_col = segment.start_row, segment.start_col
     local end_row, end_col = segment.end_row, segment.end_col
 
+    -- A leaf's end can sit one row past the last line, which is unreadable.
     local ok, lines = pcall(vim.api.nvim_buf_get_text, 0, start_row, start_col, end_row, end_col, {})
 
     if not ok then
@@ -344,7 +267,6 @@ local function _split_run_segment(segment, settings)
     local trimmed, trimmed_end_row, trimmed_end_col = _trim_span(table.concat(lines, "\n"), start_row, start_col)
 
     if trimmed_end_row ~= start_row and not segment.is_prose then
-        -- Genuinely multi-row code; see `M.split`'s identical branch.
         return { span.new(start_row, start_col, end_row, end_col) }
     end
 
@@ -356,32 +278,19 @@ local function _split_run_segment(segment, settings)
     )
 end
 
---- Split the contiguous run from `start_node` to `end_node`'s text into
---- sub-word units, per `settings` (`commands.motion.big`'s): the
---- `W`/`E`/`B`/`gE` counterpart to `M.split`.
+--- Split a run. With `settings.enabled` off (the default) the whole run is
+--- one unit, like Vim's `W`.
 ---
---- A run's leaves are contiguous (see `_commands.motion.run`), so the buffer
---- text from `start_node`'s start to `end_node`'s end is exactly the run's
---- text. The run is divided into same-classification stretches
---- (`_run_segments`), each trimmed and split like a single leaf.
----
---- When `settings.enabled` is `false` (the default), returns one whole-run
---- unit.
----
----@param start_node TSNode The run's first leaf (e.g. `run.run_start(node)`).
----@param end_node TSNode The run's last leaf (e.g. `run.run_end(node)`).
----@param settings treemotion.SplitSettings See `_commands.motion.settings.resolve`.
----@return treemotion.SubwordUnit[] # Empty when `enabled` is `true` and the whole run is a dropped
----    (`"skip"`) delimiter run with no other content -- same as `M.split`, see `_split_text`'s docstring;
----    otherwise the run's full (trimmed) span if nothing else splits it.
+---@param start_node TSNode
+---@param end_node TSNode
+---@param settings treemotion.SplitSettings
+---@return treemotion.SubwordUnit[]
 ---
 M.split_run = _logged("split_run", function(start_node, end_node, settings)
     local start_row, start_col = start_node:start()
     local end_row, end_col = end_node:end_()
 
     if not settings.enabled then
-        -- No trimming here: the disabled path must land exactly on the
-        -- run's raw bounds, so `W`/`E`/`B`/`gE` behave as plain WORD motions.
         return { span.new(start_row, start_col, end_row, end_col) }
     end
 

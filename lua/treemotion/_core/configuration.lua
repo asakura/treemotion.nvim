@@ -1,4 +1,4 @@
---- All functions and data to help customize `treemotion` for this user.
+--- The user's configuration and the defaults it is merged over.
 
 local hints_constant = require("treemotion._core.hints")
 local motion_constant = require("treemotion._commands.motion.constant")
@@ -9,19 +9,12 @@ local _LOGGER = logging.get_logger("treemotion._core.configuration")
 
 local M = {}
 
--- NOTE: `M.DATA` starts empty and is always filled out by
--- `M.initialize_data_if_needed()` before any other function in this module
--- reads it, so the "missing `logging`" warning below is a false positive.
+--- Filled in by `M.initialize_data_if_needed()` before any read.
 ---@type treemotion.ResolvedConfiguration
 ---@diagnostic disable-next-line: missing-fields
 M.DATA = {}
 
--- Whether `M.initialize_data_if_needed()` has filled out this module's
--- `M.DATA`. Kept in this module, next to the state it guards, rather than in
--- a `g:` variable: `g:` lives in Nvim's variable store, not in Lua, so it
--- would outlive a reload of this module (clearing `package.loaded`) and
--- leave the fresh `M.DATA` empty. `g:loaded_treemotion` is a separate
--- concern, the plugin's load guard (see `plugin/treemotion.lua`).
+-- Module-local, not a `g:` variable, so reloading the module resets it.
 local _initialized = false
 
 ---@type treemotion.ResolvedConfiguration
@@ -102,16 +95,9 @@ local _DEFAULTS = {
     },
 }
 
---- Additional treesitter language -> comment-marker-character entries beyond
---- `_DEFAULTS`, activated automatically (see `M.get_comment_markers`) only
---- when that language's parser is actually installed. Grouped by marker
---- character for readability, mirroring `_DEFAULTS`' own 11 entries.
----
---- Deliberately a curated, high-confidence list, not a guess at every
---- nixpkgs treesitter grammar: markup/template languages with block-only or
---- multi-character comment delimiters (HTML, XML, JSON, Jinja/Twig/Liquid,
---- Markdown, reStructuredText) and dozens of very niche grammars are
---- excluded rather than guessed at.
+--- Comment markers for more languages, used only when the language's parser
+--- is installed (see `M.get_comment_markers`). Languages with block-only or
+--- multi-character comment syntax are left out.
 ---
 ---@type table<string, string[]>
 local _OPTIONAL_COMMENT_MARKERS = {
@@ -253,31 +239,15 @@ local _OPTIONAL_COMMENT_MARKERS = {
     matlab = { "%" },
 }
 
---- Additional treesitter language -> insignificant-leaf-text entries beyond
---- `_DEFAULTS` (which ships empty), activated automatically (see
---- `M.get_insignificant_characters`) only when that language's parser is
---- actually installed. Mirrors `_OPTIONAL_COMMENT_MARKERS` in shape and
---- resolution order, but deliberately much smaller: unlike comment syntax,
---- which punctuation counts as "insignificant" is a personal taste call, not
---- an objective fact about a grammar (see `M.get_insignificant_characters`'s
---- docstring), so entries only belong here once they're a near-universal
---- call for that language, not a guess.
----
---- Nix: `;`/`{`/`}`/`[`/`]`/`=`/`.` are pure structural punctuation with no
---- other role (binding terminator, set/list delimiters, key-value and
---- attrpath separators). `"`/`''` (string delimiters) qualify differently:
---- they're unnamed leaves distinct from the named `string_fragment` they
---- wrap, so `classify.is_insignificant`'s named-only prose check never protects them
---- as prose in the first place.
+--- Insignificant characters used when the language's parser is installed.
+--- Kept to near-universal choices, since this is mostly taste.
 ---
 ---@type table<string, string[]>
 local _OPTIONAL_INSIGNIFICANT_CHARACTERS = {
     nix = { "{", "}", "[", "]", ";", '"', "''", "=", "." },
 }
 
---- Setup `treemotion` for the first time, if needed.
----
---- Runs at most once per load of this module.
+--- Build `M.DATA` from the defaults and `g:treemotion_configuration`, once.
 ---
 function M.initialize_data_if_needed()
     if _initialized then
@@ -290,11 +260,7 @@ function M.initialize_data_if_needed()
 
     local configuration = M.DATA.logging
 
-    -- NOTE: `treemotion.LoggingConfiguration` and `mega.logging.SparseLoggerOptions`
-    -- are separately-declared classes with no inheritance relationship, so
-    -- lua-language-server won't treat this cast as valid on nominal-type
-    -- grounds alone, even though every field the two types share matches
-    -- exactly.
+    -- The two classes have the same fields but are declared separately.
     ---@diagnostic disable-next-line: cast-type-mismatch
     ---@cast configuration mega.logging.SparseLoggerOptions
     logging.set_configuration("treemotion", configuration)
@@ -302,22 +268,12 @@ function M.initialize_data_if_needed()
     _LOGGER:fmt_debug("Initialized treemotion's configuration.")
 end
 
---- Merge `data` with the user's current configuration.
+--- The configuration, with `data` merged in if given. Without `data` this is
+--- `M.DATA` itself, not a copy, so don't edit it. Writers replace `M.DATA`
+--- instead of editing it.
 ---
---- Skips `vim.tbl_deep_extend` entirely when `data` is `nil`/empty: merging
---- `M.DATA` with nothing produces a value equal to `M.DATA` itself, just a
---- freshly (and, for `commands.motion`'s nested tables, repeatedly) deep-copied
---- one -- pure waste on the only way `_commands.motion.subword` ever calls
---- this (no override, once per motion, see `_commands.motion.settings`).
---- `M.DATA` is safe to hand back directly here: every no-override caller
---- only reads it, and every function that changes configuration
---- (`M.merge_data`, `M.set_hints`, `M.toggle_hints`) replaces `M.DATA`
---- with a new table rather than editing it in place, so a reference
---- already handed out never sees a later change. Callers must not edit
---- the returned table themselves.
----
----@param data treemotion.Configuration? All extra customizations for this plugin.
----@return treemotion.ResolvedConfiguration # The configuration with 100% filled out values.
+---@param data treemotion.Configuration?
+---@return treemotion.ResolvedConfiguration
 ---
 function M.resolve_data(data)
     M.initialize_data_if_needed()
@@ -329,20 +285,10 @@ function M.resolve_data(data)
     return vim.tbl_deep_extend("force", M.DATA, data)
 end
 
---- Look up `language`'s comment-marker characters, whether shipped/user-configured
---- or auto-detected from `_OPTIONAL_COMMENT_MARKERS`.
+--- `language`'s comment markers. Optional entries are checked lazily,
+--- because `vim.treesitter.language.add()` loads the parser.
 ---
---- The `_OPTIONAL_COMMENT_MARKERS` fallback is deliberately resolved here, lazily,
---- per call -- not merged into `M.DATA` up front in `initialize_data_if_needed()`.
---- `vim.treesitter.language.add()` (see `health.lua`'s identical use) loads the
---- parser it checks for, which is a real cost across ~120 candidate languages;
---- doing that for every one of them at plugin load, on every Neovim startup,
---- regardless of which languages actually get edited that session, would be
---- wasteful. Checking lazily for just the buffer's current language costs
---- nothing extra: by the time this is called, that language's parser is already
---- loaded (see `classify.current_language()`'s use of `vim.treesitter.get_parser()`).
----
----@param language string A treesitter language name.
+---@param language string
 ---@return string[]?
 ---
 function M.get_comment_markers(language)
@@ -363,20 +309,8 @@ function M.get_comment_markers(language)
     return nil
 end
 
---- Whether `list` (a raw `commands.motion.insignificant_characters[language]`
---- override) negates at least one character rather than being a plain
---- `string[]` full replacement.
----
---- A Lua table literal can't hold a real `nil` value (`:help vim.NIL`
---- explains why: `{"foo", nil}` collapses to `{"foo"}`, indistinguishable
---- from never having the key at all), so there's no way for a user to write
---- "drop just this one character from `_OPTIONAL_INSIGNIFICANT_CHARACTERS`
---- (or a shipped default), keep the rest" as a real `nil`. `false` is the
---- sentinel instead: an ordinary, assignable Lua value that survives fine as
---- a table entry, e.g. `nix = { [";"] = false }` keeps `{`/`}`/`[`/`]` but
---- drops `;`. `list[character] == false` (rather than merely falsy) is
---- checked deliberately, so an absent key (`nil`, i.e. "no opinion") never
---- gets confused with an explicit negation.
+--- Whether `list` removes a character with `[character] = false`. A table
+--- can't hold `nil`, so `false` marks the removal.
 ---
 ---@param list treemotion.InsignificantCharacterList
 ---@return boolean
@@ -391,13 +325,8 @@ local function _has_negation(list)
     return false
 end
 
---- Apply `patch` (a hybrid table -- see `_has_negation`) on top of `base` (an
---- `_OPTIONAL_INSIGNIFICANT_CHARACTERS` entry, or `{}` if `language` has
---- none): every character in `base` survives unless `patch` explicitly
---- negates it (`[character] = false`), and every plain string `patch` lists
---- in its own array part (`ipairs`-visible, same as any other
---- `insignificant_characters` entry) is added on top, whether or not it was
---- already in `base`.
+--- `base` without the characters `patch` sets to `false`, plus `patch`'s
+--- own listed characters.
 ---
 ---@param base string[]
 ---@param patch treemotion.InsignificantCharacterList
@@ -421,27 +350,11 @@ local function _apply_negations(base, patch)
     return result
 end
 
---- Look up `language`'s insignificant leaf texts -- leaf-level tokens (e.g.
---- `";"`, `"{"`, `"}"`) that `w`/`e`/`b`/`ge`/`W`/`E`/`B`/`gE` treat as
---- invisible for **code** leaves (see `_commands.motion.classify`'s
---- `is_insignificant` for why prose is exempt).
+--- `language`'s insignificant characters: the user's list, the user's
+--- removals applied to the optional list, or the optional list when its
+--- parser is installed.
 ---
---- Which punctuation counts as "insignificant" is mostly a personal taste
---- call, not an objective fact about a grammar the way comment syntax is
---- (see `_OPTIONAL_INSIGNIFICANT_CHARACTERS`'s docstring), so this stays
---- opt-in via `commands.motion.insignificant_characters` for the vast
---- majority of languages. `_OPTIONAL_INSIGNIFICANT_CHARACTERS` is the
---- narrow, curated exception: entries there resolve the same way
---- `M.get_comment_markers`'s `_OPTIONAL_COMMENT_MARKERS` fallback does, only
---- once `vim.treesitter.language.add(language)` confirms the parser is
---- actually installed -- unless the user's own override negates one of its
---- characters (see `_has_negation`/`_apply_negations`), in which case the
---- override is treated as a patch on top of it instead of a full
---- replacement, and applies regardless of whether the parser check would
---- have passed (the user typed the language name themselves, so there's no
---- "auto-detected" ambiguity to gate on).
----
----@param language string A treesitter language name.
+---@param language string
 ---@return string[]?
 ---
 function M.get_insignificant_characters(language)
@@ -466,15 +379,9 @@ function M.get_insignificant_characters(language)
     return nil
 end
 
---- Merge `data` into the current configuration, in-place.
+--- Merge `data` into `M.DATA` permanently (used by `setup()`).
 ---
---- Unlike `M.resolve_data()`, this permanently updates `M.DATA` rather than
---- returning a one-off merged copy. Use this to apply configuration after
---- `M.initialize_data_if_needed()` has already run and latched (e.g. from a
---- plugin manager's `opts` table, which is applied after `require()` has
---- already triggered initialization).
----
----@param data treemotion.Configuration? Extra customizations to apply now.
+---@param data treemotion.Configuration?
 ---
 function M.merge_data(data)
     M.initialize_data_if_needed()
@@ -482,24 +389,17 @@ function M.merge_data(data)
     M.DATA = vim.tbl_deep_extend("force", M.DATA, data or {})
 end
 
---- Turn `kind` on, replacing whichever hint kind (if any) was previously active.
----
----@param kind treemotion.HintKind Which hints to show. e.g. `"word_boundaries"`.
+---@param kind treemotion.HintKind
 ---
 function M.set_hints(kind)
     M.initialize_data_if_needed()
 
-    -- Replace `M.DATA` rather than editing it, so a table `M.resolve_data()`
-    -- already handed out never changes underneath its holder.
     M.DATA = vim.tbl_extend("force", M.DATA, { hints = kind })
 end
 
---- Turn `kind` on if it isn't already active, otherwise turn all hints off.
+--- Turn `kind` on, or all hints off if `kind` is already on.
 ---
---- Because `M.DATA.hints` holds a single value, enabling `kind` always
---- implicitly disables whichever other kind was previously active.
----
----@param kind treemotion.HintKind Which hints to toggle. e.g. `"word_boundaries"`.
+---@param kind treemotion.HintKind
 ---
 function M.toggle_hints(kind)
     if M.resolve_data().hints == kind then

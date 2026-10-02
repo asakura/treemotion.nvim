@@ -1,21 +1,4 @@
---- Sub-word-aware unit traversal for `W`/`E`/`B`/`gE`.
----
---- Mirrors `_commands.motion.word` one level coarser: where `word.lua` steps
---- through case-convention sub-words *inside* a single treesitter leaf,
---- this steps through them inside a whole *run* of contiguous leaves (see
---- `_commands.motion.run`). By
---- default (`commands.motion.big.enabled = false`) a run is always exactly
---- one stop, ignoring case/delimiters entirely -- the same way real Vim's
---- `W` ignores punctuation inside a WORD; `subword.split_run()` is what
---- decides that, this module only adds the "next"/"previous" traversal on
---- top of whatever it returns.
----
---- The stepping itself is `_commands.motion.unit`'s, shared with
---- `_commands.motion.word`; this module only defines what a span is (a whole
---- run) and how to get past one. A unit's `_leaf` holds the run's *start*
---- leaf specifically (not just any leaf in it), since that's what
---- `run.run_end`/`leaf.previous_leaf` need to re-derive the run's bounds
---- when stepping past it.
+--- `W`/`E`/`B`/`gE` units: the sub-words of a whole run of contiguous leaves.
 
 local classify = require("treemotion._commands.motion.classify")
 local leaf = require("treemotion._commands.motion.leaf")
@@ -27,19 +10,11 @@ local unit = require("treemotion._commands.motion.unit")
 
 local M = {}
 
---- Whether every leaf in the run from `run_start` to `run_end` is
---- `classify.is_insignificant` -- i.e. the whole run is punctuation the user
---- has configured as invisible (`commands.motion.insignificant_characters`),
---- not just one leaf within an otherwise-significant run.
+--- Whether every leaf from `run_start` to `run_end` is insignificant.
 ---
---- A run that *mixes* insignificant and significant leaves (`foo;bar`) is
---- still one `W`/`E`/`B`/`gE` stop; only a run that's *entirely*
---- insignificant (an isolated `;` with whitespace on both sides) is
---- skipped.
----
----@param run_start TSNode The run's first leaf.
----@param run_end TSNode The run's last leaf.
----@param characters string[]? The current language's insignificant leaf texts.
+---@param run_start TSNode
+---@param run_end TSNode
+---@param characters string[]?
 ---@return boolean
 ---
 local function _run_is_insignificant(run_start, run_end, characters)
@@ -58,29 +33,13 @@ local function _run_is_insignificant(run_start, run_end, characters)
     end
 end
 
---- Walk from `node` in `forward`'s direction until finding a leaf whose
---- *run* `subword.split_run()` actually produces units for, and that isn't
---- `_run_is_insignificant` either.
+--- From `node`'s run, find the first run in `forward`'s direction that is
+--- significant and has units. Steps a whole run at a time.
 ---
---- Steps a whole run at a time, not one leaf at a time (unlike `word.lua`'s
---- `_first_nonempty_split`): once a run turns out empty (an
---- `commands.motion.big.enabled = true` run that's entirely a dropped
---- `"skip"` delimiter run, see `subword.split_run`'s docstring) or entirely
---- insignificant (see `_run_is_insignificant` -- checked *before*
---- `subword.split_run` runs at all, since `split_run` has no notion of
---- insignificance of its own and, in the `enabled = false` default, never
---- produces an empty result regardless of a run's content), the next
---- candidate is the leaf right after (or before) that *whole* run --
---- `leaf.next_leaf(run_end)`/`leaf.previous_leaf(run_start)` -- not just the
---- next leaf inside it, since every leaf inside the same run would
---- re-derive the exact same (empty, or insignificant) run again.
----
----@param node TSNode? Where to start looking.
----@param forward boolean Search after `node` (`leaf.next_leaf` off each empty run's end) or
----    before it (`leaf.previous_leaf` off each empty run's start).
----@param settings treemotion.SplitSettings Passed to `subword.split_run`.
----@return TSNode?, treemotion.SubwordUnit[]? # The first nonempty, significant
----    run's *start* leaf, and its units -- both `nil` if none remain.
+---@param node TSNode?
+---@param forward boolean
+---@param settings treemotion.SplitSettings
+---@return TSNode?, treemotion.SubwordUnit[]? # The run's start leaf and its units.
 ---
 local function _first_nonempty_split(node, forward, settings)
     while node do
@@ -101,19 +60,14 @@ local function _first_nonempty_split(node, forward, settings)
     return nil, nil
 end
 
---- Step past the run whose start leaf is `run_start`.
----
----@param run_start TSNode The run's first leaf.
----@return TSNode? # The leaf right after the run's end, if any.
+---@param run_start TSNode
+---@return TSNode? # The leaf after the run.
 ---
 local function _after_run(run_start)
     return leaf.next_leaf(run.run_end(run_start))
 end
 
---- Build a `treemotion._UnitSource` stepping through `W`/`E`/`B`/`gE` units.
----
----@param settings treemotion.SplitSettings `commands.motion.big`'s settings
----    (see `_commands.motion.settings.resolve`).
+---@param settings treemotion.SplitSettings
 ---@return treemotion._UnitSource
 ---
 function M.new_source(settings)
