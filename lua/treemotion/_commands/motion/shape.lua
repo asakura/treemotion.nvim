@@ -22,85 +22,72 @@
 --- API, so each shape takes the family to step through as its `units`
 --- argument.
 ---
+--- Each shape is a pure *step* (`M.next_start`, `M.previous_end`,
+--- `M.next_end`, `M.previous_start`): given a position, it returns where
+--- the motion lands, without reading or moving the cursor. The
+--- cursor-moving motions (`M.forward_to_start`, ...) are thin wrappers
+--- around those steps.
+---
 --- `_commands.motion.runner` picks a shape per motion name, and
---- `_commands.motion.operator` runs the same shapes under an operator.
+--- `_commands.motion.operator` measures ranges with the same steps.
 
 local codepoint = require("treemotion._commands.motion.codepoint")
 local position = require("treemotion._commands.motion.position")
 
 local M = {}
 
---- Move the cursor to `node`'s first character.
----
---- Converts `TSNode`/`treemotion.MotionUnit`'s 0-indexed row to
---- `nvim_win_set_cursor`'s 1-indexed row; the column needs no conversion,
---- since both are already 0-indexed.
+--- `node`'s first character.
 ---
 ---@param node TSNode|treemotion.MotionUnit Anything with a `:start()` -- a leaf or unit.
-local function _set_cursor_to_start(node)
-    local row, column = node:start()
-
-    vim.api.nvim_win_set_cursor(0, { row + 1, column })
+---@return integer, integer
+local function _start_of(node)
+    return position.clamp(node:start())
 end
 
---- Move the cursor to `node`'s last character.
+--- `node`'s last character.
 ---
 --- `node:end_()` is the column *after* the last character (exclusive), so
 --- this steps back to the character itself via `codepoint.last_character_column`,
 --- landing on its lead byte even when it's multi-byte UTF-8.
 ---
 ---@param node TSNode|treemotion.MotionUnit Anything with an `:end_()` -- a leaf or unit.
-local function _set_cursor_to_end(node)
+---@return integer, integer
+local function _end_of(node)
     local row, column = node:end_()
 
-    vim.api.nvim_win_set_cursor(0, { row + 1, codepoint.last_character_column(row, column) })
+    return position.clamp(row, codepoint.last_character_column(row, column))
 end
 
---- Check if the cursor already sits on `node`'s first character.
+--- Check if `row`/`column` already sits on `node`'s first character.
 ---
 --- `b`/`B` use this to decide whether to retreat to the *previous* unit, or
 --- just snap to the start of the current one -- mirroring how real Vim's
 --- `b` only skips the current word if the cursor is already at its start.
 ---
 ---@param node TSNode|treemotion.MotionUnit
----@return boolean # `true` if the cursor already sits on `node`'s start.
-local function _is_cursor_at_start(node)
-    local row, column = node:start()
-    local cursor_row, cursor_column = position.cursor_position()
+---@param row integer
+---@param column integer
+---@return boolean # `true` if `row`/`column` already sits on `node`'s start.
+local function _is_at_start(node, row, column)
+    local start_row, start_column = node:start()
 
-    return cursor_row == row and cursor_column == column
+    return row == start_row and column == start_column
 end
 
---- Check if the cursor already sits on `node`'s last character.
+--- Check if `row`/`column` already sits on `node`'s last character.
 ---
 --- `e`/`E` use this to decide whether to advance to the *next* unit, or
 --- just snap to the end of the current one -- mirroring how real Vim's `e`
 --- only skips the current word if the cursor is already at its end.
 ---
 ---@param node TSNode|treemotion.MotionUnit
----@return boolean # `true` if the cursor already sits on `node`'s (inclusive) end.
-local function _is_cursor_at_end(node)
-    local row, column = node:end_()
-    column = codepoint.last_character_column(row, column)
-    local cursor_row, cursor_column = position.cursor_position()
+---@param row integer
+---@param column integer
+---@return boolean # `true` if `row`/`column` already sits on `node`'s (inclusive) end.
+local function _is_at_end(node, row, column)
+    local end_row, end_column = node:end_()
 
-    return cursor_row == row and cursor_column == column
-end
-
---- Check if the cursor sits anywhere within `node`'s range.
----
---- `w`/`ge` (and their `W`/`gE` counterparts) use this to tell a *real*
---- current unit -- the cursor genuinely sitting inside it -- apart from one
---- `leaf.current_leaf()`/`word.current_unit()` had to substitute because the
---- cursor was in a gap no unit covers (e.g. a blank line): in that case
---- `node` is already the nearest unit in the direction they're moving, so
---- unconditionally stepping to the *next*/*previous* one from there would
---- overshoot by one. See `M.forward_to_start`/`M.backward_to_end`.
----
----@param node TSNode|treemotion.MotionUnit
----@return boolean # `true` if the cursor is inside `node`'s range, `false` for a gap `node` substitutes for.
-local function _is_cursor_inside(node)
-    return position.contains(node, position.cursor_position())
+    return row == end_row and column == codepoint.last_character_column(end_row, end_column)
 end
 
 --- The unit-stepping API `_commands.motion.word` and `_commands.motion.bigword` share.
@@ -112,127 +99,193 @@ end
 --- `_commands.motion.unit.new_source`.
 ---
 ---@class treemotion._UnitSource
----@field current_unit fun(forward: boolean): treemotion.MotionUnit?, TSNode?
----    The unit under (or nearest) the cursor, and the leaf under (or nearest) the cursor.
+---@field unit_at fun(row: integer, column: integer, forward: boolean): treemotion.MotionUnit?, TSNode?
+---    The unit at (or nearest) a position, and the leaf at (or nearest) it.
 ---@field next_unit fun(unit: treemotion.MotionUnit): treemotion.MotionUnit?
 ---@field previous_unit fun(unit: treemotion.MotionUnit): treemotion.MotionUnit?
 ---@field span_end fun(node: TSNode): integer, integer Where the span containing the leaf `node` ends.
 
---- Any one of the shapes below.
+--- Any one of the steps below: where the motion lands from a position.
+---
+--- Returns the position it started from when there's nowhere to go.
+---
+-- luacheck: push ignore 631
+---@alias treemotion._Step fun(units: treemotion._UnitSource, row: integer, column: integer, count: integer): integer, integer
+-- luacheck: pop
+
+--- Any one of the cursor-moving motions below.
 ---
 ---@alias treemotion._Move fun(units: treemotion._UnitSource, count: integer): any
 
---- `w`/`W`-shape move: unconditionally advance to the start of the next unit.
+--- `w`/`W`-shape step: unconditionally advance to the start of the next unit.
 ---
 --- Over `_commands.motion.word` units, a single leaf like `fooBar` counts
 --- as more than one stop. Over `_commands.motion.bigword` units, a single
 --- run counts as more than one stop once `commands.motion.big.enabled` is
 --- `true` (it's exactly one stop by default, see
---- `bigword.current_unit`/`subword.split_run`). Either way, the gap
---- substitution rule applies -- see `_is_cursor_inside`.
+--- `bigword.new_source`/`subword.split_run`).
+---
+--- `units.unit_at` substitutes the nearest unit ahead when the position
+--- sits in a gap no unit covers (e.g. a blank line). That unit is already
+--- the next one, so stepping past it would overshoot by one: a position
+--- outside the unit it gets lands on that unit instead.
 ---
 ---@param units treemotion._UnitSource From `word.new_source` or `bigword.new_source`.
+---@param row integer 0-indexed row to start from.
+---@param column integer 0-indexed column to start from.
 ---@param count integer How many units to move over.
+---@return integer, integer # Where the step lands.
 ---
-function M.forward_to_start(units, count)
+function M.next_start(units, row, column, count)
     for _ = 1, count do
-        local unit = units.current_unit(true)
+        local unit = units.unit_at(row, column, true)
 
         if not unit then
-            return
+            break
         end
 
-        if not _is_cursor_inside(unit) then
-            _set_cursor_to_start(unit)
-        else
-            local next_ = units.next_unit(unit)
-
-            if not next_ then
-                return
-            end
-
-            _set_cursor_to_start(next_)
-        end
-    end
-end
-
---- `ge`/`gE`-shape move: unconditionally retreat to the end of the previous unit.
----
---- Same gap substitution rule as `M.forward_to_start` -- see `_is_cursor_inside`.
----
----@param units treemotion._UnitSource From `word.new_source` or `bigword.new_source`.
----@param count integer How many units to move over.
----
-function M.backward_to_end(units, count)
-    for _ = 1, count do
-        local unit = units.current_unit(false)
-
-        if not unit then
-            return
-        end
-
-        if not _is_cursor_inside(unit) then
-            _set_cursor_to_end(unit)
-        else
-            local previous = units.previous_unit(unit)
-
-            if not previous then
-                return
-            end
-
-            _set_cursor_to_end(previous)
-        end
-    end
-end
-
---- `e`/`E`-shape move: advance to the end of the current unit, or the next one if already there.
----
----@param units treemotion._UnitSource From `word.new_source` or `bigword.new_source`.
----@param count integer How many units to move over.
----
-function M.forward_to_end(units, count)
-    for _ = 1, count do
-        local unit = units.current_unit(true)
-
-        if not unit then
-            return
-        end
-
-        if _is_cursor_at_end(unit) then
+        if position.contains(unit, row, column) then
             unit = units.next_unit(unit)
 
             if not unit then
-                return
+                break
             end
         end
 
-        _set_cursor_to_end(unit)
+        row, column = _start_of(unit)
     end
+
+    return row, column
 end
 
---- `b`/`B`-shape move: retreat to the start of the current unit, or the previous one if already there.
+--- `ge`/`gE`-shape step: unconditionally retreat to the end of the previous unit.
+---
+--- Same gap substitution rule as `M.next_start`, mirrored.
 ---
 ---@param units treemotion._UnitSource From `word.new_source` or `bigword.new_source`.
+---@param row integer 0-indexed row to start from.
+---@param column integer 0-indexed column to start from.
 ---@param count integer How many units to move over.
+---@return integer, integer # Where the step lands.
 ---
-function M.backward_to_start(units, count)
+function M.previous_end(units, row, column, count)
     for _ = 1, count do
-        local unit = units.current_unit(false)
+        local unit = units.unit_at(row, column, false)
 
         if not unit then
-            return
+            break
         end
 
-        if _is_cursor_at_start(unit) then
+        if position.contains(unit, row, column) then
             unit = units.previous_unit(unit)
 
             if not unit then
-                return
+                break
             end
         end
 
-        _set_cursor_to_start(unit)
+        row, column = _end_of(unit)
+    end
+
+    return row, column
+end
+
+--- `e`/`E`-shape step: advance to the end of the current unit, or the next one if already there.
+---
+---@param units treemotion._UnitSource From `word.new_source` or `bigword.new_source`.
+---@param row integer 0-indexed row to start from.
+---@param column integer 0-indexed column to start from.
+---@param count integer How many units to move over.
+---@return integer, integer # Where the step lands.
+---
+function M.next_end(units, row, column, count)
+    for _ = 1, count do
+        local unit = units.unit_at(row, column, true)
+
+        if not unit then
+            break
+        end
+
+        if _is_at_end(unit, row, column) then
+            unit = units.next_unit(unit)
+
+            if not unit then
+                break
+            end
+        end
+
+        row, column = _end_of(unit)
+    end
+
+    return row, column
+end
+
+--- `b`/`B`-shape step: retreat to the start of the current unit, or the previous one if already there.
+---
+---@param units treemotion._UnitSource From `word.new_source` or `bigword.new_source`.
+---@param row integer 0-indexed row to start from.
+---@param column integer 0-indexed column to start from.
+---@param count integer How many units to move over.
+---@return integer, integer # Where the step lands.
+---
+function M.previous_start(units, row, column, count)
+    for _ = 1, count do
+        local unit = units.unit_at(row, column, false)
+
+        if not unit then
+            break
+        end
+
+        if _is_at_start(unit, row, column) then
+            unit = units.previous_unit(unit)
+
+            if not unit then
+                break
+            end
+        end
+
+        row, column = _start_of(unit)
+    end
+
+    return row, column
+end
+
+--- Turn `step` into a motion that moves the cursor.
+---
+--- The cursor is left alone when the step goes nowhere, so a motion that
+--- can't move doesn't reset the column `j`/`k` aim for.
+---
+---@param step treemotion._Step
+---@return treemotion._Move
+local function _moving(step)
+    return function(units, count)
+        local row, column = position.cursor_position()
+        local target_row, target_column = step(units, row, column, count)
+
+        if target_row ~= row or target_column ~= column then
+            vim.api.nvim_win_set_cursor(0, { target_row + 1, target_column })
+        end
     end
 end
+
+--- `w`/`W`: move the cursor by `M.next_start`.
+---
+---@type fun(units: treemotion._UnitSource, count: integer)
+M.forward_to_start = _moving(M.next_start)
+
+--- `ge`/`gE`: move the cursor by `M.previous_end`.
+---
+---@type fun(units: treemotion._UnitSource, count: integer)
+M.backward_to_end = _moving(M.previous_end)
+
+--- `e`/`E`: move the cursor by `M.next_end`.
+---
+---@type fun(units: treemotion._UnitSource, count: integer)
+M.forward_to_end = _moving(M.next_end)
+
+--- `b`/`B`: move the cursor by `M.previous_start`.
+---
+---@type fun(units: treemotion._UnitSource, count: integer)
+M.backward_to_start = _moving(M.previous_start)
 
 return M

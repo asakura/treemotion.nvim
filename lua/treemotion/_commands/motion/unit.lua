@@ -3,11 +3,11 @@
 --- Both modules step through `treemotion.SubwordUnit` slices of some
 --- *span* of treesitter leaves -- a single leaf for `w`/`e`/`b`/`ge`, a
 --- whole run of contiguous leaves for `W`/`E`/`B`/`gE` -- and the stepping
---- itself is identical: pick the slice under the cursor, bump an index
+--- itself is identical: pick the slice at a position, bump an index
 --- while the span still has slices left, and only once it runs out reach
 --- for the neighboring span. The only thing that differs is how a span is
 --- found and split, and how to get past one, so `M.new_source` takes
---- exactly those as callbacks and builds the `current_unit`/`next_unit`/
+--- exactly those as callbacks and builds the `unit_at`/`next_unit`/
 --- `previous_unit` API (see `treemotion._UnitSource` in
 --- `_commands.motion.shape`) on top of them.
 ---
@@ -20,7 +20,6 @@
 local logging = require("mega.logging")
 
 local leaf = require("treemotion._commands.motion.leaf")
-local position = require("treemotion._commands.motion.position")
 
 local M = {}
 
@@ -74,23 +73,23 @@ end
 --- direction to) `row`/`column`.
 ---
 --- Sub-word slices aren't real tree nodes, so there's no `vim.treesitter.get_node()`
---- equivalent to ask "which one is the cursor on" -- this does the same job
+--- equivalent to ask "which one is at this position" -- this does the same job
 --- by hand, scanning in document order for the first unit whose end lands
---- after the cursor. When the cursor sits genuinely inside a unit, that unit
+--- after the position. When the position sits genuinely inside a unit, that unit
 --- wins regardless of direction; when it sits in a *gap* between two units
 --- (e.g. the blank column between two words, once `w`/`ge`'s "already
 --- inside" check falls through to here), `forward` decides which side of
 --- the gap to prefer -- the unit after it (matching the old, direction-blind
 --- behavior) or the one before it, so `b`/`ge` retreat instead of
---- overshooting forward. Falling off the end (cursor past every unit)
+--- overshooting forward. Falling off the end (position past every unit)
 --- returns the last unit rather than nothing, since the caller always needs
 --- a concrete unit to treat as "current."
 ---
 ---@param units treemotion.SubwordUnit[] A span's sub-word units, in document order.
----@param row integer 0-indexed cursor row.
----@param column integer 0-indexed cursor column.
+---@param row integer 0-indexed row.
+---@param column integer 0-indexed column.
 ---@param forward boolean Which side of a gap between two units to prefer.
----@return integer # The 1-indexed unit to treat as "under the cursor".
+---@return integer # The 1-indexed unit to treat as "at the position".
 ---
 local function _index_at(units, row, column, forward)
     for index, unit in ipairs(units) do
@@ -103,7 +102,7 @@ local function _index_at(units, row, column, forward)
             local after_start = start_row < row or (start_row == row and start_column <= column)
 
             if after_start then
-                return index -- cursor is genuinely inside this unit
+                return index -- the position is genuinely inside this unit
             end
 
             if forward or index == 1 then
@@ -160,27 +159,29 @@ function M.new_source(spans)
 
     local source = {}
 
-    --- Find the sub-word unit under the cursor.
+    --- Find the sub-word unit at `row`/`column`.
     ---
-    --- Finds the leaf under the cursor (`leaf.current_leaf()`), finds the
-    --- first nonempty span from there (`spans.first_nonempty`), then picks
-    --- out the right slice with `_index_at`. Everything gets recomputed from
-    --- scratch here, unlike `next_unit`/`previous_unit`, since there's no
-    --- previous unit to step from yet.
+    --- Finds the leaf at the position (`leaf.leaf_at()`), finds the first
+    --- nonempty span from there (`spans.first_nonempty`), then picks out the
+    --- right slice with `_index_at`. Everything gets recomputed from scratch
+    --- here, unlike `next_unit`/`previous_unit`, since there's no previous
+    --- unit to step from yet.
     ---
-    ---@param forward boolean Forwarded to `leaf.current_leaf()`: which nearby
+    ---@param row integer 0-indexed row.
+    ---@param column integer 0-indexed column.
+    ---@param forward boolean Forwarded to `leaf.leaf_at()`: which nearby
     ---    leaf to prefer off a leaf (e.g. blank line); also which direction to
     ---    skip empty spans in.
-    ---@return treemotion.MotionUnit? # The unit under (or nearest) the cursor, if a parser and a leaf exist that way.
-    ---@return TSNode? # The leaf under (or nearest) the cursor that the search started from, which
+    ---@return treemotion.MotionUnit? # The unit at (or nearest) the position, if a parser and a leaf exist that way.
+    ---@return TSNode? # The leaf at (or nearest) the position that the search started from, which
     ---    may have no units of its own (e.g. an insignificant leaf).
-    function source.current_unit(forward)
-        local name = string.format("current_unit(forward=%s)", forward)
-        local cursor_leaf = leaf.current_leaf(forward)
-        local node, units = spans.first_nonempty(cursor_leaf, forward)
+    function source.unit_at(row, column, forward)
+        local name = string.format("unit_at(%s:%s, forward=%s)", row, column, forward)
+        local start_leaf = leaf.leaf_at(row, column, forward)
+        local node, units = spans.first_nonempty(start_leaf, forward)
 
         if not node then
-            return _log(name, nil), cursor_leaf
+            return _log(name, nil), start_leaf
         end
 
         -- `units` is only `nil` when `node` is (see `spans.first_nonempty`),
@@ -188,9 +189,7 @@ function M.new_source(spans)
         -- `assert` narrows it back to non-optional for `_new_unit`/`_index_at`.
         units = assert(units)
 
-        local row, column = position.cursor_position()
-
-        return _log(name, _new_unit(node, units, _index_at(units, row, column, forward), spans.span_end)), cursor_leaf
+        return _log(name, _new_unit(node, units, _index_at(units, row, column, forward), spans.span_end)), start_leaf
     end
 
     --- Find the sub-word unit directly after `unit`, in document order.
@@ -249,7 +248,7 @@ function M.new_source(spans)
     --- Where the span containing the leaf `node` ends (exclusive).
     ---
     --- The same as `treemotion.MotionUnit:span_end`, for a leaf that may have
-    --- no units of its own (see `current_unit`'s second return value).
+    --- no units of its own (see `unit_at`'s second return value).
     ---
     ---@param node TSNode Any leaf.
     ---@return integer, integer

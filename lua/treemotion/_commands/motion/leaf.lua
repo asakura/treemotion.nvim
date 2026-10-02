@@ -24,7 +24,6 @@ local logging = require("mega.logging")
 
 local injection = require("treemotion._commands.motion.injection")
 local leaf_shape = require("treemotion._commands.motion.leaf_shape")
-local position = require("treemotion._commands.motion.position")
 
 local _LOGGER = logging.get_logger("treemotion._commands.motion.leaf")
 
@@ -88,10 +87,13 @@ end
 
 --- The leaf at (or nearest to) `row`/`column` within `ltree`.
 ---
---- The same resolution `M.current_leaf` does for the cursor, for an
---- arbitrary tree and position. Used by `M.current_leaf` once the cursor is
---- known to be inside an injection, and to enter an injected piece at its
---- exact start or end.
+--- `M.leaf_at` resolves the buffer's root tree with this, then recurses
+--- through it into injected trees. Also used to enter an injected piece at
+--- its exact start or end.
+---
+--- The node is looked up with `descendant_for_range()` (`node_for_range`),
+--- not the named-only variant: a position on (usually unnamed) punctuation
+--- must resolve to the punctuation itself, not its parent.
 ---
 --- Settles upward past partial-coverage parents (`leaf_shape.settle`), since
 --- an injected tree can have that shape too (e.g. `markdown_inline`'s
@@ -117,7 +119,9 @@ local function _leaf_at(ltree, row, column, forward)
     local child_ltree, piece = injection.injected_content(node)
 
     if child_ltree then
-        -- See `M.current_leaf`'s identical `assert` for why this is safe.
+        -- `injection.injected_content` returns `child_ltree` and `piece`
+        -- together (both `nil`, or both set); `assert` narrows `piece` to
+        -- non-optional for `injection.within_piece`.
         piece = assert(piece)
         local entry = _leaf_at(child_ltree, row, column, forward)
 
@@ -184,26 +188,27 @@ function M.logged(name, fn, describe_args)
     end
 end
 
---- Find the leaf directly under the cursor, or nearest it.
+--- Find the leaf at `row`/`column`, or nearest it.
 ---
---- When the cursor sits in a gap no leaf covers (most commonly a blank
---- line), `get_node()` returns an ancestor rather than a leaf, and
---- `_nearest_leaf_in_gap` finds the real leaf before or after the gap.
+--- When the position sits in a gap no leaf covers (most commonly a blank
+--- line), the smallest node containing it is an ancestor rather than a
+--- leaf, and `_nearest_leaf_in_gap` finds the real leaf before or after the
+--- gap.
 ---
---- `get_node()`'s result is first settled upward past partial-coverage
---- parents (`leaf_shape.settle`), so a cursor on such a node's child
---- resolves to the same leaf that `M.first_leaf` would descend to.
+--- Resolves in the host grammar only (`ignore_injections = true`, see
+--- `_leaf_at`) and then asks `injection.injected_content` whether that node
+--- is injected content. Following injections straight away would also
+--- follow highlight-only injections (e.g. a C comment injected as the
+--- `comment` language) down to a single marker token.
 ---
---- Resolves in the host grammar only (`ignore_injections = true`) and then
---- asks `injection.injected_content` whether that node is injected content.
---- Letting `get_node()` follow injections by itself would also follow
---- highlight-only injections (e.g. a C comment injected as the `comment`
---- language) down to a single marker token.
+--- Never reads or moves the cursor, so callers can ask about any position.
 ---
----@param forward boolean Off a leaf, prefer the nearest leaf after the cursor over the nearest one before it.
----@return TSNode? # The leaf under (or nearest) the cursor, if a parser and a leaf exist that way.
+---@param row integer 0-indexed row.
+---@param column integer 0-indexed column.
+---@param forward boolean Off a leaf, prefer the nearest leaf after the position over the nearest one before it.
+---@return TSNode? # The leaf at (or nearest) the position, if a parser and a leaf exist that way.
 ---
-M.current_leaf = M.logged("current_leaf", function(forward)
+M.leaf_at = M.logged("leaf_at", function(row, column, forward)
     -- `get_parser()` returns `nil, message` when no parser can be created on
     -- some Neovim versions, but `error()`s with the same message on others
     -- (e.g. 0.11) -- `pcall` handles both the same way.
@@ -213,46 +218,17 @@ M.current_leaf = M.logged("current_leaf", function(forward)
         return nil
     end
 
-    -- `get_node()` can return a stale node from an unparsed tree, so parse
-    -- the root tree at the cursor first. The range is one column wide, not
-    -- zero-width: `LanguageTree:parse()` mishandles a zero-width range at an
-    -- injected region's exact start. Injected trees elsewhere are parsed
-    -- lazily by `injection.injected_content` as a walk reaches them. See
+    -- A node can be stale in an unparsed tree, so parse the root tree at the
+    -- position first. The range is one column wide, not zero-width:
+    -- `LanguageTree:parse()` mishandles a zero-width range at an injected
+    -- region's exact start. Injected trees elsewhere are parsed lazily by
+    -- `injection.injected_content` as a walk reaches them. See
     -- `notes/injection-parse-performance.md`.
-    local row, column = position.cursor_position()
     parser:parse({ row, column, row, column + 1 })
 
-    -- Without `include_anonymous`, `get_node()` only returns named nodes, so
-    -- a cursor on (usually unnamed) punctuation would resolve to its parent.
-    local node = vim.treesitter.get_node({ include_anonymous = true })
-
-    if not node then
-        return nil
-    end
-
-    node = leaf_shape.settle(node)
-
-    local child_ltree, piece = injection.injected_content(node)
-
-    if child_ltree then
-        -- `injection.injected_content` returns `child_ltree` and `piece`
-        -- together (both `nil`, or both set); `assert` narrows `piece` to
-        -- non-optional for `injection.within_piece`.
-        piece = assert(piece)
-        local entry = _leaf_at(child_ltree, row, column, forward)
-
-        if entry and injection.within_piece(entry, piece) then
-            return entry
-        end
-    end
-
-    if leaf_shape.is_leaf(node) then
-        return node
-    end
-
-    return _nearest_leaf_in_gap(node, row, column, forward)
-end, function(forward)
-    return string.format("forward=%s", forward)
+    return _leaf_at(parser, row, column, forward)
+end, function(row, column, forward)
+    return string.format("%s:%s, forward=%s", row, column, forward)
 end)
 
 --- The first real leaf inside `piece` of `ltree`, or `nil` if `piece` has no
@@ -302,7 +278,7 @@ function M.first_leaf(node)
     local child_ltree, piece = injection.injected_content(node)
 
     if child_ltree then
-        -- See `M.current_leaf`'s identical `assert` for why this is safe.
+        -- See `_leaf_at`'s identical `assert` for why this is safe.
         local entry = _first_leaf_in_piece(child_ltree, assert(piece))
 
         if entry then
@@ -328,7 +304,7 @@ function M.last_leaf(node)
     local child_ltree, piece = injection.injected_content(node)
 
     if child_ltree then
-        -- See `M.current_leaf`'s identical `assert` for why this is safe.
+        -- See `_leaf_at`'s identical `assert` for why this is safe.
         local entry = _last_leaf_in_piece(child_ltree, assert(piece))
 
         if entry then

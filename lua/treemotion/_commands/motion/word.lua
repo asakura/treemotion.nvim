@@ -29,7 +29,7 @@ local M = {}
 --- zero units -- it has no content of its own, just the tail of the
 --- previous leaf's punctuation run -- so it should never be a landing spot.
 --- `node` itself is checked first, so passing a leaf straight from
---- `leaf.current_leaf()` (which may or may not already be empty) works the
+--- `leaf.leaf_at()` (which may or may not already be empty) works the
 --- same as passing one already stepped past a known-empty leaf.
 ---
 ---@param node TSNode? Where to start looking.

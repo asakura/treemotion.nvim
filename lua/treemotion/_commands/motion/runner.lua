@@ -21,10 +21,11 @@ local _LOGGER = logging.get_logger("treemotion._commands.motion.runner")
 local M = {}
 
 ---@class treemotion._Motion
----@field move treemotion._Move One of `_commands.motion.shape`'s shapes.
----@field operator treemotion._OperatorMove? How `move` runs under an operator (see
----    `_commands.motion.operator`). `nil` runs `move` unchanged, as for `b`/`B`,
----    which are exclusive in Vim too.
+---@field move treemotion._Move One of `_commands.motion.shape`'s cursor-moving shapes.
+---@field step treemotion._Step The position-based step `move` wraps.
+---@field operator treemotion._OperatorMove? How the motion runs under an operator,
+---    measured with `step` (see `_commands.motion.operator`). `nil` runs `move`
+---    unchanged, as for `b`/`B`, which are exclusive in Vim too.
 ---@field units {new_source: fun(settings: treemotion.SplitSettings): treemotion._UnitSource}
 ---    `_commands.motion.word` or `_commands.motion.bigword`.
 ---@field group "small"|"big" Which `commands.motion` group configures `units`.
@@ -38,26 +39,52 @@ local M = {}
 ---
 ---@type table<string, treemotion._Motion>
 local _MOTIONS = {
-    w = { move = shape.forward_to_start, operator = operator.forward_to_start, units = word, group = "small" },
+    w = {
+        move = shape.forward_to_start,
+        step = shape.next_start,
+        operator = operator.forward_to_start,
+        units = word,
+        group = "small",
+    },
     ge = {
         move = shape.backward_to_end,
+        step = shape.previous_end,
         operator = operator.inclusive,
         units = word,
         group = "small",
         backward_inclusive = true,
     },
-    e = { move = shape.forward_to_end, operator = operator.inclusive, units = word, group = "small" },
-    b = { move = shape.backward_to_start, units = word, group = "small" },
-    W = { move = shape.forward_to_start, operator = operator.forward_to_start, units = bigword, group = "big" },
+    e = {
+        move = shape.forward_to_end,
+        step = shape.next_end,
+        operator = operator.inclusive,
+        units = word,
+        group = "small",
+    },
+    b = { move = shape.backward_to_start, step = shape.previous_start, units = word, group = "small" },
+    W = {
+        move = shape.forward_to_start,
+        step = shape.next_start,
+        operator = operator.forward_to_start,
+        units = bigword,
+        group = "big",
+    },
     gE = {
         move = shape.backward_to_end,
+        step = shape.previous_end,
         operator = operator.inclusive,
         units = bigword,
         group = "big",
         backward_inclusive = true,
     },
-    E = { move = shape.forward_to_end, operator = operator.inclusive, units = bigword, group = "big" },
-    B = { move = shape.backward_to_start, units = bigword, group = "big" },
+    E = {
+        move = shape.forward_to_end,
+        step = shape.next_end,
+        operator = operator.inclusive,
+        units = bigword,
+        group = "big",
+    },
+    B = { move = shape.backward_to_start, step = shape.previous_start, units = bigword, group = "big" },
 }
 
 --- Get the motion called `name`.
@@ -164,7 +191,7 @@ function M.run(name, count)
     local pending = motion.operator and settings.resolve_operator()
 
     if pending then
-        motion.operator(units, count, pending, motion.move)
+        motion.operator(units, count, pending, motion.step)
     else
         motion.move(units, count)
     end
