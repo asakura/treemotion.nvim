@@ -1,4 +1,4 @@
-*treemotion.txt*       For Neovim >= 0.8.0      Last change: 2026 September 29
+*treemotion.txt*        For Neovim >= 0.8.0       Last change: 2026 October 02
 
 ==============================================================================
 Table of Contents                               *treemotion-table-of-contents*
