@@ -1,275 +1,139 @@
 ==============================================================================
 ------------------------------------------------------------------------------
-A collection of types to be included / used in other Lua files.
-
-These types are either required by the Lua API or required for the normal
-operation of this Lua plugin.
+Types for the configuration and the public API.
 
 ------------------------------------------------------------------------------
 *treemotion.Configuration*
-   The user's customizations for this plugin.
+   The user's customizations.
 
 Fields ~
     {commands} |treemotion.ConfigurationCommands|?
-       Customize the fallback behavior of all `:TreeMotion` commands.
-    {hints} ("word_boundaries" | "motions" | "none")?
-       Which motion hints are currently visible. Only one kind may be active
-       at a time.
     {logging} |treemotion.LoggingConfiguration|?
-       Control how and which logs print to file / Neovim.
 
 ------------------------------------------------------------------------------
 *treemotion.ResolvedConfiguration*
-   `treemotion.Configuration` after the plugin's defaults have been merged
-   in (see `configuration._DEFAULTS`). Unlike `treemotion.Configuration`,
-   which may be a partial user override (e.g. `vim.g.treemotion_configuration`),
-   every field here is guaranteed to be present.
+   `treemotion.Configuration` merged over the defaults: every field is set.
 
 Fields ~
     {logging} |treemotion.LoggingConfiguration|
-       Control how and which logs print to file / Neovim. Always present,
-       though its own `use_console` / `use_file` fields may both be `false`.
 
 ------------------------------------------------------------------------------
 *treemotion.ConfigurationCommands*
-   Customize the fallback behavior of all `:TreeMotion` commands.
 
 Fields ~
     {motion} |treemotion.ConfigurationMotion|?
-       Customize the `w`/`e`/`b`/`ge` sub-word splitting behavior.
 
 ------------------------------------------------------------------------------
 *treemotion.ConfigurationMotion*
-   Customize the `w`/`e`/`b`/`ge`/`W`/`E`/`B`/`gE` sub-word splitting behavior.
+   How the motions split text into stops.
 
 Fields ~
     {small} |treemotion.ConfigurationMotionGroup|?
-       Which naming conventions `w`/`e`/`b`/`ge` additionally split leaves on.
+       Rules for `w`/`e`/`b`/`ge`.
     {big} |treemotion.ConfigurationMotionGroup|?
-       Which naming conventions `W`/`E`/`B`/`gE` additionally split runs on.
-       Only takes effect once `enabled = true` -- by default `W`/`E`/`B`/`gE`
-       ignore case/delimiters entirely, the same way real Vim's `W` ignores
-       punctuation inside a WORD.
+       Rules for `W`/`E`/`B`/`gE`. Only used with `enabled = true`; otherwise a
+       WORD is one stop, as in Vim.
     {comment_markers} table<`(string)`, `(string)`[]>?
-       Which single characters count as comment-marker punctuation
-       (`comment_marker_case`'s target), keyed by treesitter language name
-       (`vim.treesitter.get_parser():lang()`, e.g. `"lua"`, `"c"`, `"vim"` --
-       not always the same as `'filetype'`; see `classify.comment_marker_characters`'s
-       docstring). Deliberately per-language rather than one fixed global set:
-       the same punctuation means different things in different grammars --
-       `"` opens a comment in Vimscript but closes a string everywhere else,
-       `;` ends a comment in a treesitter query file but ends a **statement** in
-       every C-family language -- so a character only gets `comment_marker_case`
-       treatment in the languages it's actually configured for here, never
-       globally. Unset entries fall back to `_DEFAULTS`' per-language list;
-       a language with no entry at all has no comment-marker characters, so
-       `comment_marker_case` is a no-op there until configured. `-`/`_` are no
-       exception to any of this -- despite also being `kebab_case`/`snake_case`'s
-       delimiters, a bare `-`/`_` run (a language's own comment opener, a
-       `-----` separator) only falls under `comment_marker_case` when the
-       language's own entry here lists that character; a language with no
-       `-`/`_` entry leaves a bare run of either under `kebab_case`/`snake_case`
-       instead, same as every other character (see `comment_marker_case`'s
-       docstring below). Beyond the languages shown here, roughly 120
-       additional languages are supported automatically, with no
-       configuration needed, as soon as their treesitter parser is installed
-       -- see `_OPTIONAL_COMMENT_MARKERS` in `configuration.lua` for the full
-       list and `configuration.get_comment_markers` for the resolution order.
+       Comment-marker characters per treesitter language (`"lua"`, `"c"`,
+       ...), which `comment_marker_case` applies to. Per language because the
+       same character means different things: `"` starts a Vimscript comment
+       but ends a string elsewhere. About 120 more languages are covered
+       automatically once their parser is installed.
     {operator_pending} |treemotion.ConfigurationMotionOperatorPending|?
-       How the motions behave after an operator (`dw`, `cw`, `de`, ...). Off
-       by default.
-    {in|s|ignific|a|nt_|ch|a|r|a|cter||s|} t|a|ble<`(|s|tring)`, (`(|s|tring)`[] | t|a|ble<`(|s|tring)`, `(boole|a|n)`>
-   |One| |l|a|ngu|a|ge|'|s| `in|s|ignific|a|nt_|ch|a|r|a|cter||s|` |entry.| U|s|u|a|lly |a| |pl|a|in|
-   ``(|s|tring)`[]` (|a| |full| |repl|a|cement| li|s|t, |e.g.| `{ ";" }`) -- |but| |a| `(|s|tring)`
-   |key| |m|a|pped| |to| `f|a|l|s|e` (|e.g.| `{ [";"] = f|a|l|s|e }`, |option|a|lly| |a|long|s|ide
-   |ordin|a|ry| `(|s|tring)` element|s| |to| ||a|dd|) in|s|te|a|d p|a|tche|s|
-   `_OPTIONAL_INSIGNIFICANT_CHARACTERS`/`_DEFAULTS`, |neg|a|ting| ju|s|t |th|a|t|
-   |one| |ch|a|r|a|cter| r|a||the|r |th|a|n| |repl|a|cing| |the| |l|a|ngu|a|ge|'|s| |whole| li|s|t. |See|
-   `configur|a|tion.get_in|s|ignific|a|nt_|ch|a|r|a|cter||s|`'|s| doc`(|s|tring)` |for| |the| |full|
-   re|s|olution |order.|)>?
-       Leaf-level tokens (e.g. `";"`, `"{"`, `"}"`, `"["`, `"]"`) that
-       `w`/`e`/`b`/`ge`/`W`/`E`/`B`/`gE` treat as entirely invisible, keyed by
-       treesitter language name -- same per-language-name convention as
-       `comment_markers`. A configured entry must match a leaf's **entire**
-       text exactly (not a substring it merely contains), so multi-character
-       tokens (`"->"`, `"::"`) work too, not just single characters. Only
-       applies to **code** leaves: a leaf tagged `@spell`/`@string` (prose, or
-       string content) never has any of its characters treated as
-       insignificant, since prose already does its own punctuation-is-a-word
-       splitting (`prose.split_words`), deliberately mirroring how real Vim's
-       `w` treats punctuation as a landing stop in a text file -- the same
-       reason `.code`/`.prose` are configured separately everywhere else in
-       this type. The character itself is still real buffer text (`x`, `dd`,
-       highlighting, ... are all unaffected); only word-motion traversal
-       ignores it. Defaults to `{}` for every language -- unlike
-       `comment_markers`, which punctuation counts as "insignificant" is
-       mostly a personal taste call, not an objective fact about a grammar,
-       so this is opt-in only for the vast majority of languages. A small,
-       curated set of near-universal exceptions (e.g. Nix's structural
-       `{`/`}`/`[`/`]` and statement-ending `;`) is still auto-detected once
-       that language's treesitter parser is installed, same resolution order
-       as `comment_markers` -- see `_OPTIONAL_INSIGNIFICANT_CHARACTERS` in
-       `configuration.lua` for the full list and
-       `configuration.get_insignificant_characters` for the resolution order.
-       A per-language entry's value is usually a plain `string[]`, which fully
-       replaces any shipped/auto-detected list for that language -- but see
-       `treemotion.InsignificantCharacterList` for how to instead negate just
-       one character (e.g. keep Nix's `{`/`}`/`[`/`]` but drop `;`) without
-       restating the rest.
+       How the motions behave after an operator. Off by default.
+    {in|s|ignificant_|character||s|} table<`(|s|tring)`, (`(|s|tring)`[] | table<`(|s|tring)`, `(boolean)`>
+   |One| |language|'|s| `in|s|ignificant_|character||s|`|.| |A| |plain| li|s|t replace|s| |the|
+   |language|'|s| |character||s||.| |A| `(|s|tring)` |key| ||s|et| |to| `fal|s|e` (`{ [";"] = fal|s|e }`)
+   remove|s| |that| |one| |character| in|s|tead, |keeping| |the| re|s|t|.|)>?
+       Code tokens the motions never stop on, per language, e.g. `";"` or
+       `"{"`. An entry must match a leaf's whole text, so `"->"` works too.
+       Prose is never affected. Empty by default, except for a few
+       near-universal choices (Nix's structural punctuation) used once that
+       language's parser is installed.
 
 ------------------------------------------------------------------------------
 *treemotion.ConfigurationMotionOperatorPending*
    How the motions behave after an operator (`dw`, `cw`, `yW`, `de`, ...).
-   Only read in operator-pending mode without a forced motion type
-   (`dvw`, `dVw` and `d<C-v>w` always get the plain motion), so cursor
-   movement and Visual mode never change.
+   Forced motions (`dvw`, `dVw`) always get the plain motion.
 
 Fields ~
     {enabled} `(boolean)`?
-       Whether any of the fields below apply. Defaults to `false`: operators
-       act on exactly the text the plain motion moves over.
+       Whether the fields below apply. Defaults to `false`.
     {skipped_text} ("keep" | "keep_between_tokens" | "delete")?
-       What `dw`/`dW` (and every other operator but `c`, see `change_to_end`)
-       do with non-blank text the motion skips before its next stop:
-       insignificant leaves (`insignificant_characters`), `"skip"`
-       delimiters and comment markers. `"keep"` never includes it: the range
-       ends at the first non-blank character after the word. Defaults to
-       `"keep_between_tokens"`, which keeps text between tokens but still
-       includes skipped delimiters inside the current token, so `dw` on
-       `foo_bar` leaves `bar` rather than `_bar`. `"delete"` includes all of
-       it, like the plain motion.
+       What `dw` does with skipped non-blank text before the next stop
+       (insignificant characters, `"skip"` delimiters, comment markers).
+       `"keep"` leaves it, `"delete"` takes it, and the default
+       `"keep_between_tokens"` leaves it only between tokens, so `dw` on
+       `foo_bar` leaves `bar`.
     {stop_at_line_end} `(boolean)`?
-       Whether `dw`/`dW` on a line's last word end at that word rather than
-       at the first word of a later line, like Vim's `dw` (`:help word`).
-       Defaults to `true`.
+       Whether `dw` on a line's last word stops at the line's end, like Vim's
+       (`:help word`). Defaults to `true`.
     {change_to_end} `(boolean)`?
-       Whether `cw`/`cW` on a non-blank character change to the end of the
-       current word, like `ce`/`cE`, the way Vim's `cw` does while
-       `'cpoptions'` contains `_` (`:help cw`, `:help cpo-_`). Defaults to
-       `true`.
+       Whether `cw` acts like `ce` while `'cpoptions'` contains `_`, like
+       Vim's (`:help cw`). Defaults to `true`.
     {inclusive} `(boolean)`?
-       Whether `e`/`E`/`ge`/`gE` include the character they land on, as Vim's
-       do (`:help inclusive`), so `de` deletes the whole word. Defaults to
-       `true`.
+       Whether `e`/`E`/`ge`/`gE` include the character they land on, like
+       Vim's (`:help inclusive`). Defaults to `true`.
 
 ------------------------------------------------------------------------------
 *treemotion.ConfigurationMotionGroup*
-   Sub-word splitting rules for one motion family (`small` = `w`/`e`/`b`/`ge`,
-   `big` = `W`/`E`/`B`/`gE`), configured separately for "code" leaves
-   (identifiers, ...) and "prose" leaves (comments, string content, or
-   any other span a treesitter query marks `@spell` or `@string` --
-   string content counts as prose too, since it just as often holds free
-   text -- a description, an error message, a URL -- as it does an
-   identifier-like slug).
-   Splitting a prose leaf/run first divides it into individual words (on
-   whitespace/punctuation, like real Vim's `w` in a text file) before
-   either ruleset ever runs; code leaves skip straight to these rules.
+   Splitting rules for one motion family, separately for code and prose.
+   Prose is anything highlighted `@spell` or `@string`; it is split into
+   words first, like Vim's `w` in a text file.
 
 Fields ~
     {enabled} `(boolean)`?
-       `big` only (`small` never reads this field): whether `W`/`E`/`B`/`gE`
-       consult `code`/`prose`/`backtick_identifiers` at all. Defaults to
-       `false`, which is byte-for-byte today's behavior -- a run is always one
-       stop, ignoring case/delimiters entirely, the same way real Vim's `W`
-       ignores punctuation inside a WORD. Set to `true` to opt `W`/`E`/`B`/`gE`
-       into real case/delimiter-aware sub-splitting within each run.
+       `big` only: whether `W`/`E`/`B`/`gE` split runs at all. Defaults to `false`.
     {backtick_identifiers} `(boolean)`?
-       Whether a backtick-enclosed span within prose that's exactly one Vim
-       word (`` `fooBar` ``, `` `foo-bar` `` -- not `` `foo bar` `` or an
-       empty `` `` ``) is treated as a code identifier: `code`'s
-       camel_case/pascal_case/kebab_case/snake_case/comment_marker_case rules
-       apply to it instead of `prose`'s, and the backticks themselves produce
-       no landing stop for `w`/`b`/`e`/`ge` -- invisible, the same way a
-       `"skip"` comment-marker run already is. A backtick pair whose content
-       isn't a single word is left as ordinary prose text, backticks
-       included -- no behavior change for it. Defaults to `true`.
+       Whether a single word in backticks inside prose (`` `fooBar` ``) uses
+       the `code` rules, with no stop on the backticks. Defaults to `true`.
     {code} |treemotion.ConfigurationMotionSubwordRules|?
-       Splitting rules for leaves that aren't tagged `@spell` or `@string`.
     {prose} |treemotion.ConfigurationMotionSubwordRules|?
-       Splitting rules for leaves (or, after the word split above, individual
-       words within a leaf) that are tagged `@spell` or `@string`.
 
 ------------------------------------------------------------------------------
 *treemotion.ConfigurationMotionSubwordRules*
-   Which naming conventions additionally split a leaf (or prose word) on.
 
 Fields ~
     {camel_case} `(boolean)`?
-       Split lowercase-leading identifiers at case transitions, e.g. `fooBar` -> `foo`, `Bar`.
+       Split `fooBar` into `foo`, `Bar`.
     {pascal_case} `(boolean)`?
-       Split uppercase-leading identifiers at case transitions, e.g. `FooBar` -> `Foo`, `Bar`.
-    {kebab_case} ("none" | "skip" | "stop")?
-       How to handle `-` next to real identifier content, e.g. `foo-bar` ->
-       `foo`, `bar` (`"skip"`) or `foo`, `-`, `bar` (`"stop"`). Only applies
-       when `-` sits beside a letter/digit; a run that's **only** `-` (a
-       language's own comment opener, a `-----` separator) is a bare
-       punctuation marker instead, so `comment_marker_case` governs it **if**
-       the current language's `comment_markers` lists `-` -- otherwise this
-       setting keeps governing even a bare run, since there's nothing else
-       configured to hand it off to. See `comment_marker_case`.
-    {snake_case} ("none" | "skip" | "stop")?
-       How to handle `_` next to real identifier content, e.g. `foo_bar` ->
-       `foo`, `bar` (`"skip"`) or `foo`, `_`, `bar` (`"stop"`). Same
-       real-identifier-content caveat as `kebab_case`: a run that's only `_`
-       falls to `comment_marker_case` only if the current language's
-       `comment_markers` lists `_`; no language does by default.
-    {comment_marker_case} ("none" | "skip" | "stop")?
-       How to handle a run of the current language's comment-marker
-       punctuation (see `comment_markers`), e.g. `/// text` -> `text`
-       (`"skip"`, jumps straight past a Rust-style `///` marker) or `///`,
-       `text` (`"stop"`, the marker is its own stop first). Also governs a
-       bare `-`/`_` run with no identifier content beside it (Lua's `--`
-       comment opener, a `-----` separator, a `///` doc-comment marker) --
-       but, like every other marker character, only in languages whose
-       `comment_markers` entry actually lists `-`/`_`; `kebab_case`/`snake_case`
-       keep governing a bare run in every other language, the same as they
-       already do next to real identifier content. This one setting still
-       applies uniformly across languages; only *which characters* count as a
-       marker in the first place is per-language, via `comment_markers`.
-    {colon_case} ("none" | "skip" | "stop")?
-       How to handle `:` next to real identifier content, same semantics as
-       `kebab_case`/`snake_case`. Exists so structured tokens that use `:` as
-       a separator -- a `github:owner/repo` reference, a URL's `https:` --
-       don't force a landing stop on it. Defaults to `"skip"` for `prose`
-       (ignored, so those references read as intended) and `"none"` for
-       `code` (real identifiers essentially never contain a literal `:`, so
-       this is inert there by default).
-    {slash_case} ("none" | "skip" | "stop")?
-       How to handle `/` next to real identifier content, same semantics as
-       `kebab_case`/`snake_case`. Exists for the same reason as `colon_case`
-       -- URLs (`https://host/path`) and filesystem paths (`/a/b/c`,
-       `./a/b/c`) use `/` as a separator, not a landing stop. Same defaults as
-       `colon_case`: `"skip"` for `prose`, `"none"` for `code`.
+       Split `FooBar` into `Foo`, `Bar`.
+    {kebab_case} ("n|on|e" | "skip" | "s|t|op"
+   `"n|on|e"` |doesn|'|t| spli|t|, `"skip"` spli|t|s |wi|t|hou|t|| s|t|opping |on| ||t|he|
+   delimi|t|er, |and| `"s|t|op"` |also| s|t|ops |on| i|t|.)?
+       How to treat `-` in `foo-bar`. A run of only `-` (Lua's `--`) uses
+       `comment_marker_case` instead if the language lists `-` as a marker.
+    {snake_case} ("n|on|e" | "skip" | "s|t|op"
+   `"n|on|e"` |doesn|'|t| spli|t|, `"skip"` spli|t|s |wi|t|hou|t|| s|t|opping |on| ||t|he|
+   delimi|t|er, |and| `"s|t|op"` |also| s|t|ops |on| i|t|.)?
+       How to treat `_` in `foo_bar`. Bare runs as for `kebab_case`.
+    {commen|t|_marker_case} ("n|on|e" | "skip" | "s|t|op"
+   `"n|on|e"` |doesn|'|t| spli|t|, `"skip"` spli|t|s |wi|t|hou|t|| s|t|opping |on| ||t|he|
+   delimi|t|er, |and| `"s|t|op"` |also| s|t|ops |on| i|t|.)?
+       How to treat a run of the language's `comment_markers`, such as `///`.
+    {col|on|_case} ("n|on|e" | "skip" | "s|t|op"
+   `"n|on|e"` |doesn|'|t| spli|t|, `"skip"` spli|t|s |wi|t|hou|t|| s|t|opping |on| ||t|he|
+   delimi|t|er, |and| `"s|t|op"` |also| s|t|ops |on| i|t|.)?
+       How to treat `:` in `github:owner/repo` or `https:`.
+    {slash_case} ("n|on|e" | "skip" | "s|t|op"
+   `"n|on|e"` |doesn|'|t| spli|t|, `"skip"` spli|t|s |wi|t|hou|t|| s|t|opping |on| ||t|he|
+   delimi|t|er, |and| `"s|t|op"` |also| s|t|ops |on| i|t|.)?
+       How to treat `/` in URLs and paths.
     {opaque_token_min_length} `(integer)`?
-       Minimum length (after stripping trailing `=` padding) for a run to be
-       tested against the hash/digest heuristic: it counts as opaque -- one
-       unit, never case- or delimiter-split internally -- if it's at least
-       this long and either entirely hex digits, or drawn from the base64
-       alphabet (`%w`, `+`, `/`) with an uppercase letter, a lowercase
-       letter, and a digit all somewhere in it. This is a pure heuristic
-       (charset + length), not a list of known algorithms, so it also
-       matches things that merely look hash-shaped. Defaults to `20` --
-       comfortably under a 40-character sha1 hex digest or a 44-character
-       base64 sha256 digest, comfortably over an ordinary identifier or word.
+       Minimum length for a token to count as a hash and never be split: all
+       hex, or base64 with an uppercase letter, a lowercase letter and a
+       digit. Trailing `=` is ignored. Defaults to `20`.
 
 ------------------------------------------------------------------------------
 *treemotion.LoggingConfiguration*
-   Control whether or not logging is printed to the console or to disk.
 
 Fields ~
     {level} ("trace" | "debug" | "info" | "warning" | "error" | "fatal")?
-       Any messages above this level will be logged. Only these string values
-       are accepted -- unlike Neovim's own `vim.log.levels.*`, `mega.logging`
-       (which this field is passed into) does not handle numeric levels
-       correctly, so they are intentionally not part of this type.
+       The lowest level to log. `mega.logging` doesn't accept numeric levels.
     {use_console} `(boolean)`?
-       Should print the output to neovim while running. Warning: This is very
-       spammy. You probably don't want to enable this unless you have to.
+       Print logs in Neovim. Very noisy.
     {use_file} `(boolean)`?
-       Should write to a file.
-    {output_path} `(string)`?
-       The default path on-disk where log files will be written to.
-       Defaults to "/home/selecaoone/.local/share/nvim/plugin_name.log".
+       Write logs to a file.
 
 
 WARNING: This file is auto-generated. Do not edit it!

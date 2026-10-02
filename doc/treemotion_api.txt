@@ -1,119 +1,96 @@
 ==============================================================================
 ------------------------------------------------------------------------------
-All function(s) that can be called externally by other Lua modules.
-
-If a function's signature here changes in some incompatible way, this
-package must get a new **major** version.
+The public Lua API. Incompatible changes need a new major version.
 
 ------------------------------------------------------------------------------
                                                             *treemotion.setup()*
 
 `setup`({opts})
 
-Configure `treemotion`, e.g. from a plugin manager's `opts` table.
-
-This is separate from `vim.g.treemotion_configuration` so that plugin
-managers using the `opts = {...}` convention (which calls this function
-after `treemotion` has already loaded) still work as expected.
+Configure `treemotion`, e.g. from a plugin manager's `opts`.
 
 Parameters ~
-    {opts} |treemotion.Configuration|? Extra customizations for this plugin.
+    {opts} |treemotion.Configuration|?
 
 ------------------------------------------------------------------------------
                                                      *treemotion.run_motion_w()*
 
 `run_motion_w`({count})
 
-Move the cursor like `w`: to the start of the next word -- a treesitter
-leaf, or a naming-convention sub-word inside one (`commands.motion.small`).
+Move like `w`: to the start of the next word.
 
 Parameters ~
-    {count} `(number)`?
-       A 1-or-more value. How many words to move over.
+    {count} `(number)`? |How| |many| to move over (default 1).
 
 ------------------------------------------------------------------------------
                                                     *treemotion.run_motion_ge()*
 
 `run_motion_ge`({count})
 
-Move the cursor like `ge`: to the end of the previous word -- a treesitter
-leaf, or a naming-convention sub-word inside one (`commands.motion.small`).
+Move like `ge`: to the end of the previous word.
 
 Parameters ~
-    {count} `(number)`?
-       A 1-or-more value. How many words to move over.
+    {count} `(number)`? |How| |many| to move over (default 1).
 
 ------------------------------------------------------------------------------
                                                      *treemotion.run_motion_e()*
 
 `run_motion_e`({count})
 
-Move the cursor like `e`: to the end of the current or next word -- a
-treesitter leaf, or a naming-convention sub-word inside one (`commands.motion.small`).
+Move like `e`: to the end of the current or next word.
 
 Parameters ~
-    {count} `(number)`?
-       A 1-or-more value. How many words to move over.
+    {count} `(number)`? |How| |many| to move over (default 1).
 
 ------------------------------------------------------------------------------
                                                      *treemotion.run_motion_b()*
 
 `run_motion_b`({count})
 
-Move the cursor like `b`: to the start of the current or previous word -- a
-treesitter leaf, or a naming-convention sub-word inside one (`commands.motion.small`).
+Move like `b`: to the start of the current or previous word.
 
 Parameters ~
-    {count} `(number)`?
-       A 1-or-more value. How many words to move over.
+    {count} `(number)`? |How| |many| to move over (default 1).
 
 ------------------------------------------------------------------------------
                                                      *treemotion.run_motion_W()*
 
 `run_motion_W`({count})
 
-Move the cursor like `W`: to the start of the next WORD -- a run of
-contiguous treesitter leaves (split further only if `commands.motion.big.enabled`).
+Move like `W`: to the start of the next WORD.
 
 Parameters ~
-    {count} `(number)`?
-       A 1-or-more value. How many WORDs to move over.
+    {count} `(number)`? |How| |many| to move over (default 1).
 
 ------------------------------------------------------------------------------
                                                     *treemotion.run_motion_gE()*
 
 `run_motion_gE`({count})
 
-Move the cursor like `gE`: to the end of the previous WORD -- a run of
-contiguous treesitter leaves (split further only if `commands.motion.big.enabled`).
+Move like `gE`: to the end of the previous WORD.
 
 Parameters ~
-    {count} `(number)`?
-       A 1-or-more value. How many WORDs to move over.
+    {count} `(number)`? |How| |many| to move over (default 1).
 
 ------------------------------------------------------------------------------
                                                      *treemotion.run_motion_E()*
 
 `run_motion_E`({count})
 
-Move the cursor like `E`: to the end of the current or next WORD -- a run of
-contiguous treesitter leaves (split further only if `commands.motion.big.enabled`).
+Move like `E`: to the end of the current or next WORD.
 
 Parameters ~
-    {count} `(number)`?
-       A 1-or-more value. How many WORDs to move over.
+    {count} `(number)`? |How| |many| to move over (default 1).
 
 ------------------------------------------------------------------------------
                                                      *treemotion.run_motion_B()*
 
 `run_motion_B`({count})
 
-Move the cursor like `B`: to the start of the current or previous WORD -- a run of
-contiguous treesitter leaves (split further only if `commands.motion.big.enabled`).
+Move like `B`: to the start of the current or previous WORD.
 
 Parameters ~
-    {count} `(number)`?
-       A 1-or-more value. How many WORDs to move over.
+    {count} `(number)`? |How| |many| to move over (default 1).
 
 
 WARNING: This file is auto-generated. Do not edit it!
