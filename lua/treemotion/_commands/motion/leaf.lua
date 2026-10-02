@@ -1,17 +1,106 @@
 --- Walk treesitter leaves in document order, across language injections.
 ---
+--- A childless node is a leaf. So is a node whose children leave some of its
+--- non-blank text uncovered, such as tree-sitter-rust's `line_comment`, whose
+--- only child is the `//`.
+---
 --- Inside an injected tree every step is checked against the piece the walk
 --- started in, because an `injection.combined` tree stitches unrelated
 --- stretches of source together.
 
-local logging = require("mega.logging")
-
 local injection = require("treemotion._commands.motion.injection")
-local leaf_shape = require("treemotion._commands.motion.leaf_shape")
-
-local _LOGGER = logging.get_logger("treemotion._commands.motion.leaf")
 
 local M = {}
+
+--- Whether the text strictly between the two positions has a non-blank character.
+---
+---@param row1 integer
+---@param column1 integer
+---@param row2 integer
+---@param column2 integer
+---@return boolean
+---
+local function _has_non_blank_between(row1, column1, row2, column2)
+    if row1 > row2 or (row1 == row2 and column1 >= column2) then
+        return false
+    end
+
+    -- A root node's end can sit one row past the last line, which is unreadable.
+    local ok, lines = pcall(vim.api.nvim_buf_get_text, 0, row1, column1, row2, column2, {})
+
+    if not ok then
+        return false
+    end
+
+    return table.concat(lines, "\n"):find("%S") ~= nil
+end
+
+--- Weak-keyed by node. A reparse creates new node objects, so entries never go stale.
+local _uncovered_text_cache = setmetatable({}, { __mode = "k" })
+
+--- Whether `node` has non-blank text that none of its children cover.
+---
+---@param node TSNode
+---@return boolean
+---
+local function _has_uncovered_text(node)
+    local cached = _uncovered_text_cache[node]
+
+    if cached ~= nil then
+        return cached
+    end
+
+    local row, column = node:start()
+    local count = node:child_count()
+    local result = false
+
+    for index = 0, count - 1 do
+        local child = assert(node:child(index))
+        local child_row, child_column = child:start()
+
+        if _has_non_blank_between(row, column, child_row, child_column) then
+            result = true
+
+            break
+        end
+
+        row, column = child:end_()
+    end
+
+    if not result then
+        local end_row, end_column = node:end_()
+
+        result = _has_non_blank_between(row, column, end_row, end_column)
+    end
+
+    _uncovered_text_cache[node] = result
+
+    return result
+end
+
+---@param node TSNode
+---@return boolean
+---
+local function _is_leaf(node)
+    return node:child_count() == 0 or _has_uncovered_text(node)
+end
+
+--- Climb from `node` to its outermost ancestor with uncovered text, if any.
+---
+---@param node TSNode
+---@return TSNode
+---
+local function _settle(node)
+    while true do
+        local parent = node:parent()
+
+        if not parent or not _has_uncovered_text(parent) then
+            return node
+        end
+
+        node = parent
+    end
+end
 
 --- The leaf on the `forward` side of a gap between `gap_parent`'s children
 --- (e.g. a blank line), staying in the gap's injected piece.
@@ -71,7 +160,7 @@ local function _leaf_at(ltree, row, column, forward)
         return nil
     end
 
-    node = leaf_shape.settle(node)
+    node = _settle(node)
 
     local child_ltree, piece = injection.injected_content(node)
 
@@ -84,51 +173,11 @@ local function _leaf_at(ltree, row, column, forward)
         end
     end
 
-    if leaf_shape.is_leaf(node) then
+    if _is_leaf(node) then
         return node
     end
 
     return _nearest_leaf_in_gap(node, row, column, forward)
-end
-
----@param name string
----@param node TSNode?
----
-local function _log_leaf_result(name, node)
-    if not node then
-        _LOGGER:fmt_trace("%s -> nil.", name)
-
-        return
-    end
-
-    local row, column = node:start()
-
-    _LOGGER:fmt_trace("%s -> %s at %s:%s.", name, node:type(), row, column)
-end
-
----@param node TSNode
----@return string # e.g. `"identifier at 3:4"`.
----
-function M.describe_node(node)
-    return string.format("%s at %s:%s", node:type(), node:start())
-end
-
---- Wrap `fn` to trace-log its result.
----
----@generic F: function
----@param name string
----@param fn F
----@param describe_args fun(...: any): string
----@return F
----
-function M.logged(name, fn, describe_args)
-    return function(...)
-        local result = fn(...)
-
-        _log_leaf_result(string.format("%s(%s)", name, describe_args(...)), result)
-
-        return result
-    end
 end
 
 --- The leaf at `row`/`column`, or the nearest one in `forward`'s direction.
@@ -142,7 +191,7 @@ end
 ---@param forward boolean
 ---@return TSNode?
 ---
-M.leaf_at = M.logged("leaf_at", function(row, column, forward)
+function M.leaf_at(row, column, forward)
     -- `get_parser()` returns `nil` on some Neovim versions and errors on others.
     local success, parser = pcall(vim.treesitter.get_parser, vim.api.nvim_get_current_buf())
 
@@ -155,9 +204,7 @@ M.leaf_at = M.logged("leaf_at", function(row, column, forward)
     parser:parse({ row, column, row, column + 1 })
 
     return _leaf_at(parser, row, column, forward)
-end, function(row, column, forward)
-    return string.format("%s:%s, forward=%s", row, column, forward)
-end)
+end
 
 ---@param ltree vim.treesitter.LanguageTree
 ---@param piece integer[]
@@ -201,7 +248,7 @@ function M.first_leaf(node)
         end
     end
 
-    if leaf_shape.is_leaf(node) then
+    if _is_leaf(node) then
         return node
     end
 
@@ -224,7 +271,7 @@ function M.last_leaf(node)
         end
     end
 
-    if leaf_shape.is_leaf(node) then
+    if _is_leaf(node) then
         return node
     end
 
@@ -276,7 +323,7 @@ end
 ---@param node TSNode
 ---@return TSNode?
 ---
-M.next_leaf = M.logged("next_leaf", function(node)
+function M.next_leaf(node)
     local climbed = _climb_next(node)
     local piece, host_ltree = injection.enclosing_piece(node, node:start())
 
@@ -297,14 +344,14 @@ M.next_leaf = M.logged("next_leaf", function(node)
     end
 
     return M.next_leaf(host_node)
-end, M.describe_node)
+end
 
 --- The leaf before `node`. Leaving an injected piece continues from its host node.
 ---
 ---@param node TSNode
 ---@return TSNode?
 ---
-M.previous_leaf = M.logged("previous_leaf", function(node)
+function M.previous_leaf(node)
     local climbed = _climb_previous(node)
     local piece, host_ltree = injection.enclosing_piece(node, node:start())
 
@@ -325,6 +372,6 @@ M.previous_leaf = M.logged("previous_leaf", function(node)
     end
 
     return M.previous_leaf(host_node)
-end, M.describe_node)
+end
 
 return M

@@ -25,24 +25,6 @@ function M.get_issues(data)
     return schema.get_issues(configuration_.resolve_data(data))
 end
 
---- Report whether Neovim supports stopping on anonymous (punctuation) leaves.
-local function _check_motion()
-    vim.health.start("Motion")
-
-    if vim.fn.has("nvim-0.11") == 1 then
-        vim.health.ok(
-            "Neovim supports `vim.treesitter.get_node({ include_anonymous = true })`, "
-                .. "so `w`/`e`/`b`/`ge`/`W`/`E`/`B`/`gE` stop on punctuation leaves too."
-        )
-    else
-        vim.health.warn(
-            "Neovim is older than 0.11, so `vim.treesitter.get_node()` doesn't support "
-                .. "`include_anonymous`. `w`/`e`/`b`/`ge`/`W`/`E`/`B`/`gE` will silently skip over "
-                .. "punctuation leaves (e.g. `.`, `(`, `,`) on this version."
-        )
-    end
-end
-
 --- Warn about languages in the user's own `commands.motion[field]` that have
 --- no parser installed. Shipped defaults are not checked.
 ---
@@ -108,8 +90,6 @@ function M.check(data)
     for _, key in ipairs(schema.get_unknown_keys(raw)) do
         vim.health.warn(string.format('Unknown key "%s" is ignored. Is it a typo?', key))
     end
-
-    _check_motion()
 
     _check_missing_parsers(raw, "comment_markers", "Comment markers")
     _check_missing_parsers(raw, "insignificant_characters", "Insignificant characters")

@@ -1,7 +1,5 @@
 --- Types for the configuration and the public API.
 
----@alias treemotion.HintKind "word_boundaries" | "motions" | "none"
-
 ---@alias treemotion.InsignificantCharacterList string[] | table<string, boolean>
 ---    One language's `insignificant_characters`. A plain list replaces the
 ---    language's characters. A string key set to `false` (`{ [";"] = false }`)
@@ -10,8 +8,6 @@
 ---@class treemotion.Configuration
 ---    The user's customizations.
 ---@field commands treemotion.ConfigurationCommands?
----@field hints treemotion.HintKind?
----    Which motion hints are visible. One kind at a time.
 ---@field logging treemotion.LoggingConfiguration?
 
 ---@class treemotion.ResolvedConfiguration : treemotion.Configuration
@@ -110,5 +106,3 @@
 ---    Print logs in Neovim. Very noisy.
 ---@field use_file boolean?
 ---    Write logs to a file.
----@field output_path string?
----    Where to write the log file.

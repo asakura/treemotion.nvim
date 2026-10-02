@@ -3,12 +3,11 @@
 
 local logging = require("mega.logging")
 
-local bigword = require("treemotion._commands.motion.bigword")
 local operator = require("treemotion._commands.motion.operator")
 local position = require("treemotion._commands.motion.position")
 local settings = require("treemotion._commands.motion.settings")
 local shape = require("treemotion._commands.motion.shape")
-local word = require("treemotion._commands.motion.word")
+local unit = require("treemotion._commands.motion.unit")
 
 local _LOGGER = logging.get_logger("treemotion._commands.motion.runner")
 
@@ -18,7 +17,7 @@ local M = {}
 ---@field move treemotion._Move
 ---@field step treemotion._Step
 ---@field operator treemotion._OperatorMove? `nil` for `b`/`B`, which are exclusive in Vim too.
----@field units {new_source: fun(settings: treemotion.SplitSettings): treemotion._UnitSource}
+---@field units fun(settings: treemotion.SplitSettings): treemotion._UnitSource
 ---@field group "small"|"big"
 ---@field backward_inclusive boolean? Inclusive while moving backward (`ge`/`gE`).
 
@@ -28,14 +27,14 @@ local _MOTIONS = {
         move = shape.forward_to_start,
         step = shape.next_start,
         operator = operator.forward_to_start,
-        units = word,
+        units = unit.word,
         group = "small",
     },
     ge = {
         move = shape.backward_to_end,
         step = shape.previous_end,
         operator = operator.inclusive,
-        units = word,
+        units = unit.word,
         group = "small",
         backward_inclusive = true,
     },
@@ -43,22 +42,22 @@ local _MOTIONS = {
         move = shape.forward_to_end,
         step = shape.next_end,
         operator = operator.inclusive,
-        units = word,
+        units = unit.word,
         group = "small",
     },
-    b = { move = shape.backward_to_start, step = shape.previous_start, units = word, group = "small" },
+    b = { move = shape.backward_to_start, step = shape.previous_start, units = unit.word, group = "small" },
     W = {
         move = shape.forward_to_start,
         step = shape.next_start,
         operator = operator.forward_to_start,
-        units = bigword,
+        units = unit.bigword,
         group = "big",
     },
     gE = {
         move = shape.backward_to_end,
         step = shape.previous_end,
         operator = operator.inclusive,
-        units = bigword,
+        units = unit.bigword,
         group = "big",
         backward_inclusive = true,
     },
@@ -66,10 +65,10 @@ local _MOTIONS = {
         move = shape.forward_to_end,
         step = shape.next_end,
         operator = operator.inclusive,
-        units = bigword,
+        units = unit.bigword,
         group = "big",
     },
-    B = { move = shape.backward_to_start, step = shape.previous_start, units = bigword, group = "big" },
+    B = { move = shape.backward_to_start, step = shape.previous_start, units = unit.bigword, group = "big" },
 }
 
 ---@param name string
@@ -146,7 +145,7 @@ function M.run(name, count)
 
     _LOGGER:fmt_debug('Running treemotion motion "%s" (count=%s) from %s:%s.', name, count, start_row, start_column)
 
-    local units = motion.units.new_source(settings.resolve(motion.group))
+    local units = motion.units(settings.resolve(motion.group))
     local pending = motion.operator and settings.resolve_operator()
 
     if pending then

@@ -1,6 +1,5 @@
 --- The user's configuration and the defaults it is merged over.
 
-local hints_constant = require("treemotion._core.hints")
 local motion_constant = require("treemotion._commands.motion.constant")
 
 local logging = require("mega.logging")
@@ -19,7 +18,6 @@ local _initialized = false
 
 ---@type treemotion.ResolvedConfiguration
 local _DEFAULTS = {
-    hints = hints_constant.Kind.none,
     logging = { level = "info", use_console = false, use_file = false },
     commands = {
         motion = {
@@ -387,26 +385,6 @@ function M.merge_data(data)
     M.initialize_data_if_needed()
 
     M.DATA = vim.tbl_deep_extend("force", M.DATA, data or {})
-end
-
----@param kind treemotion.HintKind
----
-function M.set_hints(kind)
-    M.initialize_data_if_needed()
-
-    M.DATA = vim.tbl_extend("force", M.DATA, { hints = kind })
-end
-
---- Turn `kind` on, or all hints off if `kind` is already on.
----
----@param kind treemotion.HintKind
----
-function M.toggle_hints(kind)
-    if M.resolve_data().hints == kind then
-        M.set_hints(hints_constant.Kind.none)
-    else
-        M.set_hints(kind)
-    end
 end
 
 return M

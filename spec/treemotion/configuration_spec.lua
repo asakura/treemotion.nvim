@@ -344,41 +344,6 @@ describe("get_insignificant_characters", function()
     end)
 end)
 
-describe("hints", function()
-    local _snapshot
-
-    before_each(function()
-        _snapshot = configuration_.DATA
-    end)
-
-    after_each(function()
-        configuration_.DATA = _snapshot
-    end)
-
-    it("#set_hints replaces the configuration instead of editing a table already handed out", function()
-        local before = configuration_.resolve_data()
-        local hints = before.hints
-
-        configuration_.set_hints("word_boundaries")
-
-        assert.equal(hints, before.hints)
-        assert.equal("word_boundaries", configuration_.resolve_data().hints)
-    end)
-
-    it("#toggle_hints turns a kind on, then off, without editing a table already handed out", function()
-        configuration_.set_hints("none")
-        local before = configuration_.resolve_data()
-
-        configuration_.toggle_hints("motions")
-        local toggled_on = configuration_.resolve_data()
-        configuration_.toggle_hints("motions")
-
-        assert.equal("none", before.hints)
-        assert.equal("motions", toggled_on.hints)
-        assert.equal("none", configuration_.resolve_data().hints)
-    end)
-end)
-
 ---@diagnostic disable: assign-type-mismatch
 ---@diagnostic disable: missing-fields
 describe("bad configuration - commands", function()
@@ -628,24 +593,6 @@ describe("health.check", function()
         assert.same({}, mock_vim.get_vim_health_errors())
     end)
 
-    it("reports whether this Neovim can run `motion` at full fidelity", function()
-        health.check({})
-
-        local oks = mock_vim.get_vim_health_oks()
-        local warnings = mock_vim.get_vim_health_warnings()
-
-        if vim.fn.has("nvim-0.11") == 1 then
-            assert.same(0, #warnings)
-            assert.is_true(vim.tbl_contains(oks, function(message)
-                return message:find("include_anonymous", 1, true) ~= nil
-            end, { predicate = true }))
-        else
-            assert.is_true(vim.tbl_contains(warnings, function(message)
-                return message:find("include_anonymous", 1, true) ~= nil
-            end, { predicate = true }))
-        end
-    end)
-
     it("doesn't warn about the shipped #commands.motion.comment_markers defaults", function()
         -- The defaults (`c`, `cpp`, `rust`, `python`, ...) cover languages most
         -- users won't have every parser for -- see `_check_missing_parsers`'s
@@ -712,7 +659,6 @@ describe("health.check", function()
             typo = true,
         })
 
-        -- Neovim 0.10 also warns about `include_anonymous`, so only look at these.
         local unknown = vim.tbl_filter(function(message)
             return vim.startswith(message, "Unknown key")
         end, mock_vim.get_vim_health_warnings())
@@ -728,7 +674,6 @@ describe("health.check", function()
 
     it("shows all issues at once", function()
         health.check({
-            hints = "diagonal",
             logging = {
                 level = false,
                 use_console = "aaa",
@@ -739,7 +684,6 @@ describe("health.check", function()
         local found = mock_vim.get_vim_health_errors()
 
         assert.same({
-            'hints: expected "motions" or "none" or "word_boundaries", got diagonal',
             'logging.level: expected "trace" or "debug" or "info" or "warning" or "error" or "fatal", got false',
             "logging.use_console: expected a boolean, got aaa",
             "logging.use_file: expected a boolean, got fdas",

@@ -3,8 +3,6 @@
 --- Prose is split into words first; code is one word. Each word is then split
 --- on delimiters and, unless it looks like a hash, on camelCase/PascalCase.
 
-local logging = require("mega.logging")
-
 local codepoint = require("treemotion._commands.motion.codepoint")
 local case = require("treemotion._commands.motion.case")
 local classify = require("treemotion._commands.motion.classify")
@@ -12,8 +10,6 @@ local delimiters = require("treemotion._commands.motion.delimiters")
 local leaf = require("treemotion._commands.motion.leaf")
 local prose = require("treemotion._commands.motion.prose")
 local span = require("treemotion._commands.motion.span")
-
-local _LOGGER = logging.get_logger("treemotion._commands.motion.subword")
 
 local M = {}
 
@@ -142,22 +138,6 @@ local function _split_text(text, fallback, is_prose, settings)
     return units
 end
 
----@generic F: function
----@param name string
----@param fn F
----@param describe_args fun(...: any): string
----@return F
----
-local function _logged(name, fn, describe_args)
-    return function(...)
-        local units = fn(...)
-
-        _LOGGER:fmt_debug("%s(%s) -> %s unit(s).", name, describe_args(...), #units)
-
-        return units
-    end
-end
-
 --- Split a leaf. Multi-row code stays one unit; multi-row prose is split
 --- across rows.
 ---
@@ -165,7 +145,7 @@ end
 ---@param settings treemotion.SplitSettings
 ---@return treemotion.SubwordUnit[] # Empty when the leaf has no stop of its own.
 ---
-M.split = _logged("split", function(node, settings)
+function M.split(node, settings)
     if classify.is_insignificant(node, settings.insignificant_characters) then
         return {}
     end
@@ -199,11 +179,7 @@ M.split = _logged("split", function(node, settings)
     end
 
     return _split_text(text, span.new(start_row, text_start_col, end_row, end_col), is_prose, settings)
-end, function(node)
-    local row, column = node:start()
-
-    return string.format("%s at %s:%s", node:type(), row, column)
-end)
+end
 
 --- Break a run into stretches of leaves that are all prose or all code,
 --- such as Lua's `foo"bar"`, so each gets its own rules.
@@ -286,7 +262,7 @@ end
 ---@param settings treemotion.SplitSettings
 ---@return treemotion.SubwordUnit[]
 ---
-M.split_run = _logged("split_run", function(start_node, end_node, settings)
+function M.split_run(start_node, end_node, settings)
     local start_row, start_col = start_node:start()
     local end_row, end_col = end_node:end_()
 
@@ -301,11 +277,6 @@ M.split_run = _logged("split_run", function(start_node, end_node, settings)
     end
 
     return units
-end, function(start_node, end_node)
-    local start_row, start_col = start_node:start()
-    local end_row, end_col = end_node:end_()
-
-    return string.format("%s at %s:%s -> %s:%s", start_node:type(), start_row, start_col, end_row, end_col)
-end)
+end
 
 return M

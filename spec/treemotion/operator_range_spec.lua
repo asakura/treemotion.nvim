@@ -16,9 +16,8 @@
 local grammar_helpers = require("treemotion.grammar_helpers")
 local operator = require("treemotion._commands.motion.operator")
 local settings = require("treemotion._commands.motion.settings")
-local bigword = require("treemotion._commands.motion.bigword")
 local shape = require("treemotion._commands.motion.shape")
-local word = require("treemotion._commands.motion.word")
+local motion_unit = require("treemotion._commands.motion.unit")
 
 ---@type integer?
 local _BUFFER
@@ -83,7 +82,7 @@ local function _units(insignificant)
     local split = settings.resolve("small")
     split.insignificant_characters = insignificant
 
-    return word.new_source(split)
+    return motion_unit.word(split)
 end
 
 --- A `W`/`E`/`B`/`gE` unit source that splits on `_` but skips it.
@@ -97,7 +96,7 @@ local function _big_units()
     split.enabled = true
     split.code = vim.tbl_extend("force", split.code, { snake_case = "skip" })
 
-    return bigword.new_source(split)
+    return motion_unit.bigword(split)
 end
 
 --- `units`, except that every unit's span ends at the start of the next row.

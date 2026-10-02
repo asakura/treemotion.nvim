@@ -48,15 +48,6 @@ local function _is_at_end(node, row, column)
     return row == end_row and column == codepoint.last_character_column(end_row, end_column)
 end
 
---- Built by `word.new_source` or `bigword.new_source`.
----
----@class treemotion._UnitSource
----@field unit_at fun(row: integer, column: integer, forward: boolean): treemotion.MotionUnit?, TSNode?
----    The unit at (or nearest) a position, and the leaf at (or nearest) it.
----@field next_unit fun(unit: treemotion.MotionUnit): treemotion.MotionUnit?
----@field previous_unit fun(unit: treemotion.MotionUnit): treemotion.MotionUnit?
----@field span_end fun(node: TSNode): integer, integer Where the span containing the leaf `node` ends.
-
 --- Where a motion lands from a position; the start position if nowhere.
 ---
 -- luacheck: push ignore 631

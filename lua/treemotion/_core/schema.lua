@@ -2,7 +2,6 @@
 --- `:checkhealth` shows when it fails. A spec keeps it in sync with the
 --- defaults. Fields are ordered so issues come back in a stable order.
 
-local hints_constant = require("treemotion._core.hints")
 local motion_constant = require("treemotion._commands.motion.constant")
 
 local M = {}
@@ -65,7 +64,7 @@ local function _describe_choices(choices)
 end
 
 --- A value that must be one of `choices`: a list, or a symbolic table like
---- `hints.Kind` whose keys are the choices.
+--- `constant.SkippedText` whose keys are the choices.
 ---
 ---@param choices string[] | table<string, string>
 ---@param required boolean?
@@ -205,7 +204,6 @@ M.SCHEMA = _section({
             },
         }),
     },
-    { "hints", _enum(hints_constant.Kind, true) },
     {
         "logging",
         _section({

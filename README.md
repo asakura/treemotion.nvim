@@ -554,7 +554,6 @@ works as expected:
 {
     "asakura/treemotion.nvim",
     opts = {
-        hints = "none",
         commands = {
             motion = {
                 -- Which single characters count as comment-marker
@@ -680,8 +679,7 @@ loads):
     "asakura/treemotion.nvim",
     config = function()
         vim.g.treemotion_configuration = {
-            hints = "none",
-            logging = {
+                logging = {
                 level = "info",
                 use_console = false,
                 use_file = false,
