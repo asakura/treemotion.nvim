@@ -298,17 +298,19 @@ end
 --- `range`, ending before the first closing bracket it didn't open.
 ---
 --- See `_before_unopened_bracket`. Only for ranges that run forward from
---- the cursor.
+--- the cursor. The last step for every forward range, after any trimming.
 ---
 ---@param range treemotion.OperatorRange
 ---@return treemotion.OperatorRange
-local function _balanced(range)
+function M.balance_brackets(range)
     local finish_row, finish_column = range.finish_row, range.finish_column
 
-    if range.inclusive then
-        local line = codepoint.line(finish_row)
+    local finish_line = codepoint.line(finish_row)
 
-        finish_column = math.min(#line, finish_column + codepoint.char_width(line, finish_column + 1))
+    -- An empty line has no character to step past: the range ends there,
+    -- as with `M.stop_at_line_end`'s range on one.
+    if range.inclusive and #finish_line > 0 then
+        finish_column = math.min(#finish_line, finish_column + codepoint.char_width(finish_line, finish_column + 1))
     end
 
     local row, column = _before_unopened_bracket(range.start_row, range.start_column, finish_row, finish_column)
@@ -371,29 +373,205 @@ local function _change_to_end_range(units, start_row, start_column, unit, start_
         finish_row, finish_column = shape.next_end(units, finish_row, finish_column, count - 1)
     end
 
-    return _balanced(_range(start_row, start_column, finish_row, finish_column, true))
+    return M.balance_brackets(_range(start_row, start_column, finish_row, finish_column, true))
+end
+
+--- The `w`/`W` motion an operator runs, before any trimming.
+---
+--- `start` is where the operator starts and `target` where the motion
+--- lands. `tail` is where the last unit moved over ends (or the skipped
+--- text the final step started on, see `_skipped_text_end`), the point the
+--- trimming steps measure from. `token_end` is `tail` pushed out to the end
+--- of that unit's leaf (or `W` run), for `"keep_between_tokens"`.
+---
+---@class treemotion.OperatorMotion
+---@field start_row integer
+---@field start_column integer
+---@field tail_row integer
+---@field tail_column integer
+---@field token_end_row integer
+---@field token_end_column integer
+---@field target_row integer
+---@field target_column integer
+
+--- Where the token holding `unit` ends, if that's past `unit` itself.
+---
+--- A token is the unit's leaf (or `W` run), cut at the first blank and at
+--- the end of the unit's line.
+---
+---@param unit treemotion.MotionUnit
+---@return integer, integer
+local function _token_end(unit)
+    local end_row, end_column = unit:end_()
+
+    -- Clamped to the unit's own line, since some grammars end a leaf at
+    -- the next row's column 0 (a trailing newline).
+    local line = codepoint.line(end_row)
+    local span_row, span_column = position.min(end_row, #line, unit:span_end())
+
+    -- A token never spans a blank. Prose splits a whole sentence out of
+    -- one leaf, so its span alone would take the `` ` `` in "and `code`"
+    -- along with "and ".
+    local blank = line:find("%s", end_column + 1)
+
+    if blank then
+        span_row, span_column = position.min(span_row, span_column, end_row, blank - 1)
+    end
+
+    return position.max(end_row, end_column, span_row, span_column)
+end
+
+--- The untrimmed `w`/`W` motion from `start_row`/`start_column`.
+---
+--- Past the buffer's last unit (its last word, trailing blanks, or skipped
+--- text such as a final `=`) the motion has nowhere to go, so it lands at
+--- the end of the line, like Vim's `dw` at the end of the buffer.
+---
+---@param units treemotion._UnitSource
+---@param start_row integer
+---@param start_column integer
+---@param unit treemotion.MotionUnit? `units.unit_at(start_row, start_column, true)`.
+---@param start_leaf TSNode? The leaf that same call started from.
+---@param count integer
+---@param step treemotion._Step `shape.next_start`.
+---@return treemotion.OperatorMotion
+---
+local function _forward_motion(units, start_row, start_column, unit, start_leaf, count, step)
+    local step_row, step_column = start_row, start_column
+
+    if unit and count > 1 then
+        -- Only the final step is trimmed, so take the others as they are.
+        step_row, step_column = step(units, start_row, start_column, count - 1)
+        unit, start_leaf = units.unit_at(step_row, step_column, true)
+    end
+
+    local tail_row, tail_column = step_row, step_column
+    local token_end_row, token_end_column = step_row, step_column
+
+    if unit and position.contains(unit, step_row, step_column) then
+        tail_row, tail_column = unit:end_()
+        token_end_row, token_end_column = _token_end(unit)
+    elseif _is_non_blank(step_row, step_column) then
+        tail_row, tail_column = _skipped_text_end(units, step_row, step_column, unit, start_leaf)
+        token_end_row, token_end_column = tail_row, tail_column
+    end
+
+    local target_row, target_column = step(units, step_row, step_column, 1)
+
+    if not position.is_before(step_row, step_column, target_row, target_column) then
+        target_row, target_column = tail_row, #codepoint.line(tail_row)
+    end
+
+    return {
+        start_row = start_row,
+        start_column = start_column,
+        tail_row = tail_row,
+        tail_column = tail_column,
+        token_end_row = token_end_row,
+        token_end_column = token_end_column,
+        target_row = target_row,
+        target_column = target_column,
+    }
+end
+
+--- `motion`'s range, as an exclusive one ending at `motion`'s target.
+---
+---@param motion treemotion.OperatorMotion
+---@return treemotion.OperatorRange
+local function _motion_range(motion)
+    return _range(motion.start_row, motion.start_column, motion.target_row, motion.target_column, false)
+end
+
+--- `motion`'s range ending at `row`/`column` instead.
+---
+--- A trimming step never empties a range: if `row`/`column` isn't past the
+--- start, it's the untrimmed motion's range.
+---
+---@param motion treemotion.OperatorMotion
+---@param row integer
+---@param column integer
+---@return treemotion.OperatorRange
+local function _trimmed(motion, row, column)
+    if not position.is_before(motion.start_row, motion.start_column, row, column) then
+        return _motion_range(motion)
+    end
+
+    return _range(motion.start_row, motion.start_column, row, column, false)
+end
+
+--- `motion`'s range, without the skipped text after its last unit.
+---
+--- - `"keep"` ends the range at the first non-blank character after
+---   `motion`'s tail, so skipped text is never included.
+--- - `"keep_between_tokens"` measures from the token's end instead, so
+---   skipped delimiters inside the same token (the `_` in `foo_bar`) are
+---   still included.
+--- - `"delete"` doesn't trim.
+---
+---@param motion treemotion.OperatorMotion
+---@param skipped_text treemotion.SkippedTextMode
+---@return treemotion.OperatorRange
+---
+function M.trim_skipped_text(motion, skipped_text)
+    if skipped_text == constant.SkippedText.delete then
+        return _motion_range(motion)
+    end
+
+    local from_row, from_column = motion.tail_row, motion.tail_column
+
+    if skipped_text == constant.SkippedText.keep_between_tokens then
+        from_row, from_column = motion.token_end_row, motion.token_end_column
+    end
+
+    local kept_row, kept_column = _first_non_blank(from_row, from_column, motion.target_row, motion.target_column)
+
+    if not kept_row then
+        return _motion_range(motion)
+    end
+
+    ---@cast kept_column integer
+    return _trimmed(motion, kept_row, kept_column)
+end
+
+--- `range`, ending at the end of `motion`'s tail line rather than on a later line.
+---
+--- Like Vim's `dw` on a line's last word (`:help word`'s "Another special
+--- case"), which takes any trailing blanks with it, and so does `dw` on
+--- those trailing blanks. On an empty line the range is the line break
+--- itself, as with Vim's `dw` there, or nothing at all for `change`.
+---
+---@param motion treemotion.OperatorMotion
+---@param range treemotion.OperatorRange `motion`'s range, from `M.trim_skipped_text`.
+---@param change boolean Whether the operator is `c`.
+---@return treemotion.OperatorRange
+---
+function M.stop_at_line_end(motion, range, change)
+    if range.finish_row <= motion.tail_row then
+        return range
+    end
+
+    local length = #codepoint.line(motion.tail_row)
+
+    if length == 0 then
+        -- An empty line is a word of its own (`:help word`): Vim's `dw`
+        -- there acts on the line break, while `cw` just starts inserting.
+        return _range(motion.start_row, motion.start_column, motion.start_row, motion.start_column, not change)
+    end
+
+    return _trimmed(motion, motion.tail_row, length)
 end
 
 --- The range `dw`/`cw`/`yW`/... should act on: the `w`/`W` motion's, trimmed per `settings`.
 ---
---- The range starts where the operator does and would end where the motion lands.
---- Its tail is trimmed from the end of the last unit moved over:
+--- The motion is measured once (see `treemotion.OperatorMotion`), then
+--- passed through one step per setting:
 ---
---- - `skipped_text`: `"keep"` ends the range at the first non-blank
----   character after that unit, so skipped text is never included.
----   `"keep_between_tokens"` measures from the end of the unit's leaf (or
----   `W` run) instead, so skipped delimiters inside the same token (the
----   `_` in `foo_bar`) are still included. `"delete"` doesn't trim.
---- - `stop_at_line_end`: a range that would continue onto a later line ends
----   at the end of the current line instead, like Vim's `dw` on a line's
----   last word (`:help word`'s "Another special case"). On an empty line
----   the range is the line break itself, as with Vim's `dw` there.
+--- - `skipped_text`: `M.trim_skipped_text`.
+--- - `stop_at_line_end`: `M.stop_at_line_end`.
+--- - always: `M.balance_brackets`.
 ---
---- Past the buffer's last unit (its last word, trailing blanks, or skipped
---- text such as a final `=`) the motion has nowhere to go, so the range
---- runs to the end of the line before it's trimmed, like Vim's `dw` at the
---- end of the buffer. Without a parser, and when trimming would empty the
---- range, it's the plain motion's.
+--- `change_to_end` replaces all of that with `ce`'s range. Without a
+--- parser it's the plain motion's range.
 ---
 --- Measured purely from `start_row`/`start_column`: the cursor is neither
 --- read nor moved (see `M.apply`).
@@ -419,80 +597,14 @@ function M.forward_range(units, start_row, start_column, count, settings, step)
         return _change_to_end_range(units, start_row, start_column, unit, start_leaf, count)
     end
 
-    local step_row, step_column = start_row, start_column
+    local motion = _forward_motion(units, start_row, start_column, unit, start_leaf, count, step)
+    local range = M.trim_skipped_text(motion, settings.skipped_text)
 
-    if unit and count > 1 then
-        -- Only the final step is trimmed, so take the others as they are.
-        step_row, step_column = step(units, start_row, start_column, count - 1)
-        unit, start_leaf = units.unit_at(step_row, step_column, true)
+    if settings.stop_at_line_end then
+        range = M.stop_at_line_end(motion, range, settings.change)
     end
 
-    local tail_row, tail_column = step_row, step_column
-
-    if unit and position.contains(unit, step_row, step_column) then
-        tail_row, tail_column = unit:end_()
-
-        if settings.skipped_text == constant.SkippedText.keep_between_tokens then
-            -- Clamped to the unit's own line, since some grammars end a
-            -- leaf at the next row's column 0 (a trailing newline).
-            local line = codepoint.line(tail_row)
-            local span_row, span_column = position.min(tail_row, #line, unit:span_end())
-
-            -- A token never spans a blank. Prose splits a whole sentence
-            -- out of one leaf, so its span alone would take the `` ` `` in
-            -- "and `code`" along with "and ".
-            local blank = line:find("%s", tail_column + 1)
-
-            if blank then
-                span_row, span_column = position.min(span_row, span_column, tail_row, blank - 1)
-            end
-
-            tail_row, tail_column = position.max(tail_row, tail_column, span_row, span_column)
-        end
-    elseif _is_non_blank(step_row, step_column) then
-        tail_row, tail_column = _skipped_text_end(units, step_row, step_column, unit, start_leaf)
-    end
-
-    local target_row, target_column = step(units, step_row, step_column, 1)
-
-    if not position.is_before(step_row, step_column, target_row, target_column) then
-        -- Nowhere to go: this is the buffer's end. Vim's `dw` there acts
-        -- up to the end of the line.
-        target_row, target_column = tail_row, #codepoint.line(tail_row)
-    end
-
-    local end_row, end_column = target_row, target_column
-
-    if settings.skipped_text ~= constant.SkippedText.delete then
-        local kept_row, kept_column = _first_non_blank(tail_row, tail_column, target_row, target_column)
-
-        if kept_row then
-            ---@cast kept_column integer
-            end_row, end_column = kept_row, kept_column
-        end
-    end
-
-    if settings.stop_at_line_end and end_row > tail_row then
-        local length = #codepoint.line(tail_row)
-
-        if length == 0 then
-            -- An empty line is a word of its own (`:help word`): Vim's `dw`
-            -- there acts on the line break, while `cw` just starts
-            -- inserting.
-            return _range(start_row, start_column, start_row, start_column, not settings.change)
-        end
-
-        -- Vim's `dw` on a line's last word stops at the end of the line
-        -- (`:help word`, "Another special case"), taking any trailing
-        -- blanks with it, and so does `dw` on those trailing blanks.
-        end_row, end_column = tail_row, length
-    end
-
-    if not position.is_before(start_row, start_column, end_row, end_column) then
-        return _balanced(_range(start_row, start_column, target_row, target_column, false))
-    end
-
-    return _balanced(_range(start_row, start_column, end_row, end_column, false))
+    return M.balance_brackets(range)
 end
 
 --- The range `de`/`dge`/... should act on: the motion's, including both ends.
@@ -528,7 +640,7 @@ function M.inclusive_range(units, start_row, start_column, count, settings, step
         return _range(start_row, start_column, target_row, target_column, false)
     end
 
-    return _balanced(_range(start_row, start_column, target_row, target_column, true))
+    return M.balance_brackets(_range(start_row, start_column, target_row, target_column, true))
 end
 
 --- Make the pending operator act on `range`.

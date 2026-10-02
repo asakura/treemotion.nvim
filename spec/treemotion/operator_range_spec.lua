@@ -1,8 +1,10 @@
 --- Make sure `_commands.motion.operator`'s range calculation follows its rules.
 ---
---- These call `operator.forward_range`/`operator.inclusive_range` directly
---- with a hand-built `treemotion.OperatorSettings`, so they need neither
---- operator-pending mode nor the global configuration. A few branches no
+--- These call `operator.forward_range`/`operator.inclusive_range` and the
+--- forward range's steps (`operator.trim_skipped_text`,
+--- `operator.stop_at_line_end`, `operator.balance_brackets`) directly
+--- with a hand-built `treemotion.OperatorSettings`, motion or range, so
+--- they need neither operator-pending mode nor the global configuration. A few branches no
 --- bundled grammar or real step reaches get a wrapped unit source or a
 --- stand-in step instead.
 ---
@@ -183,6 +185,44 @@ local function _flat(range)
         { range.start_row, range.start_column },
         { range.finish_row, range.finish_column },
         range.inclusive,
+    }
+end
+
+--- A `treemotion.OperatorMotion` from `start` to `target`, its last unit ending at `tail`.
+---
+---@param start integer[] 0-indexed row and column.
+---@param tail integer[]
+---@param target integer[]
+---@param token_end integer[]? `tail`, unless given.
+---@return treemotion.OperatorMotion
+local function _motion(start, tail, target, token_end)
+    token_end = token_end or tail
+
+    return {
+        start_row = start[1],
+        start_column = start[2],
+        tail_row = tail[1],
+        tail_column = tail[2],
+        token_end_row = token_end[1],
+        token_end_column = token_end[2],
+        target_row = target[1],
+        target_column = target[2],
+    }
+end
+
+--- A range from `start` to `finish`, for the steps that take one.
+---
+---@param start integer[] 0-indexed row and column.
+---@param finish integer[]
+---@param inclusive boolean
+---@return treemotion.OperatorRange
+local function _range(start, finish, inclusive)
+    return {
+        start_row = start[1],
+        start_column = start[2],
+        finish_row = finish[1],
+        finish_column = finish[2],
+        inclusive = inclusive,
     }
 end
 
@@ -481,6 +521,117 @@ describe("operator range calculation", function()
 
                 assert.same({ { 0, 12 }, { 0, 15 }, false }, _flat(range))
             end)
+        end)
+    end)
+
+    describe("trim_skipped_text", function()
+        it("ends at the first non-blank character after the tail with #keep", function()
+            _initialize_buffer({ "local foo = bar" }, 0, 6)
+
+            local range = operator.trim_skipped_text(_motion({ 0, 6 }, { 0, 9 }, { 0, 12 }), "keep")
+
+            assert.same({ { 0, 6 }, { 0, 10 }, false }, _flat(range))
+        end)
+
+        it("doesn't trim with #delete", function()
+            _initialize_buffer({ "local foo = bar" }, 0, 6)
+
+            local range = operator.trim_skipped_text(_motion({ 0, 6 }, { 0, 9 }, { 0, 12 }), "delete")
+
+            assert.same({ { 0, 6 }, { 0, 12 }, false }, _flat(range))
+        end)
+
+        it("measures from the token's end with #keep_between_tokens", function()
+            _initialize_buffer({ "local foo_bar = 1" }, 0, 6)
+
+            local motion = _motion({ 0, 6 }, { 0, 9 }, { 0, 10 }, { 0, 13 })
+
+            assert.same(
+                { { 0, 6 }, { 0, 10 }, false },
+                _flat(operator.trim_skipped_text(motion, "keep_between_tokens"))
+            )
+            assert.same({ { 0, 6 }, { 0, 9 }, false }, _flat(operator.trim_skipped_text(motion, "keep")))
+        end)
+
+        it("keeps the motion's range rather than emptying it", function()
+            _initialize_buffer({ "local foo = bar" }, 0, 10)
+
+            local range = operator.trim_skipped_text(_motion({ 0, 10 }, { 0, 10 }, { 0, 12 }), "keep")
+
+            assert.same({ { 0, 10 }, { 0, 12 }, false }, _flat(range))
+        end)
+    end)
+
+    describe("stop_at_line_end", function()
+        it("ends a range that runs onto a later line at the end of the tail's line", function()
+            _initialize_buffer({ "local x = foo  ", "  local y = 2" }, 0, 10)
+
+            local motion = _motion({ 0, 10 }, { 0, 13 }, { 1, 2 })
+            local range = operator.stop_at_line_end(motion, _range({ 0, 10 }, { 1, 2 }, false), false)
+
+            assert.same({ { 0, 10 }, { 0, 15 }, false }, _flat(range))
+        end)
+
+        it("leaves a range on the tail's line alone", function()
+            _initialize_buffer({ "local x = foo  ", "  local y = 2" }, 0, 6)
+
+            local motion = _motion({ 0, 6 }, { 0, 7 }, { 0, 8 })
+            local range = operator.stop_at_line_end(motion, _range({ 0, 6 }, { 0, 8 }, false), false)
+
+            assert.same({ { 0, 6 }, { 0, 8 }, false }, _flat(range))
+        end)
+
+        it("covers an empty line's line break, but nothing for #change", function()
+            _initialize_buffer({ "local x = foo", "", "  local y = 2" }, 1, 0)
+
+            local motion = _motion({ 1, 0 }, { 1, 0 }, { 2, 2 })
+            local range = _range({ 1, 0 }, { 2, 2 }, false)
+
+            assert.same({ { 1, 0 }, { 1, 0 }, true }, _flat(operator.stop_at_line_end(motion, range, false)))
+            assert.same({ { 1, 0 }, { 1, 0 }, false }, _flat(operator.stop_at_line_end(motion, range, true)))
+        end)
+
+        it("keeps the motion's range rather than emptying it", function()
+            _initialize_buffer({ "local x = foo  ", "  local y = 2" }, 0, 15)
+
+            local motion = _motion({ 0, 15 }, { 0, 15 }, { 1, 2 })
+            local range = operator.stop_at_line_end(motion, _range({ 0, 15 }, { 1, 2 }, false), false)
+
+            assert.same({ { 0, 15 }, { 1, 2 }, false }, _flat(range))
+        end)
+    end)
+
+    describe("balance_brackets", function()
+        it("ends an exclusive range before a closing bracket it didn't open", function()
+            _initialize_buffer({ "f(config.lib)" }, 0, 2)
+
+            local range = operator.balance_brackets(_range({ 0, 2 }, { 0, 13 }, false))
+
+            assert.same({ { 0, 2 }, { 0, 12 }, false }, _flat(range))
+        end)
+
+        it("ends an inclusive range on the character before that bracket", function()
+            _initialize_buffer({ "f(config.lib)" }, 0, 2)
+
+            local range = operator.balance_brackets(_range({ 0, 2 }, { 0, 12 }, true))
+
+            assert.same({ { 0, 2 }, { 0, 11 }, true }, _flat(range))
+        end)
+
+        it("keeps a range that opens its brackets", function()
+            _initialize_buffer({ "f(config.lib)" }, 0, 1)
+
+            local range = operator.balance_brackets(_range({ 0, 1 }, { 0, 13 }, false))
+
+            assert.same({ { 0, 1 }, { 0, 13 }, false }, _flat(range))
+        end)
+
+        it("keeps an inclusive range on an empty line", function()
+            _initialize_buffer({ "local x = foo", "", "  local y = 2" }, 1, 0)
+
+            local range = operator.balance_brackets(_range({ 1, 0 }, { 1, 0 }, true))
+
+            assert.same({ { 1, 0 }, { 1, 0 }, true }, _flat(range))
         end)
     end)
 
