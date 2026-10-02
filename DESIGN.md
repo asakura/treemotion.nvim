@@ -316,8 +316,9 @@ Benchmarking traps:
   not through the caller's. So `grammar_helpers.wrap` takes `pending` as a
   parameter. Nobody noticed until a fixture's parser went missing for the first
   time.
-- **`nix build .#treemotion-nvim`'s `checkPhase` has only Neovim's 6 bundled
-  grammars.** `nix run .#test` adds `treesitterAllGrammars`. Fixtures for any
+- **`nix build .#treemotion-nvim`'s `checkPhase` has only the grammars bundled
+  with Neovim** (`c`, `lua`, `markdown`, `markdown_inline`, `query`, `vim`,
+  `vimdoc`). `nix run .#test` adds `treesitterAllGrammars`. Fixtures for any
   other grammar must turn into pending tests when the parser is missing.
 - **`treesitterAllGrammars` ships compiled parsers but no `highlights.scm`.**
   Without a real query there are no `@spell` captures, so comment fixtures
