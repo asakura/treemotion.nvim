@@ -1,40 +1,17 @@
---- Camel/Pascal case splitting, plus the opaque-token (hash/digest)
---- heuristic that decides when *not* to case-split a chunk.
----
---- Pure string functions: no buffer, treesitter or configuration access.
---- Letter case is Unicode-aware (see `_commands.motion.codepoint.is_upper`),
---- so `caféBar` splits like `cafeBar`.
---- `_commands.motion.subword` calls these on every chunk
---- `_commands.motion.delimiters` produces.
+--- camelCase/PascalCase splitting and the hash heuristic. Unicode-aware.
 
 local codepoint = require("treemotion._commands.motion.codepoint")
 
 local M = {}
 
---- Whether `text` looks like an opaque hash/digest -- a run this plugin
---- should treat as one unit and never case-split internally, e.g. a sha1 hex
---- digest or a base64-encoded sha256 (`sha256-A8Yg...SgU=`).
+--- Whether `text` looks like a hash or digest that should stay one unit.
 ---
---- Pure heuristic (charset + minimum length), not a hardcoded list of known
---- algorithms -- deliberately, so it also matches things that merely happen
---- to look hash-shaped. Trailing `=` (base64 padding) is stripped before the
---- length/charset check runs, but doesn't itself have to be hex/base64.
+--- Hex of at least `min_length`, or base64-shaped with upper, lower and a
+--- digit. Without the digit, any long camelCase identifier would match.
+--- Trailing `=` padding is ignored.
 ---
---- The base64-shaped branch also requires at least one digit somewhere in
---- `text`: without that, "at least `min_length` characters, purely
---- alphanumeric, with both an uppercase and a lowercase letter" matches
---- virtually any real-world camelCase/PascalCase identifier of that length
---- too (`handleSubmitButtonClick`, `getUserAuthenticationToken`, ...), not
---- just genuine digests -- a random base64 run of `min_length`+ characters
---- is overwhelmingly likely to contain at least one digit (each character
---- has a 10/64 chance of being one), while an ordinary hand-written
---- identifier of that length usually has none at all. The pure-hex branch
---- doesn't need this: its alphabet (`%x`) already includes `0`-`9`.
----
----@param text string A candidate run (e.g. one `delimiters.split` chunk).
----@param min_length integer Minimum length, after stripping `=` padding, to
----    even consider `text` (see `opaque_token_min_length`'s docstring in
----    `types.lua`).
+---@param text string
+---@param min_length integer
 ---@return boolean
 ---
 function M.looks_like_hash(text, min_length)
@@ -54,16 +31,12 @@ function M.looks_like_hash(text, min_length)
         and stripped:match("%d") ~= nil
 end
 
---- Find every column in `text` where a new camelCase/PascalCase word starts.
+--- Byte offsets where a new word starts: an uppercase letter after a
+--- lowercase letter or digit (`fooBar`), or before a lowercase letter after
+--- another uppercase one (`XMLHttp` -> `XML`, `Http`).
 ---
---- A boundary falls right before an uppercase letter that either follows a
---- lowercase letter/digit (`fooBar` -> boundary before `B`) or follows
---- another uppercase letter that is itself followed by a lowercase letter
---- (`XMLHttp` -> boundary before the `H` in `Http`, keeping `XML` together).
---- Letters in any script count (`caféBar`, `fooÉtat`); digits are ASCII only.
----
----@param text string A run of characters with no snake/kebab delimiters in it.
----@return integer[] # 1-indexed byte columns (into `text`) where a new subword starts.
+---@param text string
+---@return integer[]
 ---
 local function _case_boundaries(text)
     local boundaries = {}
@@ -106,19 +79,13 @@ local function _case_boundaries(text)
     return boundaries
 end
 
---- Split `text` into camelCase/PascalCase-aware chunks.
+--- Split `text` at case boundaries. The first letter's case decides whether
+--- `camel_case` or `pascal_case` applies.
 ---
---- Whether `text` counts as camelCase or PascalCase is decided purely by its
---- first letter's case, and only that variant's option is consulted -- this
---- is what makes `camel_case` and `pascal_case` independently toggleable:
---- disabling one leaves every identifier of *that* leading case unsplit
---- while the other option keeps working, since a single call to this
---- function never looks at both.
----
----@param text string A run of characters with no snake/kebab delimiters in it.
----@param camel_case boolean Split lowercase-leading identifiers (`fooBar`).
----@param pascal_case boolean Split uppercase-leading identifiers (`FooBar`).
----@return string[] # `text`, split at each enabled case boundary.
+---@param text string
+---@param camel_case boolean
+---@param pascal_case boolean
+---@return string[]
 ---
 function M.split(text, camel_case, pascal_case)
     local starts_upper = text ~= "" and codepoint.is_upper(text:sub(1, codepoint.char_width(text, 1)))

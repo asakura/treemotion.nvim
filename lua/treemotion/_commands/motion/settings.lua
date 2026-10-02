@@ -1,46 +1,25 @@
---- Resolve everything the motion modules read from the user's configuration.
----
---- `_commands.motion.subword` and `_commands.motion.classify` take a
---- `treemotion.SplitSettings` rather than reading `_core.configuration`;
---- `_commands.motion.runner` resolves one with `M.resolve` once per motion.
---- The splitter itself then does only string and range work, and tests can
---- hand it any rules without touching the global configuration.
----
---- `_commands.motion.operator` takes a `treemotion.OperatorSettings` the same
---- way, from `M.resolve_operator`, which also reads the editor state its
---- rules depend on (the mode, `v:operator`, `'cpoptions'`).
+--- Read the configuration once per motion, so the splitter and operator code
+--- take plain tables and never touch global state.
 
 local classify = require("treemotion._commands.motion.classify")
 local configuration = require("treemotion._core.configuration")
 
 local M = {}
 
---- Everything `subword.split`/`subword.split_run` read from the configuration.
----
 ---@class treemotion.SplitSettings
----@field enabled boolean? `commands.motion[group].enabled`. Only `subword.split_run` reads it
----    (`commands.motion.big.enabled`); `commands.motion.small` has no such field.
----@field backtick_identifiers boolean `commands.motion[group].backtick_identifiers`.
----@field code treemotion.ConfigurationMotionSubwordRules `commands.motion[group].code`.
----@field prose treemotion.ConfigurationMotionSubwordRules `commands.motion[group].prose`.
----@field comment_marker_characters table<string, true> The current language's comment-marker
----    punctuation (see `classify.comment_marker_characters`).
----@field insignificant_characters string[]? The current language's insignificant leaf texts
----    (see `classify.is_insignificant`), or `nil` if it has none.
+---@field enabled boolean? `commands.motion.big.enabled`; unset for `small`.
+---@field backtick_identifiers boolean
+---@field code treemotion.ConfigurationMotionSubwordRules
+---@field prose treemotion.ConfigurationMotionSubwordRules
+---@field comment_marker_characters table<string, true>
+---@field insignificant_characters string[]?
 
---- Resolve `group`'s splitting settings for the current buffer's language.
+--- Resolve `group`'s settings for the current buffer's language.
 ---
----@param group "small"|"big" Which motion family's configuration to read:
----    "small" for `w`/`e`/`b`/`ge`, "big" for `W`/`E`/`B`/`gE`.
+---@param group "small"|"big" `w`/`e`/`b`/`ge` or `W`/`E`/`B`/`gE`.
 ---@return treemotion.SplitSettings
 ---
 function M.resolve(group)
-    -- `assert()`: `commands.motion.small`/`.big` and their `.code`/`.prose`
-    -- are optional in the LuaCATS types (they double as valid partial
-    -- user-override input), but `configuration._DEFAULTS` always fills all
-    -- of them in, so `resolve_data()`'s result always has them. Don't
-    -- `assert()` the boolean fields, though -- `false` is a legitimate
-    -- value there, and `assert(false)` would raise.
     local motion_group = assert(configuration.resolve_data().commands.motion[group])
     local language = classify.current_language()
 
@@ -56,26 +35,17 @@ function M.resolve(group)
     }
 end
 
---- Everything `_commands.motion.operator` reads, for one operator.
----
 ---@class treemotion.OperatorSettings
----@field skipped_text treemotion.SkippedTextMode `commands.motion.operator_pending.skipped_text`.
----@field stop_at_line_end boolean `commands.motion.operator_pending.stop_at_line_end`.
----@field inclusive boolean `commands.motion.operator_pending.inclusive`.
----@field change boolean Whether the pending operator is `c` (`v:operator`).
----@field change_to_end boolean Whether `cw`/`cW` work like `ce`/`cE` right now:
----    `change`, `commands.motion.operator_pending.change_to_end`, and
----    `'cpoptions'` containing `_`, the condition Vim's own `cw` checks
----    (`:help cpo-_`).
+---@field skipped_text treemotion.SkippedTextMode
+---@field stop_at_line_end boolean
+---@field inclusive boolean
+---@field change boolean Whether the operator is `c`.
+---@field change_to_end boolean Whether `cw` acts like `ce` (`:help cpo-_`).
 
---- Resolve the settings for the pending operator, if its behavior applies at all.
+--- The settings for the pending operator, or `nil` when the feature is off
+--- or the motion is forced (`dvw`, `dVw`, ...).
 ---
---- `vim.fn.mode(true)` is exactly `"no"` for an operator without a forced
---- motion type. `"nov"`/`"noV"`/`"no<C-v>"` (`dvw`, `dVw`, ...) mean the
---- user chose the range's shape themselves, so those get the plain motion.
----
----@return treemotion.OperatorSettings? # `nil` when `commands.motion.operator_pending`
----    is disabled, or no unforced operator is pending.
+---@return treemotion.OperatorSettings?
 ---
 function M.resolve_operator()
     local pending = assert(configuration.resolve_data().commands.motion.operator_pending)

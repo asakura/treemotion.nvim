@@ -161,12 +161,7 @@ describe("get_comment_markers", function()
     before_each(function()
         _snapshot = vim.deepcopy(configuration_.DATA)
 
-        -- `M.DATA` is one shared, process-wide table, and `treemotion_spec.lua`'s
-        -- "subword configuration" describe block deliberately leaves `lua`'s
-        -- `comment_markers` zeroed out to `{}` in its own `after_each` (see
-        -- its comment) -- a leak into whichever spec file runs next in the
-        -- same busted process. Force the real shipped default back before
-        -- every test here so these assertions don't depend on file run order.
+        -- `M.DATA` is shared by every spec in the process; reset the default.
         configuration_.DATA.commands.motion.comment_markers.lua = { "-" }
         configuration_.DATA.commands.motion.comment_markers.toml = nil
     end)
@@ -195,14 +190,7 @@ describe("get_comment_markers", function()
     )
 
     it("resolves an #_OPTIONAL_COMMENT_MARKERS entry when the language's treesitter parser is installed", function()
-        -- `toml` isn't one of Neovim's bundled grammars, but the Nix-driven
-        -- dev-shell/`nix run .#test` suite's `treesitterAllGrammars` (see
-        -- `flake.nix`) makes it available there -- consistent with how
-        -- `motion_leaf_spec.lua`/`motion_gap_spec.lua` already rely on
-        -- grammars beyond the bundled set. `nix build '.#treemotion-nvim'`'s
-        -- own `checkPhase`, though, only has Neovim's 6 bundled grammars, so
-        -- guard this the same way `grammar_helpers.lua`'s cross-grammar
-        -- fixtures do, rather than asserting a parser that may not exist here.
+        -- `toml` isn't bundled with Neovim, so skip without its parser.
         if not vim.treesitter.language.add("toml") then
             ---@diagnostic disable-next-line: missing-parameter
             pending('no "toml" treesitter parser installed')
@@ -214,10 +202,7 @@ describe("get_comment_markers", function()
     end)
 
     it("returns nil for an #_OPTIONAL_COMMENT_MARKERS entry when the language's parser is not installed", function()
-        -- The bundled busted/luassert LuaCATS stubs only declare `stub.new`'s
-        -- return type, not the fluent `.returns(...)` builder method it
-        -- actually has at runtime (same kind of stub-coverage gap as
-        -- `pending(reason)` in `grammar_helpers.lua`).
+        -- luassert's type stubs don't declare `.returns()`.
         ---@diagnostic disable-next-line: undefined-field
         local add_stub = stub(vim.treesitter.language, "add").returns(false)
 
@@ -274,12 +259,7 @@ describe("get_insignificant_characters", function()
     )
 
     it("resolves an #_OPTIONAL_INSIGNIFICANT_CHARACTERS entry when the language's parser is installed", function()
-        -- `nix` isn't one of Neovim's bundled grammars, but the
-        -- Nix-driven dev-shell/`nix run .#test` suite's
-        -- `treesitterAllGrammars` (see `flake.nix`) makes it available
-        -- there -- see `get_comment_markers`'s identical `toml` test for
-        -- why this is guarded with `pending(...)` rather than asserted
-        -- unconditionally.
+        -- `nix` isn't bundled with Neovim, so skip without its parser.
         if not vim.treesitter.language.add("nix") then
             ---@diagnostic disable-next-line: missing-parameter
             pending('no "nix" treesitter parser installed')
@@ -309,11 +289,7 @@ describe("get_insignificant_characters", function()
         "patches an #_OPTIONAL_INSIGNIFICANT_CHARACTERS entry when the user's override negates "
             .. "one character with `false`, keeping the rest",
         function()
-            -- Deliberately doesn't gate on `vim.treesitter.language.add("nix")`
-            -- the way the plain auto-detected-resolution test above does: a
-            -- negating override is user-typed config, not an auto-detected
-            -- fallback, so it applies unconditionally -- see
-            -- `get_insignificant_characters`'s docstring.
+            -- A removal is user configuration, so it applies without the parser.
             configuration_.merge_data({
                 commands = { motion = { insignificant_characters = { nix = { [";"] = false } } } },
             })
@@ -344,41 +320,6 @@ describe("get_insignificant_characters", function()
     end)
 end)
 
-describe("hints", function()
-    local _snapshot
-
-    before_each(function()
-        _snapshot = configuration_.DATA
-    end)
-
-    after_each(function()
-        configuration_.DATA = _snapshot
-    end)
-
-    it("#set_hints replaces the configuration instead of editing a table already handed out", function()
-        local before = configuration_.resolve_data()
-        local hints = before.hints
-
-        configuration_.set_hints("word_boundaries")
-
-        assert.equal(hints, before.hints)
-        assert.equal("word_boundaries", configuration_.resolve_data().hints)
-    end)
-
-    it("#toggle_hints turns a kind on, then off, without editing a table already handed out", function()
-        configuration_.set_hints("none")
-        local before = configuration_.resolve_data()
-
-        configuration_.toggle_hints("motions")
-        local toggled_on = configuration_.resolve_data()
-        configuration_.toggle_hints("motions")
-
-        assert.equal("none", before.hints)
-        assert.equal("motions", toggled_on.hints)
-        assert.equal("none", configuration_.resolve_data().hints)
-    end)
-end)
-
 ---@diagnostic disable: assign-type-mismatch
 ---@diagnostic disable: missing-fields
 describe("bad configuration - commands", function()
@@ -390,10 +331,8 @@ describe("bad configuration - commands", function()
     end)
 
     it("happens with a bad shape for #commands.motion.comment_markers", function()
-        -- The bad value here is a *table*, so `vim.validate`'s "got <value>" suffix
-        -- would print an unstable memory address (`table: 0x...`) instead of
-        -- something a test can match exactly -- so this only checks the message's
-        -- stable prefix, unlike the exact-match `_assert_bad` calls elsewhere.
+        -- The value is a table, whose printed address varies, so only the
+        -- prefix is checked.
         local issues = health.get_issues(configuration_.resolve_data({
             commands = { motion = { comment_markers = { lua = "aaa" } } },
         }))
@@ -628,24 +567,6 @@ describe("health.check", function()
         assert.same({}, mock_vim.get_vim_health_errors())
     end)
 
-    it("reports whether this Neovim can run `motion` at full fidelity", function()
-        health.check({})
-
-        local oks = mock_vim.get_vim_health_oks()
-        local warnings = mock_vim.get_vim_health_warnings()
-
-        if vim.fn.has("nvim-0.11") == 1 then
-            assert.same(0, #warnings)
-            assert.is_true(vim.tbl_contains(oks, function(message)
-                return message:find("include_anonymous", 1, true) ~= nil
-            end, { predicate = true }))
-        else
-            assert.is_true(vim.tbl_contains(warnings, function(message)
-                return message:find("include_anonymous", 1, true) ~= nil
-            end, { predicate = true }))
-        end
-    end)
-
     it("doesn't warn about the shipped #commands.motion.comment_markers defaults", function()
         -- The defaults (`c`, `cpp`, `rust`, `python`, ...) cover languages most
         -- users won't have every parser for -- see `_check_missing_parsers`'s
@@ -712,7 +633,6 @@ describe("health.check", function()
             typo = true,
         })
 
-        -- Neovim 0.10 also warns about `include_anonymous`, so only look at these.
         local unknown = vim.tbl_filter(function(message)
             return vim.startswith(message, "Unknown key")
         end, mock_vim.get_vim_health_warnings())
@@ -728,7 +648,6 @@ describe("health.check", function()
 
     it("shows all issues at once", function()
         health.check({
-            hints = "diagonal",
             logging = {
                 level = false,
                 use_console = "aaa",
@@ -739,7 +658,6 @@ describe("health.check", function()
         local found = mock_vim.get_vim_health_errors()
 
         assert.same({
-            'hints: expected "motions" or "none" or "word_boundaries", got diagonal',
             'logging.level: expected "trace" or "debug" or "info" or "warning" or "error" or "fatal", got false',
             "logging.use_console: expected a boolean, got aaa",
             "logging.use_file: expected a boolean, got fdas",

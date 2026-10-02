@@ -7,7 +7,7 @@
 local grammar_helpers = require("treemotion.grammar_helpers")
 local settings = require("treemotion._commands.motion.settings")
 local shape = require("treemotion._commands.motion.shape")
-local word = require("treemotion._commands.motion.word")
+local unit = require("treemotion._commands.motion.unit")
 
 ---@type integer?
 local _BUFFER
@@ -24,7 +24,7 @@ local _SHAPES = {
 
 ---@return treemotion._UnitSource
 local function _units()
-    return word.new_source(settings.resolve("small"))
+    return unit.word(settings.resolve("small"))
 end
 
 --- Start a Lua buffer holding `lines`, with the cursor at its start.

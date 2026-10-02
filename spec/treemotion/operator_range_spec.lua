@@ -1,24 +1,12 @@
---- Make sure `_commands.motion.operator`'s range calculation follows its rules.
----
---- These call `operator.forward_range`/`operator.inclusive_range` and the
---- forward range's steps (`operator.trim_skipped_text`,
---- `operator.stop_at_line_end`, `operator.balance_brackets`) directly
---- with a hand-built `treemotion.OperatorSettings`, motion or range, so
---- they need neither operator-pending mode nor the global configuration. A few branches no
---- bundled grammar or real step reaches get a wrapped unit source or a
---- stand-in step instead.
----
---- Ranges are measured from a position, not the cursor: the cursor stays at
---- the buffer's start, and every measurement checks it's never moved.
---- `operator_pending_spec.lua` covers the same rules end to end, through
---- the `<Plug>` mappings.
+--- Range rules in `_commands.motion.operator`, called directly with
+--- hand-built settings. Ranges are measured from a position; every test
+--- checks the cursor never moves.
 
 local grammar_helpers = require("treemotion.grammar_helpers")
 local operator = require("treemotion._commands.motion.operator")
 local settings = require("treemotion._commands.motion.settings")
-local bigword = require("treemotion._commands.motion.bigword")
 local shape = require("treemotion._commands.motion.shape")
-local word = require("treemotion._commands.motion.word")
+local motion_unit = require("treemotion._commands.motion.unit")
 
 ---@type integer?
 local _BUFFER
@@ -83,7 +71,7 @@ local function _units(insignificant)
     local split = settings.resolve("small")
     split.insignificant_characters = insignificant
 
-    return word.new_source(split)
+    return motion_unit.word(split)
 end
 
 --- A `W`/`E`/`B`/`gE` unit source that splits on `_` but skips it.
@@ -97,7 +85,7 @@ local function _big_units()
     split.enabled = true
     split.code = vim.tbl_extend("force", split.code, { snake_case = "skip" })
 
-    return bigword.new_source(split)
+    return motion_unit.bigword(split)
 end
 
 --- `units`, except that every unit's span ends at the start of the next row.

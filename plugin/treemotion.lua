@@ -1,15 +1,7 @@
 --- All `treemotion` command definitions.
 
--- `g:loaded_treemotion` follows Vim's plugin convention (`:help
--- lua-plugin-filetype`, `usr_41.txt` "NOT LOADING"): if it exists at all,
--- this file does nothing. That lets users opt out of the plugin from Lua or
--- Vimscript, and makes sourcing this file a second time a no-op.
---
--- `g:` lives in Nvim's own variable store, not in Lua: `vim.g` hands back a
--- converted copy on every read, so `let g:loaded_treemotion = 0` arrives
--- here as the number `0`, which Lua treats as true. Check `~= nil`, which
--- matches Vimscript's `exists("g:loaded_treemotion")`, rather than
--- truthiness, so every value opts out, `0` and `v:false` included.
+-- Any value of `g:loaded_treemotion`, even `0`, disables the plugin, as
+-- `exists()` would.
 if vim.g.loaded_treemotion ~= nil then
     return
 end
@@ -49,8 +41,7 @@ for _, name in ipairs(constant.MOTION_NAMES) do
         treemotion["run_motion_" .. name](vim.v.count1)
     end, { desc = description })
 
-    -- An `<expr>` mapping, so `dge` can be forced inclusive with `v` (see
-    -- `_commands.motion.runner.operator_keys`).
+    -- `<expr>`, so `dge` can be forced inclusive with `v`.
     vim.keymap.set("o", plug, function()
         local configuration = require("treemotion._core.configuration")
         local runner = require("treemotion._commands.motion.runner")

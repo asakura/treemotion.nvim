@@ -1,15 +1,8 @@
---- Make sure the treesitter `w`/`e`/`b`/`ge`/`W`/`E`/`B`/`gE` motions work,
---- plus the `subword` (camelCase/kebab_case/snake_case/comment_marker_case)
---- splitting layered on top of them, and the `:TreeMotion` command wiring.
+--- The motions and sub-word splitting on Lua fixtures, and the
+--- `:TreeMotion` command. Other grammars are covered in `motion_*_spec.lua`.
 ---
---- Cross-grammar coverage of the underlying leaf/gap/run mechanics lives in
---- `motion_leaf_spec.lua`, `motion_gap_spec.lua`, and
---- `motion_comment_marker_spec.lua` instead of here -- this file's fixtures
---- stay Lua-specific because they exercise `subword`'s text-splitting rules
---- and option plumbing, not grammar-shape generality.
----
---- The fixture text is `foo.bar(1, 2)`, whose leaves are
---- `foo . bar ( 1 , 2 )` (0-indexed start columns 0, 3, 4, 7, 8, 9, 11, 12).
+--- `foo.bar(1, 2)` has leaves `foo . bar ( 1 , 2 )` at columns
+--- 0, 3, 4, 7, 8, 9, 11, 12.
 
 local treemotion = require("treemotion")
 
@@ -58,20 +51,11 @@ describe("motion API - word (leaf) motions", function()
     end)
 end)
 
---- Make a scratch buffer with `local fooBar_bazQux = "kebab-word"` in it.
+--- A buffer with `local fooBar_bazQux = "kebab-word"`.
 ---
---- Its leaves are `local fooBar_bazQux = " kebab-word "` (the `"` are
---- separate leaves), whose sub-words -- with every `subword` option at its
---- default -- are `local`, `foo`, `Bar`, `baz`, `Qux`, `=`, `"`, `kebab`,
---- `-`, `word`, `"` (0-indexed start columns 0, 6, 9, 13, 16, 20, 22, 23,
---- 28, 29, 33). `_` (column 12, inside the identifier `fooBar_bazQux`) is a
---- gap: `commands.motion.small.code.snake_case` defaults to `"skip"`, a
---- dropped delimiter no unit lands on. `-` (column 28) is different: the
---- string's content is `@string`-tagged (see `classify.lua`'s
---- `_is_prose_capture`), so it's split with `commands.motion.small.prose`'s
---- rules instead of `.code`'s -- and `prose.kebab_case` defaults to
---- `"stop"`, so the `-` itself is a landing stop, splitting `kebab-word`
---- into three units (`kebab`, `-`, `word`), not two.
+--- Default sub-words: `local foo Bar baz Qux = " kebab - word "` at columns
+--- 0, 6, 9, 13, 16, 20, 22, 23, 28, 29, 33. The code `_` is skipped; the
+--- string is prose, where `-` is a stop.
 local function _initialize_subword_buffer()
     _BUFFER = vim.api.nvim_create_buf(false, true)
     vim.api.nvim_buf_set_lines(_BUFFER, 0, -1, false, { [[local fooBar_bazQux = "kebab-word"]] })
@@ -128,28 +112,11 @@ describe("motion API - subword (naming convention) motions", function()
     end)
 end)
 
---- Make a scratch buffer with a Lua comment in it.
+--- A buffer with `-- fooBar hello-world snake_case done`.
 ---
---- `-- fooBar hello-world snake_case done` parses as `comment`, split into
---- the `--` leaf and one `comment_content` leaf spanning everything after
---- it (`" fooBar hello-world snake_case done"`). The `(comment) @spell`
---- highlight query (`:help treesitter-highlight-spell`) matches the whole
---- `comment` node's range, so *both* leaves count as prose -- including
---- `--` itself, whose two `-` characters form one run and become a single
---- stop under prose's default `comment_marker_case = "stop"` (a bare `-`
---- run with no identifier beside it, so `comment_marker_case` governs it,
---- not `kebab_case` -- see `delimiters.split`; a run of consecutive
---- same-mode delimiter characters is always one unit, however long, the
---- same way real Vim's `w` treats a run of same-class punctuation as one
---- word). `comment_content` then splits into words on whitespace --
---- `fooBar`, `hello-world`, `snake_case`, `done` -- and
---- `commands.motion.small.prose`'s rules apply to each: `fooBar` still
---- splits into `foo`/`Bar` (camelCase is on), `hello-world` splits into
---- `hello`/`-`/`world` (`kebab_case = "stop"`, a lone `-` is still its own
---- one-character run), and `snake_case` stays whole (`snake_case` defaults
---- to `"none"` in prose, unlike code's `"skip"`). Sub-word start columns,
---- in order: `--`=0, `foo`=3, `Bar`=6, `hello`=10, `-`=15, `world`=16,
---- `snake_case`=22, `done`=33.
+--- The whole comment is prose. Sub-words: `--`=0, `foo`=3, `Bar`=6,
+--- `hello`=10, `-`=15, `world`=16, `snake_case`=22, `done`=33 (prose
+--- doesn't split `snake_case` by default).
 local function _initialize_prose_buffer()
     _BUFFER = vim.api.nvim_create_buf(false, true)
     vim.api.nvim_buf_set_lines(_BUFFER, 0, -1, false, { "-- fooBar hello-world snake_case done" })
@@ -207,10 +174,7 @@ describe("motion API - subword (prose) motions", function()
     end)
 
     it("#w lands once on a whole run of delimiters, however long, not once per character", function()
-        -- `------` (0-6) is a run of six same-mode (`comment_marker_case =
-        -- "stop"` -- a bare `-` run, no identifier beside it) delimiter
-        -- characters -- one unit, not six, matching real Vim's `w` treating
-        -- a run of same-class punctuation as a single word.
+        -- A run of `-` is one stop, like a punctuation run in Vim.
         vim.api.nvim_buf_set_lines(assert(_BUFFER), 0, -1, false, { "-- ------ hi" })
 
         _set_cursor(0)
@@ -222,15 +186,8 @@ describe("motion API - subword (prose) motions", function()
     end)
 
     it("#w doesn't stop on a delimiter run split across a leaf boundary", function()
-        -- `---` parses as the `--` leaf (0-2) plus `comment_content` = `"-
-        -- lua"` (2-...) -- tree-sitter-lua's comment opener is a fixed
-        -- 2-character `--` literal no matter how many dashes follow, so the
-        -- third dash ends up as `comment_content`'s leading character
-        -- instead of staying part of the same `-` run as its two siblings.
-        -- Without `_leading_continuation_length`'s fix, that stray dash
-        -- would read as its own 1-character stop; real Vim's `w` would
-        -- never produce that, since a run of same-class punctuation is one
-        -- word no matter how a grammar happened to tokenize it.
+        -- tree-sitter-lua makes `--` a leaf, so the third dash starts
+        -- `comment_content`. It must not become a stop of its own.
         vim.api.nvim_buf_set_lines(assert(_BUFFER), 0, -1, false, { "--- lua comment" })
 
         _set_cursor(0)
@@ -262,14 +219,8 @@ describe("motion API - subword unit fallback", function()
     after_each(_remove_buffer)
 
     it("skips a leaf that's entirely a dropped delimiter (`_`) rather than landing on it", function()
-        -- `local` (0-5), `_` (6), `=` (8), `1` (10). `_` alone, with the
-        -- default `code.snake_case = "skip"`, has nothing left after
-        -- `delimiters.split` drops it -- Lua's default `comment_markers`
-        -- only lists `-` (see `_DEFAULTS`), not `_`, so this bare run stays
-        -- under `snake_case` instead of falling to `comment_marker_case`.
-        -- `M.split` doesn't fall back to a whole-leaf unit for an
-        -- entirely-dropped `"skip"` run (only a leaf with no words at all
-        -- does, see `M.split`'s docstring), so `_` is never a landing stop.
+        -- `local` (0-5), `_` (6), `=` (8), `1` (10). A lone skipped `_` leaves
+        -- nothing, so it is never a stop.
         vim.api.nvim_buf_set_lines(assert(_BUFFER), 0, -1, false, { "local _ = 1" })
 
         _set_cursor(6) -- the start of `_`
@@ -306,10 +257,7 @@ local function _get_cursor()
     return cursor[1] - 1, cursor[2]
 end
 
--- Cross-grammar coverage of blank-line gaps, genuinely multi-row leaves,
--- and leaves with a partial-coverage child now lives in `motion_gap_spec.lua`.
--- The two "does nothing on an edgeless blank line" cases stay here since
--- they're about the traversal's edge behavior, not grammar-shape generality.
+-- Other blank-line cases are in `motion_gap_spec.lua`.
 describe("motion API - blank line gaps with no leaf on one side", function()
     before_each(function()
         _BUFFER = vim.api.nvim_create_buf(false, true)
@@ -345,13 +293,7 @@ describe("motion API - subword configuration", function()
         treemotion.setup({
             commands = {
                 motion = {
-                    -- `M.DATA` is one shared, process-wide table, so a test that
-                    -- adds a one-off `comment_markers.lua` entry (see the
-                    -- `#`/`/`/`%` tests below) has to explicitly restore it here,
-                    -- the same way `code`/`prose` below get a full reset. Restore
-                    -- to `_DEFAULTS`' own `{ "-" }`, not `{}` -- otherwise this
-                    -- leaks into whichever spec file runs next in the same
-                    -- busted process.
+                    -- Reset to the default, since tests below add markers.
                     comment_markers = { lua = { "-" } },
                     small = {
                         code = {
@@ -409,20 +351,13 @@ describe("motion API - subword configuration", function()
         end
     end)
 
-    -- `#` isn't part of Lua's own `comment_markers` default (only `-` is,
-    -- for `--` -- see `configuration.lua`'s `_DEFAULTS`), so these three
-    -- tests explicitly register it for `"lua"` first, the same way a real
-    -- user would add a custom marker character for a language this plugin
-    -- doesn't already recognize one for.
+    -- Lua's markers don't include `#`, so these tests add it.
     it(
         'lands on a `#`/`/`/`%`-style run as its own stop when #prose.comment_marker_case is "stop" (the default)',
         function()
             treemotion.setup({ commands = { motion = { comment_markers = { lua = { "#" } } } } })
 
-            -- `--` (0), `comment_content` = `" ### heading text"` (2-...) --
-            -- `###` (class "other", per `_char_class`) is its own
-            -- `prose.split_words` word, isolated by the surrounding blanks, so
-            -- `comment_marker_case` alone decides whether it's a landing stop.
+            -- `--` (0), then `###` as its own prose word.
             vim.api.nvim_buf_set_lines(assert(_BUFFER), 0, -1, false, { "-- ### heading text" })
 
             _set_cursor(0)
@@ -470,11 +405,7 @@ describe("motion API - subword configuration", function()
                 },
             },
         })
-        -- With no split at all, `###` stays embedded exactly where
-        -- `prose.split_words` already isolated it -- so this looks
-        -- identical to `"stop"` here (a lone, whitespace-bounded run has
-        -- nothing else to merge with); `"none"` only differs from `"stop"`
-        -- for a run mixed into a larger word, e.g. `foo/bar`.
+        -- A lone `###` looks the same under `"none"` and `"stop"`.
         vim.api.nvim_buf_set_lines(assert(_BUFFER), 0, -1, false, { "-- ### heading text" })
 
         _set_cursor(0)
@@ -490,11 +421,8 @@ describe("motion API - subword configuration", function()
     it(
         "a bare `-` run (no identifier beside it) follows #comment_marker_case, " .. "independently of #kebab_case",
         function()
-            -- `kebab_case = "skip"` would normally drop a `-` run entirely,
-            -- but `--` here has no identifier content beside it, so
-            -- `comment_marker_case` (still the default `"stop"`) governs it
-            -- instead -- it stays a landing stop even though `kebab_case`
-            -- says "skip".
+            -- A bare `--` run is governed by `comment_marker_case`, not
+            -- `kebab_case`.
             treemotion.setup({ commands = { motion = { small = { prose = { kebab_case = "skip" } } } } })
             vim.api.nvim_buf_set_lines(assert(_BUFFER), 0, -1, false, { "-- hello-world" })
 
@@ -516,14 +444,9 @@ describe("motion API - subword configuration", function()
         "a bare `-` run (no identifier beside it) skips under #comment_marker_case "
             .. '= "skip", even while #kebab_case stays "stop"',
         function()
-            -- The reverse: `comment_marker_case = "skip"` drops the bare
-            -- `--` run entirely, while `kebab_case` (still the default
-            -- `"stop"`) keeps splitting `hello-world`'s embedded `-` as its
-            -- own stop -- the two settings tune independently even though
-            -- both apply to `-`. The cursor starts on the line *before* `--`, so `w`
-            -- actually approaches it from outside -- landing straight on
-            -- `hello` proves `--` itself was skipped, not just that the
-            -- first `w` moved past wherever the cursor happened to start.
+            -- `comment_marker_case = "skip"` drops `--`, while `kebab_case`
+            -- still stops on the `-` in `hello-world`. Starting on the line
+            -- above shows `w` skips `--` rather than starting past it.
             treemotion.setup({
                 commands = {
                     motion = {
@@ -552,12 +475,7 @@ describe("motion API - subword configuration", function()
         "skips a `--`-only leaf on every line, not just the one under the cursor, "
             .. 'when #prose.comment_marker_case is "skip"',
         function()
-            -- Regression test: `--` is its own leaf, separate from
-            -- `comment_content`, with no other content of its own -- so a
-            -- naive "no units -> fall back to the whole leaf" rule would
-            -- silently turn `"skip"` back into a stop for it on *every*
-            -- line, not just coincidentally not-noticing it on the first
-            -- one the cursor already started on.
+            -- `--` is a leaf of its own; skipping it must work on every line.
             treemotion.setup({
                 commands = {
                     motion = {
@@ -628,10 +546,8 @@ describe("motion API - #backtick_identifiers", function()
     end)
 
     it("collapses a single-word backtick span into a code identifier, hiding the backticks", function()
-        -- `-- see `fooBar` here`: `comment_content` (starting at column 2) is
-        -- " see `fooBar` here". `fooBar` (columns 8-14) is one Vim word, so
-        -- it's carved out and split with #code's rules instead of #prose's;
-        -- the backticks at columns 7 and 15 produce no unit at all.
+        -- `fooBar` (8-14) is one word in backticks, so it uses the code rules;
+        -- the backticks (7, 15) are not stops.
         vim.api.nvim_buf_set_lines(assert(_BUFFER), 0, -1, false, { "-- see `fooBar` here" })
         _set_cursor(0)
 
@@ -645,11 +561,8 @@ describe("motion API - #backtick_identifiers", function()
     end)
 
     it("applies #code.kebab_case (not #prose's) to a backtick-enclosed identifier", function()
-        -- #code.kebab_case defaults to "skip" (vs. #prose's "stop"), so the
-        -- `-` inside a backtick identifier never becomes its own stop --
-        -- proving this really borrows #code's rules, not #prose's (which
-        -- share the same camel_case/pascal_case defaults, so those two
-        -- alone couldn't tell the two rule sets apart).
+        -- Code's `kebab_case` is `"skip"` and prose's is `"stop"`, so this
+        -- tells the two rule sets apart.
         vim.api.nvim_buf_set_lines(assert(_BUFFER), 0, -1, false, { "-- see `foo-bar` here" })
         _set_cursor(0)
 
@@ -694,10 +607,7 @@ describe("motion API - #backtick_identifiers", function()
         vim.api.nvim_buf_set_lines(assert(_BUFFER), 0, -1, false, { "-- see `foo-bar` here" })
         _set_cursor(0)
 
-        -- With the feature off, the backticks are ordinary punctuation stops
-        -- again, and `foo-bar` is just a #prose word -- #prose.kebab_case
-        -- defaults to "stop", so `-` lands as its own stop too, the mirror
-        -- image of the enabled case above (#code.kebab_case = "skip").
+        -- Feature off: backticks are stops and `-` follows prose's `"stop"`.
         local expected = { 3, 7, 8, 11, 12, 15, 17, 17 }
 
         for _, column in ipairs(expected) do
@@ -707,11 +617,8 @@ describe("motion API - #backtick_identifiers", function()
     end)
 end)
 
---- `:`/`/` are grouped into `_char_class`'s `"word"` class (see `prose.lua`'s
---- docstring), and prose's `colon_case`/`slash_case` both default to `"skip"`
---- -- so a structured token like a `github:owner/repo` reference, a URL, or a
---- filesystem path never fragments at every `:`/`/` the way ordinary
---- punctuation would.
+--- Prose skips `:` and `/` by default, so `github:owner/repo`, URLs and
+--- paths don't split at every separator.
 describe("motion API - colon_case/slash_case (structured prose tokens)", function()
     before_each(function()
         _BUFFER = vim.api.nvim_create_buf(false, true)
@@ -730,11 +637,8 @@ describe("motion API - colon_case/slash_case (structured prose tokens)", functio
         )
         _set_cursor(0)
 
-        -- `local`, `x`, `=`, `"`(open), `github`, `Nix`, `OS`, `nixpkgs`, `nixos`,
-        -- `-` (prose's `kebab_case` is still "stop" by default -- see this
-        -- feature's "known caveat" in the module docstring, `-` is
-        -- deliberately unaffected by this change), `unstable`, `"`(close).
-        -- `:`/`/` never appear as their own stop anywhere in that sequence.
+        -- `local x = " github Nix OS nixpkgs nixos - unstable "`: no stop on
+        -- `:` or `/`.
         local expected = { 6, 8, 10, 11, 18, 21, 24, 32, 37, 38, 46 }
 
         for _, column in ipairs(expected) do
@@ -844,11 +748,7 @@ describe("motion API - opaque hash/digest tokens (#opaque_token_min_length)", fu
         "still splits a long camelCase identifier on its case boundaries, even though it's at/above "
             .. "#opaque_token_min_length -- an ordinary identifier isn't a hash just because it's long",
         function()
-            -- 24 characters (at/above the default `opaque_token_min_length` of
-            -- 20), mixed-case, purely alphanumeric -- exactly what
-            -- `case.looks_like_hash` used to flag as opaque on charset/length
-            -- alone. It has no digits anywhere in it, though, unlike a real
-            -- base64/hex digest of this length almost certainly would.
+            -- Long and mixed-case but without digits, so not a hash.
             local identifier = "handleSubmitButtonClick"
             vim.api.nvim_buf_set_lines(assert(_BUFFER), 0, -1, false, { string.format("local %s = 1", identifier) })
 
@@ -898,10 +798,7 @@ describe("motion API - commands.motion.big (W/E/B/gE sub-word splitting)", funct
 
         _set_cursor(0)
 
-        -- `fooBar.bazQux` splits into `foo`, `Bar.baz`, `Qux` (`.` isn't a
-        -- delimiter character, so it just rides along inside whichever
-        -- case-chunk it lands in); `hello_world` is a separate run, and stays
-        -- whole (#big.code's `snake_case` default is still `"none"`).
+        -- `fooBar.bazQux` -> `foo`, `Bar.baz`, `Qux`; `hello_world` stays whole.
         treemotion.run_motion_E()
         assert.same(2, _get_cursor_column()) -- end of `foo`
 
@@ -931,10 +828,7 @@ describe("motion API - commands.motion.big (W/E/B/gE sub-word splitting)", funct
                 },
             })
 
-            -- Lua's sugar call syntax: `fooBarBaz` (an `identifier` leaf, code)
-            -- immediately followed by `"helloWorldLongText"` (a `"`/`string_content`/`"`
-            -- trio, all `@string`-tagged prose) -- one contiguous run mixing both
-            -- classifications, with no whitespace anywhere in it.
+            -- One run mixing code (`fooBarBaz`) and a prose string.
             vim.api.nvim_buf_set_lines(assert(_BUFFER), 0, -1, false, { [[fooBarBaz"helloWorldLongText"]] })
             _set_cursor(0)
 
@@ -945,20 +839,14 @@ describe("motion API - commands.motion.big (W/E/B/gE sub-word splitting)", funct
             assert.same(5, _get_cursor_column()) -- end of `Bar`
 
             treemotion.run_motion_E()
-            -- End of `Baz` -- not `Baz"hello`, which is what applying the
-            -- identifier's own (code) camelCase rules to the whole run would
-            -- produce, bleeding straight through the quote into the string
-            -- content since `"` isn't a configured delimiter.
+            -- End of `Baz`: code rules don't leak into the string.
             assert.same(8, _get_cursor_column())
 
             treemotion.run_motion_E()
             assert.same(9, _get_cursor_column()) -- the opening `"`, its own unit
 
             treemotion.run_motion_E()
-            -- End of the string content, kept as one unit -- #big.prose's
-            -- `camel_case` is disabled here, so `helloWorldLongText` isn't
-            -- case-split the way `.code`'s rules (used for `fooBarBaz` above)
-            -- would split it.
+            -- End of the string: `big.prose.camel_case` is off.
             assert.same(27, _get_cursor_column())
 
             treemotion.run_motion_E()
@@ -980,19 +868,11 @@ describe("motion API - commands.motion.big (W/E/B/gE sub-word splitting)", funct
         vim.api.nvim_buf_set_lines(assert(_BUFFER), 0, -1, false, { "return abc" })
         _set_cursor(0)
 
-        -- Simulates the rare case `_commands.motion.subword`'s `_split_run_segment`
-        -- guards against: a leaf's `:end_()` sitting one row past the buffer's
-        -- last line, which `nvim_buf_get_text` refuses to read. Only errors for
-        -- this run's own exact coordinates, so unrelated reads elsewhere in the
-        -- same motion aren't affected.
+        -- Make `nvim_buf_get_text` fail for this run's exact range, as for a
+        -- leaf ending one row past the last line.
         local original_get_text = vim.api.nvim_buf_get_text
 
-        -- `...` (not a named `opts` parameter) is deliberate: `nvim_buf_get_text`'s
-        -- trailing `opts` is optional, and some callers omit it rather than pass
-        -- `{}`. Naming it `opts` would bind a plain omitted argument to `nil`, and
-        -- re-forwarding that `nil` positionally is a real 6th argument -- not the
-        -- same as the call never having one -- which the real implementation
-        -- rejects. Forwarding `...` preserves the caller's exact argument count.
+        -- Forward `...` as is: an explicit trailing `nil` is rejected.
         ---@diagnostic disable-next-line: undefined-field
         local get_text_stub = stub(vim.api, "nvim_buf_get_text").invokes(
             function(buffer, start_row, start_col, end_row, end_col, ...)
@@ -1004,10 +884,7 @@ describe("motion API - commands.motion.big (W/E/B/gE sub-word splitting)", funct
             end
         )
 
-        -- Neither call is wrapped in a `pcall`: if the guard this test exists
-        -- for were ever removed, the second `run_motion_E()` would raise the
-        -- stubbed error uncaught, and busted fails an `it` block on any
-        -- uncaught error without needing an explicit assertion for it.
+        -- No `pcall`: without the guard, the stubbed error fails the test.
         treemotion.run_motion_E() -- end of `return`'s own run
         treemotion.run_motion_E() -- end of `abc`'s run -- the stubbed failure, guarded
 

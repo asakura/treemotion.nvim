@@ -12,14 +12,10 @@ local M = {}
 -- This file is defer-loaded so it's okay to run this in the global scope
 configuration_.initialize_data_if_needed()
 
---- Check `data` for problems and return each of them.
+--- Problems with `data`, merged over the defaults first.
 ---
---- `data` is merged over the defaults first, so a partial configuration
---- (e.g. just `{ logging = { use_file = true } }`) isn't reported as missing
---- every value it leaves out.
----
----@param data treemotion.Configuration? All extra customizations for this plugin.
----@return string[] # All found issues, if any.
+---@param data treemotion.Configuration?
+---@return string[]
 ---
 function M.get_issues(data)
     if not data or vim.tbl_isempty(data) then
@@ -29,57 +25,12 @@ function M.get_issues(data)
     return schema.get_issues(configuration_.resolve_data(data))
 end
 
---- Check whether this Neovim version can run `motion` commands at full fidelity.
+--- Warn about languages in the user's own `commands.motion[field]` that have
+--- no parser installed. Shipped defaults are not checked.
 ---
---- `vim.treesitter.get_node()`'s `include_anonymous` option -- which lets
---- `w`/`e`/`b`/`ge`/`W`/`E`/`B`/`gE` stop on punctuation leaves (`.`, `(`,
---- `,`, ...) and not just named nodes -- only exists on Neovim 0.11+. On
---- older Neovim it's silently ignored rather than erroring, so the motions
---- still "work", just coarser than intended -- worth surfacing here since
---- nothing else would tell the user why punctuation gets skipped.
-local function _check_motion()
-    vim.health.start("Motion")
-
-    if vim.fn.has("nvim-0.11") == 1 then
-        vim.health.ok(
-            "Neovim supports `vim.treesitter.get_node({ include_anonymous = true })`, "
-                .. "so `w`/`e`/`b`/`ge`/`W`/`E`/`B`/`gE` stop on punctuation leaves too."
-        )
-    else
-        vim.health.warn(
-            "Neovim is older than 0.11, so `vim.treesitter.get_node()` doesn't support "
-                .. "`include_anonymous`. `w`/`e`/`b`/`ge`/`W`/`E`/`B`/`gE` will silently skip over "
-                .. "punctuation leaves (e.g. `.`, `(`, `,`) on this version."
-        )
-    end
-end
-
---- Warn (never error) if a `commands.motion.<field>` language key the
---- *user* configured names a treesitter language with no installed parser.
----
---- Used for both `comment_markers` and `insignificant_characters`, which
---- are both `table<language, ...>`.
----
---- This only looks at the user's own raw override, not the fully-resolved
---- configuration -- the shipped defaults (`c`, `cpp`, `rust`, `python`,
---- ...) intentionally cover languages most users won't have every parser
---- for (that's the point of being pre-configured ahead of installing e.g.
---- Python's or Rust's parser later), so warning about *those* on every
---- `:checkhealth` run would be noise, not signal. A language the user typed themselves, though, is
---- worth a warning if it can't be found -- most likely a typo, or a parser
---- that still needs installing.
----
---- The optional languages behind `configuration.get_comment_markers`/
---- `get_insignificant_characters` (auto-detected when their parser is
---- installed) are exempt for the same reason as the shipped defaults --
---- they aren't part of the user's raw override this function inspects.
---- They're also already pre-gated by a `vim.treesitter.language.add()`
---- check before those functions ever return one of their entries, so there's never a "missing parser" case
---- to warn about for them in the first place.
----
----@param raw treemotion.Configuration The user's own configuration, unresolved.
----@param field "comment_markers" | "insignificant_characters" The `commands.motion` key to inspect.
----@param title string The `:checkhealth` section heading, shown only if a warning is.
+---@param raw treemotion.Configuration
+---@param field "comment_markers" | "insignificant_characters"
+---@param title string
 ---
 local function _check_missing_parsers(raw, field, title)
     local ok, entries = pcall(tabler.get_value, raw, { "commands", "motion", field })
@@ -117,9 +68,7 @@ local function _check_missing_parsers(raw, field, title)
     end
 end
 
---- Make sure `data` will work for `treemotion`.
----
----@param data treemotion.Configuration? All extra customizations for this plugin.
+---@param data treemotion.Configuration?
 ---
 function M.check(data)
     _LOGGER:debug("Running treemotion health check.")
@@ -141,8 +90,6 @@ function M.check(data)
     for _, key in ipairs(schema.get_unknown_keys(raw)) do
         vim.health.warn(string.format('Unknown key "%s" is ignored. Is it a typo?', key))
     end
-
-    _check_motion()
 
     _check_missing_parsers(raw, "comment_markers", "Comment markers")
     _check_missing_parsers(raw, "insignificant_characters", "Insignificant characters")

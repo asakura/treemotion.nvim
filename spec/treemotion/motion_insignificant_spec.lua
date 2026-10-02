@@ -1,17 +1,6 @@
---- Make sure `commands.motion.insignificant_characters` makes a configured
---- leaf-level token invisible to `w`/`e`/`b`/`ge`/`W`/`E`/`B`/`gE` for
---- **code** leaves only, never for a *named* prose (`@spell`-/`@string`-tagged)
---- leaf -- an *unnamed* one (a string's own quote delimiters, captured
---- `@string` via their parent `string` node rather than for any content of
---- their own) is fair game, and can be configured away like any other code
---- leaf -- see `classify.is_insignificant`'s docstring for why.
----
---- Fixtures stay Lua-specific, mirroring `treemotion_spec.lua`'s "subword
---- configuration" block: this feature's mechanics (leaf text matching,
---- code/prose gating, run-skipping) are grammar-agnostic already, so a
---- second grammar here would only prove the same thing twice, not add
---- coverage the way `motion_comment_marker_spec.lua`'s cross-grammar sweep
---- does for a feature whose *defaults* vary per language.
+--- `insignificant_characters` hides configured code tokens from the motions.
+--- Named prose leaves are never hidden; unnamed ones, such as a string's
+--- quotes, can be.
 
 local treemotion = require("treemotion")
 
@@ -48,10 +37,7 @@ describe("motion API - insignificant_characters", function()
     after_each(function()
         _remove_buffer()
 
-        -- `M.DATA` is one shared, process-wide table -- restore to
-        -- `_DEFAULTS`' own `{}` so a test's one-off entry never leaks into
-        -- whichever spec file runs next in the same busted process (mirrors
-        -- `treemotion_spec.lua`'s identical `comment_markers` restore).
+        -- Reset the shared configuration to the default `{}`.
         treemotion.setup({
             commands = { motion = { insignificant_characters = {}, big = { enabled = false } } },
         })
@@ -105,11 +91,8 @@ describe("motion API - insignificant_characters", function()
     end)
 
     it("can hide a string's own quote delimiters, even though they're @string-tagged", function()
-        -- Unlike the `;` inside the string's content (previous test), the
-        -- quotes themselves (`"`) are unnamed leaves -- captured `@string`
-        -- only via their parent `string` node's own `(string) @string`,
-        -- never as content of their own -- so `classify.is_insignificant` doesn't
-        -- exempt them the way it exempts `string_content`.
+        -- The quotes are unnamed leaves, so they can be hidden, unlike
+        -- `string_content`.
         treemotion.setup({ commands = { motion = { insignificant_characters = { lua = { '"' } } } } })
         _initialize_buffer({ [[local s = "foo bar";]] })
 

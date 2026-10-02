@@ -1,39 +1,21 @@
---- Make sure a real, freshly started Neovim loads and initializes treemotion
---- exactly once, and honors `g:loaded_treemotion`.
+--- A fresh Neovim loads and initializes treemotion once, and honors
+--- `g:loaded_treemotion`. A `g:` variable survives clearing
+--- `package.loaded`; the configuration's own flag doesn't, so a reloaded
+--- module initializes again.
 ---
---- Two separate guards are involved, living in two separate places:
----
---- - `g:loaded_treemotion` is an Nvim (`g:`) variable, checked by
----   `plugin/treemotion.lua` the same way Vimscript's `exists()` would. If it
----   is set before the plugin loads, the plugin must not load at all; if it is
----   not, the plugin sets it so sourcing the file again does nothing.
---- - `_core.configuration` guards its own `M.DATA` with a module-local flag
----   in the Lua heap. Clearing `package.loaded` throws both away together,
----   while `g:` survives, so a reloaded module must initialize again.
----
---- The rest of the suite shares one Neovim process (busted runs under
---- `nvim -l`) whose `spec/minimal_init.lua` has already loaded the plugin, so
---- none of this can be observed from inside it. Each test here starts a
---- separate `nvim --clean --headless` child instead, runs a scenario in it,
---- and reads back what it printed. `package.path`/`package.cpath` are
---- forwarded so the child finds `mega.cmdparse`/`mega.logging` wherever this
---- run does.
+--- The rest of the suite runs in one Neovim that has already loaded the
+--- plugin, so each test here runs a scenario in a `nvim --clean --headless`
+--- child with the same `package.path`.
 
---- Run `scenario` (Lua source) in a fresh Neovim and return what it reported.
+--- Run `scenario` in a fresh Neovim and return its global `result` table.
 ---
---- `scenario` runs after a scratch Lua buffer holding `fooBar baz` is current,
---- with treesitter started and the cursor at column 0. The plugin's
---- directory is on 'runtimepath' but `plugin/treemotion.lua` has not been
---- sourced yet. Helpers available to it:
+--- The scenario starts in a Lua buffer holding `fooBar baz`, cursor at
+--- column 0, with the plugin on 'runtimepath' but not sourced. It can call
+--- `load_plugin()`, `press(name)` (runs `<Plug>(TreeMotion<name>)`, returns
+--- the column) and `mapping(name)` (the mapping's callback, or `nil`).
 ---
---- - `load_plugin()` sources `plugin/treemotion.lua`, as Neovim does at startup.
---- - `press(name)` runs `<Plug>(TreeMotion<name>)` and returns the cursor's new column.
---- - `mapping(name)` returns `<Plug>(TreeMotion<name>)`'s callback, or `nil` if it isn't defined.
----
---- Whatever `scenario` stores in the global `result` table is sent back as JSON.
----
----@param scenario string Lua source to run in the child.
----@return table # The child's `result` table.
+---@param scenario string
+---@return table
 local function _run_in_fresh_neovim(scenario)
     local script = vim.fn.tempname() .. ".lua"
     local root = vim.fn.getcwd()

@@ -1,37 +1,20 @@
---- A declarative description of every `treemotion.Configuration` value.
----
---- `M.SCHEMA` mirrors the shape of the default configuration: each
---- section is a table of named fields, and each field is a check plus the
---- human-readable description `:checkhealth` shows when a value fails it.
---- `M.get_issues` walks it, so adding a configuration value means adding
---- one line here, not another hand-written `vim.validate` call in
---- `health.lua`. `spec/treemotion/configuration_spec.lua` checks that the
---- schema and the defaults declare exactly the same values, so the two can't
---- drift apart.
----
---- Fields are stored as ordered `{ name, node }` pairs, not as a map, so
---- issues come back in a stable, documented order.
+--- Every configuration value, with its check and the description
+--- `:checkhealth` shows when it fails. A spec keeps it in sync with the
+--- defaults. Fields are ordered so issues come back in a stable order.
 
-local hints_constant = require("treemotion._core.hints")
 local motion_constant = require("treemotion._commands.motion.constant")
 
 local M = {}
 
 ---@alias treemotion._SchemaNode treemotion._SchemaValue | treemotion._SchemaSection
 
---- A single configuration value, e.g. `logging.use_file`.
----
 ---@class treemotion._SchemaValue
 ---@field kind "value"
 ---@field check fun(value: any): boolean Return `true` if `value` is valid.
 ---@field expected string What a valid value looks like, e.g. `"a boolean"`.
 ---@field required boolean? If `true`, `nil` is an issue. Otherwise `nil` is always fine.
 
---- A table of configuration values, e.g. `logging`.
----
---- A missing (`nil`) section is fine and none of its fields are checked. A
---- section that's present but isn't a table is reported once, without
---- checking its fields.
+--- A missing section is fine; a non-table one is reported once.
 ---
 ---@class treemotion._SchemaSection
 ---@field kind "section"
@@ -67,10 +50,8 @@ local function _positive_integer()
     end, "a positive integer")
 end
 
---- Describe `choices` for a `:checkhealth` message, e.g. `'"none" or "skip" or "stop"'`.
----
----@param choices string[] Every valid value, in the order to list them.
----@return string
+---@param choices string[]
+---@return string # e.g. `'"none" or "skip" or "stop"'`.
 ---
 local function _describe_choices(choices)
     local quoted = {}
@@ -82,14 +63,8 @@ local function _describe_choices(choices)
     return table.concat(quoted, " or ")
 end
 
---- Check that a value is one of `choices`.
----
---- The expected-value message is built from `choices` too, so adding a new
---- choice can't leave `:checkhealth` describing a stale list.
----
---- `choices` is either an ordered list of every valid value, or a
---- symbolic-value table like `hints.Kind`, whose keys are the valid values
---- (listed alphabetically).
+--- A value that must be one of `choices`: a list, or a symbolic table like
+--- `constant.SkippedText` whose keys are the choices.
 ---
 ---@param choices string[] | table<string, string>
 ---@param required boolean?
@@ -107,9 +82,9 @@ local function _enum(choices, required)
     end, _describe_choices(values), required)
 end
 
---- Check that `value` is a `table<string, T>` whose every `T` passes `check`.
+--- A `table<string, table>` whose every entry passes `check`.
 ---
----@param check fun(item: table): boolean Validate one language's entry, already known to be a table.
+---@param check fun(item: table): boolean
 ---@param expected string
 ---@return treemotion._SchemaValue
 local function _per_language(check, expected)
@@ -141,16 +116,8 @@ local function _comment_markers()
     end, "a table<string, string[]> (treesitter language name -> comment-marker characters)")
 end
 
---- Unlike `comment_markers`, an entry here may be a hybrid table
---- (`treemotion.InsignificantCharacterList`): its array part lists
---- characters to add (string elements only, the same shape
---- `comment_markers` validates), while a string key mapped to `false`
---- negates one character from `_OPTIONAL_INSIGNIFICANT_CHARACTERS`/
---- `_DEFAULTS` instead of adding one -- see
---- `configuration.get_insignificant_characters`'s docstring. `pairs` (not
---- `ipairs`) here so both parts get checked; a string key must map to a
---- boolean, an integer key must map to a string, and any other key is
---- invalid.
+--- Entries list characters (integer keys) or remove them (string keys set
+--- to `false`); see `configuration.get_insignificant_characters`.
 ---
 ---@return treemotion._SchemaValue
 local function _insignificant_characters()
@@ -176,8 +143,6 @@ local function _insignificant_characters()
     )
 end
 
---- The rules for one `code`/`prose` context. See `treemotion.ConfigurationMotionSubwordRules`.
----
 ---@return treemotion._SchemaSection
 local function _subword_rules()
     local fields = {
@@ -194,9 +159,7 @@ local function _subword_rules()
     return _section(fields)
 end
 
---- One `small`/`big` group. See `treemotion.ConfigurationMotionGroup`.
----
----@param has_enabled boolean Whether this group has an `enabled` switch. Only `big` does.
+---@param has_enabled boolean Only `big` has `enabled`.
 ---@return treemotion._SchemaSection
 local function _group(has_enabled)
     local fields = {}
@@ -212,10 +175,7 @@ local function _group(has_enabled)
     return _section(fields)
 end
 
---- Every `mega.logging` level `logging.level` accepts, least to most severe.
----
---- `mega.logging` keeps its own level table private, so this list mirrors
---- its `_Level` alias.
+--- `mega.logging`'s levels, which it doesn't export.
 local _LOG_LEVELS = { "trace", "debug", "info", "warning", "error", "fatal" }
 
 ---@type treemotion._SchemaSection
@@ -244,7 +204,6 @@ M.SCHEMA = _section({
             },
         }),
     },
-    { "hints", _enum(hints_constant.Kind, true) },
     {
         "logging",
         _section({
@@ -255,23 +214,19 @@ M.SCHEMA = _section({
     },
 })
 
---- Describe why `value`, found at `path`, isn't valid.
----
----@param path string The dotted configuration key, e.g. `"logging.level"`.
----@param expected string What a valid value looks like, e.g. `"a boolean"`.
----@param value any The invalid value.
+---@param path string
+---@param expected string
+---@param value any
 ---@return string # e.g. `"logging.use_file: expected a boolean, got aaa"`.
 ---
 local function _format_issue(path, expected, value)
     return string.format("%s: expected %s, got %s", path, expected, tostring(value))
 end
 
---- Check `value` against `node`, appending every issue found to `output`.
----
----@param node treemotion._SchemaNode The schema to check against.
----@param value any The configuration value at `path`.
----@param path string The dotted configuration key, e.g. `"logging.level"`. `""` for the root.
----@param output string[] All issues found so far.
+---@param node treemotion._SchemaNode
+---@param value any
+---@param path string `""` for the root.
+---@param output string[]
 ---
 local function _append_issues(node, value, path, output)
     if node.kind == "value" then
@@ -307,16 +262,13 @@ local function _append_issues(node, value, path, output)
     end
 end
 
---- Append the dotted path of every key in `value` that `node` doesn't declare.
+--- Collect keys `node` doesn't declare. Only sections are walked; a value's
+--- own keys (language names) are free-form.
 ---
---- Only sections are walked: a value's own keys (e.g. the language names
---- in `comment_markers`) are free-form. A value that isn't a table is left
---- to `_append_issues` to report.
----
----@param node treemotion._SchemaNode The schema to check against.
----@param value any The configuration value at `path`.
----@param path string The dotted configuration key, e.g. `"logging"`. `""` for the root.
----@param output string[] All unknown keys found so far.
+---@param node treemotion._SchemaNode
+---@param value any
+---@param path string
+---@param output string[]
 ---
 local function _append_unknown_keys(node, value, path, output)
     if node.kind ~= "section" or type(value) ~= "table" then
@@ -349,12 +301,10 @@ local function _append_unknown_keys(node, value, path, output)
     end
 end
 
---- Find every key in `data` that `M.SCHEMA` doesn't declare, e.g. a typo
---- like `commands.motion.small.code.camelCase`. Such keys are silently
---- ignored by the plugin, so they're worth pointing out.
+--- Keys in `data` the schema doesn't declare, likely typos.
 ---
----@param data table The configuration to check, e.g. the user's raw `vim.g.treemotion_configuration`.
----@return string[] # The dotted path of every unknown key, e.g. `"logging.levle"`, sorted per section.
+---@param data table
+---@return string[] # Dotted paths.
 ---
 function M.get_unknown_keys(data)
     local output = {}
@@ -364,10 +314,8 @@ function M.get_unknown_keys(data)
     return output
 end
 
---- Check `data` against `M.SCHEMA`.
----
----@param data table The configuration to check, e.g. a `treemotion.Configuration`.
----@return string[] # Every issue found, e.g. `"logging.use_file: expected a boolean, got aaa"`.
+---@param data table
+---@return string[]
 ---
 function M.get_issues(data)
     local output = {}
