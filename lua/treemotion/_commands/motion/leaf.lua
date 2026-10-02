@@ -200,7 +200,7 @@ function M.leaf_at(row, column, forward)
     end
 
     -- One column wide: `LanguageTree:parse()` skips an injected region when
-    -- given a zero-width range at its exact start.
+    -- given a zero-width range at its exact start. See `DESIGN.md`.
     parser:parse({ row, column, row, column + 1 })
 
     return _leaf_at(parser, row, column, forward)

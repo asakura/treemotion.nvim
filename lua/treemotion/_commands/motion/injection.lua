@@ -226,7 +226,8 @@ local _ANNOTATION_ONLY_LANGUAGES = {
 ---
 --- Parses lazily: the host tree at `node`, then the whole child language on
 --- a match. Neovim only takes its cheap path once a language is fully
---- parsed, and languages never entered cost nothing.
+--- parsed, and languages never entered cost nothing. See `DESIGN.md` for the
+--- measured alternatives.
 ---
 ---@param node TSNode
 ---@return vim.treesitter.LanguageTree? child_ltree
