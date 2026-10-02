@@ -147,6 +147,12 @@ local _CLOSING_BRACKETS = { [")"] = true, ["]"] = true, ["}"] = true }
 ---
 --- Without a parser every bracket counts.
 ---
+--- The node is looked up with `descendant_for_range()` rather than
+--- `vim.treesitter.get_node()`, whose `include_anonymous` option only exists
+--- on Neovim 0.11+: without it every bracket would resolve to its named
+--- parent and look like text in a leaf.
+---
+---@param parser vim.treesitter.LanguageTree? The buffer's parser, if any.
 ---@param row integer
 ---@param column integer
 ---@param start_row integer
@@ -155,17 +161,13 @@ local _CLOSING_BRACKETS = { [")"] = true, ["]"] = true, ["}"] = true }
 ---@param finish_column integer
 ---@return boolean
 ---
-local function _is_structural_bracket(row, column, start_row, start_column, finish_row, finish_column)
-    if not vim.treesitter.get_parser(0, nil, { error = false }) then
+local function _is_structural_bracket(parser, row, column, start_row, start_column, finish_row, finish_column)
+    if not parser then
         return true
     end
 
-    local node = vim.treesitter.get_node({
-        bufnr = 0,
-        pos = { row, column },
-        ignore_injections = false,
-        include_anonymous = true,
-    })
+    local tree = parser:tree_for_range({ row, column, row, column + 1 }, { ignore_injections = false })
+    local node = tree and tree:root():descendant_for_range(row, column, row, column + 1)
 
     if not node or not node:named() then
         return true
@@ -197,6 +199,7 @@ local function _before_unopened_bracket(start_row, start_column, finish_row, fin
     ---@type string[]
     local expected = {}
     local leading = true
+    local parser = vim.treesitter.get_parser(0, nil, { error = false })
 
     for index, line in ipairs(lines) do
         local row = start_row + index - 1
@@ -210,7 +213,7 @@ local function _before_unopened_bracket(start_row, start_column, finish_row, fin
             local character = line:sub(byte, byte)
             local column = offset + byte - 1
             local is_bracket = (_CLOSING_BRACKETS[character] or _CLOSING_BRACKET[character]) ~= nil
-                and _is_structural_bracket(row, column, start_row, start_column, finish_row, finish_column)
+                and _is_structural_bracket(parser, row, column, start_row, start_column, finish_row, finish_column)
 
             if is_bracket and _CLOSING_BRACKETS[character] then
                 if expected[#expected] == character then
