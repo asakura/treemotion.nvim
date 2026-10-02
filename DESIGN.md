@@ -202,12 +202,16 @@ throwaway scripts.
   could never put them back together. Keeping them in also keeps
   `github:NixOS/nixpkgs` and URLs whole until `colon_case` and `slash_case`
   decide.
+  Both default to `"skip"` for prose and `"none"` for code, because real
+  identifiers almost never contain a literal `:` or `/`.
 - **The hash heuristic requires a digit on the base64 branch.** Without that
   requirement, any mixed-case identifier of 20 or more characters
   (`handleSubmitButtonClick`) counted as a hash. Each base64 character is a
   digit with probability 10/64, so a real digest almost always has one. Trailing
   `=` padding is merged back into the word before it (`_merge_opaque_padding`)
-  so a base64 digest stays one unit.
+  so a base64 digest stays one unit. The default minimum length of 20 sits well
+  below a 40-character sha1 hex digest and a 44-character base64 sha256, and
+  well above ordinary identifiers and words.
 - **`camel_case` and `pascal_case` toggle independently** because the first
   letter alone decides which one applies to a word.
 - **The default `W` (`big.enabled = false`) returns the run's raw bounds
@@ -248,6 +252,32 @@ first time a language is entered. How this was arrived at:
 | 4: 3, plus `child:parse(true)` on a match | Still 1.9 to 7.3 times slower. Of 10,258 lookups, 8,916 landed on the root at 0.06 to 0.15 ms each, against about 0.002 ms when warm. |
 | Root cause | Not laziness. Per-line fence regions meant the exact match never succeeded, so Rust never became "entirely valid". That was also a correctness bug in `main`: `w` skipped every multi-line fence. |
 | 5: 4, after `_merge_contiguous` | Shipped. A full walk is the same as eager within noise (about 1.33 against 1.38 ms per motion over 5 interleaved pairs). Cold start in a fence is consistently 5 to 13% faster (57 to 58 against 61 to 66 ms). Languages that are never entered cost nothing (eager parses all 570 `markdown_inline` regions anyway). |
+
+On its own, without the motion code around it, a narrow `parse()` looked much
+better than the shipped result: a cold start fell from 80 to 21 ms, a first
+visit to a new region took 0.33 ms, and a post-edit reparse fell from 12.4 to
+8.5 ms. In the real motions most of that disappeared, because Markdown's
+combined-injection flag still forces a full scan of the root.
+
+**Known trade-off of lazy parsing.** Typing a character into a fence's
+delimiter line changes the fence's structure. After that edit, eager parsing
+reparsed 760 of the 762 regions (29.6 ms). Lazy parsing reparsed 2 (7.6 ms) and
+left the rest stale until a walk reaches them and parses them on arrival. Part
+of what lazy parsing "saves" is work it defers. If stale injected trees ever
+cause wrong motions after structural edits, this is where to look.
+
+How to reproduce the numbers: no benchmark harness is committed. Run a
+throwaway `bench.lua` with
+`nvim --headless -u NONE -U NONE -N -i NONE --cmd "set rtp+=<treesitterAllGrammars>" -l bench.lua`.
+It should call the real `treemotion.run_motion_*`, `leaf.*` and `unit.*`
+functions, not copies of them in isolation. The scenarios were:
+
+- A synthetic Markdown document: prose lines with a ```` ```rust ```` fence (a small
+  function) every 10 lines, using 190 fences (1900 lines) or 2000 fences.
+- A single-line Lua `local t = { field_1 = 1, ... }` with N fields, walked with
+  `leaf.first_leaf` on its `table_constructor` node.
+- A full `parser:parse(true)` right after creating the buffer when measuring
+  traversal rather than cold parsing.
 
 Benchmarking traps:
 
