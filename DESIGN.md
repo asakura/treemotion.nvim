@@ -219,6 +219,13 @@ throwaway scripts.
   well above ordinary identifiers and words.
 - **`camel_case` and `pascal_case` toggle independently** because the first
   letter alone decides which one applies to a word.
+- **An acronym keeps a one-letter lowercase suffix.** The `XMLHttp` rule splits
+  before an acronym's last capital when a lowercase letter follows it. On its
+  own, that turns `CIDRv4` into `CID`, `Rv4` and `URLs` into `UR`, `Ls`. The
+  rule therefore doesn't fire when the lowercase run is a single letter followed
+  by the end of the text, a digit or a capital (`IPv4`, `URLs`, `IDsList`). The
+  cost is that a one-letter word after a capital joins it (`IAmHere` gives
+  `IAm`, `Here`), which is rarer in identifiers than plurals and versions.
 - **The default `W` (`big.enabled = false`) returns the run's raw bounds
   untrimmed.** That keeps it byte-for-byte identical to the WORD spans from
   before runs could be sub-split.

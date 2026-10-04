@@ -45,6 +45,11 @@ NEW FEATURES                                     *treemotion-new-features*
   internal case transitions. A trailing `=` (base64 padding) is folded into
   the same unit.
 
+- camelCase and PascalCase splitting keeps an acronym together, both before a
+  word (`XMLHttpRequest` stops at `XML`, `Http`, `Request`) and with a
+  one-letter lowercase suffix (`CIDRv4`, `IPv4` and `URLs` are one unit each,
+  `IDsList` is `IDs`, `List`).
+
 - Comment-opener punctuation is configured per treesitter language via
   `commands.motion.comment_markers` (defaults include Python/Bash `#`, C/Rust
   `/`, LaTeX `%`, Vim `"`, treesitter query `;`, Lua `-`). A language with no

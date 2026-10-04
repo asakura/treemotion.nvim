@@ -172,6 +172,12 @@ describe("operator-pending motions", function()
             assert.same({ "local = bar" }, _type("lua", { "local foo = bar" }, 0, 6, "dw"))
         end)
 
+        it("#dw deletes a whole acronym with a one-letter suffix", function()
+            _configure({ enabled = true }, { lua = { "=" } })
+
+            assert.same({ "local = bar" }, _type("lua", { "local CIDRv4 = bar" }, 0, 6, "dw"))
+        end)
+
         it("#dw on an insignificant leaf deletes that leaf and the blanks after it", function()
             _configure({ enabled = true }, { lua = { "=" } })
 
@@ -500,6 +506,13 @@ describe("operator-pending motions", function()
             assert.same({ "local X= bar" }, result)
         end)
 
+        it("#cw changes a whole acronym with a one-letter suffix", function()
+            _configure({ enabled = true })
+
+            assert.same({ "local X = 1" }, _type("lua", { "local CIDRv4 = 1" }, 0, 6, "cwX<Esc>"))
+            assert.same({ "local x = getXFor()" }, _type("lua", { "local x = getURLsFor()" }, 0, 13, "cwX<Esc>"))
+        end)
+
         it("#cw behaves like #dw with #change_to_end = false", function()
             _configure({ enabled = true, change_to_end = false }, { lua = { "=" } })
 
@@ -695,6 +708,20 @@ describe("operator-pending motions", function()
                 { "{", '  "X" = {', '    source = "rule";', "  };", "}" },
                 _type("nix", lines, 1, 3, "cwX<Esc>")
             )
+        end)
+
+        it("#cw changes a whole acronym with a one-letter suffix", function()
+            if not _has_parser("nix") then
+                _skip('no "nix" treesitter parser installed')
+
+                return
+            end
+
+            _configure({ enabled = true })
+
+            local acronym = { "{", "  CIDRv4 = {", "    address = 1;", "  };", "}" }
+
+            assert.same({ "{", "  X = {", "    address = 1;", "  };", "}" }, _type("nix", acronym, 1, 2, "cwX<Esc>"))
         end)
 
         describe("inherit", function()
