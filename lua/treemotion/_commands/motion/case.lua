@@ -31,9 +31,20 @@ function M.looks_like_hash(text, min_length)
         and stripped:match("%d") ~= nil
 end
 
+--- Whether `character` (`nil` or `""` past the end) ends a one-letter
+--- lowercase suffix of an acronym, as in `IPv4`, `URLs` or `IDsList`.
+---
+---@param character string?
+---@return boolean
+---
+local function _ends_acronym_suffix(character)
+    return character == nil or character == "" or character:match("^%d") ~= nil or codepoint.is_upper(character)
+end
+
 --- Byte offsets where a new word starts: an uppercase letter after a
 --- lowercase letter or digit (`fooBar`), or before a lowercase letter after
---- another uppercase one (`XMLHttp` -> `XML`, `Http`).
+--- another uppercase one (`XMLHttp` -> `XML`, `Http`). That second rule skips
+--- a one-letter suffix, so `CIDRv4` and `URLs` stay whole.
 ---
 ---@param text string
 ---@return integer[]
@@ -50,7 +61,11 @@ local function _case_boundaries(text)
 
                 if previous:match("[%l%d]") then
                     table.insert(boundaries, index)
-                elseif previous:match("%u") and text:sub(index + 1, index + 1):match("%l") then
+                elseif
+                    previous:match("%u")
+                    and text:sub(index + 1, index + 1):match("%l")
+                    and not _ends_acronym_suffix(text:sub(index + 2, index + 2))
+                then
                     table.insert(boundaries, index)
                 end
             end
@@ -70,7 +85,12 @@ local function _case_boundaries(text)
 
             if codepoint.is_lower(previous) or previous:match("^%d") then
                 table.insert(boundaries, characters[index].offset)
-            elseif codepoint.is_upper(previous) and following and codepoint.is_lower(following.text) then
+            elseif
+                codepoint.is_upper(previous)
+                and following
+                and codepoint.is_lower(following.text)
+                and not _ends_acronym_suffix(characters[index + 2] and characters[index + 2].text)
+            then
                 table.insert(boundaries, characters[index].offset)
             end
         end

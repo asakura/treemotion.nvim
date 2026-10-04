@@ -105,6 +105,10 @@ punctuation token like `.` or `,`. Inside a leaf they also stop at
 naming-convention sub-words, so `fooBar-bazQux` has four stops: `foo`, `Bar`,
 `baz`, `Qux`.
 
+An acronym stays together, so `XMLHttpRequest` stops at `XML`, `Http` and
+`Request`. So does an acronym with a one-letter lowercase suffix: `CIDRv4`,
+`IPv4` and `URLs` are one stop each, and `IDsList` stops at `IDs` and `List`.
+
 #### Comments and prose
 
 Comments and strings (anything highlighted `@spell` or `@string`) are prose.

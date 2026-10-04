@@ -1,9 +1,11 @@
 --- The motions and sub-word splitting on Lua fixtures, and the
---- `:TreeMotion` command. Other grammars are covered in `motion_*_spec.lua`.
+--- `:TreeMotion` command. Other grammars are covered in `motion_*_spec.lua`,
+--- apart from a Nix acronym fixture next to its Lua twin.
 ---
 --- `foo.bar(1, 2)` has leaves `foo . bar ( 1 , 2 )` at columns
 --- 0, 3, 4, 7, 8, 9, 11, 12.
 
+local grammar = require("treemotion.grammar_helpers")
 local treemotion = require("treemotion")
 
 ---@type integer?
@@ -107,6 +109,107 @@ describe("motion API - subword (naming convention) motions", function()
 
         for _, column in ipairs(expected) do
             treemotion.run_motion_ge()
+            assert.same(column, _get_cursor_column())
+        end
+    end)
+end)
+
+--- A buffer with `local CIDRv4 = getURLsFor()`.
+---
+--- Default sub-words: `local CIDRv4 = get URLs For ( )` at columns
+--- 0, 6, 13, 15, 18, 22, 25, 26.
+local function _initialize_acronym_buffer()
+    _BUFFER = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_lines(_BUFFER, 0, -1, false, { "local CIDRv4 = getURLsFor()" })
+    vim.api.nvim_set_current_buf(_BUFFER)
+    vim.treesitter.start(_BUFFER, "lua")
+end
+
+describe("motion API - acronyms with a one-letter suffix", function()
+    before_each(_initialize_acronym_buffer)
+    after_each(_remove_buffer)
+
+    it("#w steps over `CIDRv4` and `URLs` as single sub-words", function()
+        _set_cursor(0)
+
+        local expected = { 6, 13, 15, 18, 22, 25, 26 }
+
+        for _, column in ipairs(expected) do
+            treemotion.run_motion_w()
+            assert.same(column, _get_cursor_column())
+        end
+    end)
+
+    it("#b steps backward over the same sub-words", function()
+        _set_cursor(26)
+
+        local expected = { 25, 22, 18, 15, 13, 6, 0 }
+
+        for _, column in ipairs(expected) do
+            treemotion.run_motion_b()
+            assert.same(column, _get_cursor_column())
+        end
+    end)
+
+    it("#e moves to the end of each of the same sub-words", function()
+        _set_cursor(0)
+
+        local expected = { 4, 11, 13, 17, 21, 24, 25, 26 }
+
+        for _, column in ipairs(expected) do
+            treemotion.run_motion_e()
+            assert.same(column, _get_cursor_column())
+        end
+    end)
+
+    it("#ge moves to the end of each previous sub-word", function()
+        _set_cursor(26)
+
+        local expected = { 25, 24, 21, 17, 13, 11, 4 }
+
+        for _, column in ipairs(expected) do
+            treemotion.run_motion_ge()
+            assert.same(column, _get_cursor_column())
+        end
+    end)
+
+    it(
+        "#w steps over `CIDRv4` as one sub-word in Nix",
+        -- Leaves: CIDRv4(2-8) =(9) {(11), then `address`(4) on the next row.
+        -- `=` and `{` are insignificant in Nix by default.
+        grammar.wrap(pending, {
+            filetype = "nix",
+            lines = { "{", "  CIDRv4 = {", "    address = 1;", "  };", "}" },
+        }, function()
+            grammar.set_cursor(1, 2)
+            treemotion.run_motion_w()
+            assert.same({ 2, 4 }, { grammar.get_cursor() })
+        end)
+    )
+end)
+
+--- A buffer with `-- see URLs and IPv4 here`.
+---
+--- The comment is prose: `--`=0, `see`=3, `URLs`=7, `and`=12, `IPv4`=16,
+--- `here`=21.
+local function _initialize_acronym_prose_buffer()
+    _BUFFER = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_lines(_BUFFER, 0, -1, false, { "-- see URLs and IPv4 here" })
+    vim.api.nvim_set_current_buf(_BUFFER)
+    vim.treesitter.start(_BUFFER, "lua")
+end
+
+describe("motion API - acronyms with a one-letter suffix, in prose", function()
+    before_each(_initialize_acronym_prose_buffer)
+    after_each(_remove_buffer)
+
+    it("#w steps over `URLs` and `IPv4` as single words", function()
+        _set_cursor(0)
+
+        local expected = { 3, 7, 12, 16, 21 }
+
+        for _, column in ipairs(expected) do
+            treemotion.run_motion_w()
             assert.same(column, _get_cursor_column())
         end
     end)

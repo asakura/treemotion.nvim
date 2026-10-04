@@ -30,6 +30,8 @@ local _FIXTURES = {
         lines = { [[(call_expression function: (identifier) @fooBar_baz (#eq? @fooBar_baz "quuxThing"))]] },
     },
     { filetype = "vimdoc", lines = { "foo-bar_baz qux |tag-link_here| 'option-name' quux" } },
+    -- Acronyms with a one-letter suffix, in code and in a comment.
+    { filetype = "lua", lines = { "local CIDRv4 = getURLsFor(IPv4, IDsList) -- see URLs and IPv4 here" } },
 
     -- Comments, for the `prose` rules and `comment_marker_case`. Each packs
     -- every convention, a backtick identifier, a backtick phrase, a label
