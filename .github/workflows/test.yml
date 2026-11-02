@@ -94,13 +94,16 @@ jobs:
     # Inlined from ColinKennedy/luarocks-rockspec-expander v1.0.1: that action
     # calls knicknic/os-specific-run, actions/checkout and luarocks/gh-actions-lua
     # by tag, which "pin actions to a full commit SHA" rejects. Its Lua script and
-    # luarocks-tag-release are fetched at pinned commits. The "install LuaJIT if
+    # luarocks-tag-release are fetched at pinned commits. luarocks-tag-release is
+    # pinned to the last commit before it dropped `ltr.rockspec` (Lux rewrite,
+    # 2026-10-16), which the expander still requires. The "install LuaJIT if
     # missing" fallback is dropped: "Install Lua" above always provides one.
+
     - name: Fetch luarocks-tag-release
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       with:
         repository: nvim-neorocks/luarocks-tag-release
-        ref: c35f1de0fecd07cbb85e24e8f71a02cd5f2b46ea
+        ref: b269146602489cd981a911e97ef34b8d937e8427
         path: .dependencies/luarocks-tag-release
         persist-credentials: false
 
