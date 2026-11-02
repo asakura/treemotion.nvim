@@ -55,16 +55,16 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install Neovim
-        uses: rhysd/action-setup-vim@v1
+        uses: rhysd/action-setup-vim@febef33995d6649302e9d88dda81e071b68f16a7 # v1
         with:
           neovim: true
           version: ${{ matrix.neovim }}
 
       - name: Run :checkhealth
-        uses: ColinKennedy/nvim-checkhealth-gh-action@v1.1.1
+        uses: ColinKennedy/nvim-checkhealth-gh-action@9a3c87dc12f99a94407d02756d55b4e510fc436f # v1.1.1
         with:
           executable: 'nvim -u "spec/checkhealth_init.lua"'
           checks: ${{ matrix.checks }}
@@ -73,7 +73,7 @@ jobs:
       # protocol error on a headless runner.
       - name: Run :checkhealth (Neovim core - informational only)
         continue-on-error: true
-        uses: ColinKennedy/nvim-checkhealth-gh-action@v1.1.1
+        uses: ColinKennedy/nvim-checkhealth-gh-action@9a3c87dc12f99a94407d02756d55b4e510fc436f # v1.1.1
         with:
           executable: 'nvim -u "spec/checkhealth_init.lua"'
           checks: ${{ matrix.core_checks }}
