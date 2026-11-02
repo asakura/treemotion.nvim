@@ -63,17 +63,31 @@ jobs:
           neovim: true
           version: ${{ matrix.neovim }}
 
-      - name: Run :checkhealth
-        uses: ColinKennedy/nvim-checkhealth-gh-action@9a3c87dc12f99a94407d02756d55b4e510fc436f # v1.1.1
+      # Inlined from ColinKennedy/nvim-checkhealth-gh-action v1.1.1: that action
+      # calls knicknic/os-specific-run by tag, which "pin actions to a full
+      # commit SHA" rejects. Its runner script is fetched at the pinned commit.
+      - name: Fetch the :checkhealth runner
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          executable: 'nvim -u "spec/checkhealth_init.lua"'
-          checks: ${{ matrix.checks }}
+          repository: ColinKennedy/nvim-checkhealth-gh-action
+          ref: 9a3c87dc12f99a94407d02756d55b4e510fc436f
+          path: .dependencies/nvim-checkhealth
+          persist-credentials: false
+
+      - name: Run :checkhealth
+        shell: bash
+        env:
+          # Avoids `infocmp: environment variable TERM not set` on Neovim nightly.
+          TERM: xterm-256color
+          CHECKS: ${{ matrix.checks }}
+        run: nvim -u spec/checkhealth_init.lua --headless -l .dependencies/nvim-checkhealth/main.lua "$CHECKS" error
 
       # Informational: on nightly the core check always reports a graphics
       # protocol error on a headless runner.
       - name: Run :checkhealth (Neovim core - informational only)
         continue-on-error: true
-        uses: ColinKennedy/nvim-checkhealth-gh-action@9a3c87dc12f99a94407d02756d55b4e510fc436f # v1.1.1
-        with:
-          executable: 'nvim -u "spec/checkhealth_init.lua"'
-          checks: ${{ matrix.core_checks }}
+        shell: bash
+        env:
+          TERM: xterm-256color
+          CHECKS: ${{ matrix.core_checks }}
+        run: nvim -u spec/checkhealth_init.lua --headless -l .dependencies/nvim-checkhealth/main.lua "$CHECKS" error
