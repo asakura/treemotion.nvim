@@ -53,30 +53,30 @@ jobs:
 
     steps:
     - name: Checkout
-      uses: actions/checkout@v7
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
     - name: Setup MSVC
       # the 'luarocks/gh-actions-lua' step requires msvc to build PUC-Rio Lua
       # versions on Windows (LuaJIT will be build using MinGW/gcc).
       if: ${{ matrix.toolchain == 'msvc' }}
-      uses: ilammy/msvc-dev-cmd@v1
+      uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
 
     - name: Install Neovim
-      uses: rhysd/action-setup-vim@v1
+      uses: rhysd/action-setup-vim@febef33995d6649302e9d88dda81e071b68f16a7 # v1
       with:
         neovim: true
         version: ${{ matrix.neovim }}
 
     - name: Install Lua
-      uses: luarocks/gh-actions-lua@v14
+      uses: luarocks/gh-actions-lua@56eba09993704b908cc3c7c2753e630d18cb9696 # v14
       with:
         luaVersion: "${{ matrix.luaVersion }}"
 
     - name: Install LuaRocks
-      uses: luarocks/gh-actions-luarocks@v7
+      uses: luarocks/gh-actions-luarocks@95d2308a0aff36ad31ebadca493ed14853399842 # v7
 
     - name: Cache LuaRocks
-      uses: actions/cache@v6
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
       with:
         path: |
           ~/.luarocks
@@ -92,7 +92,7 @@ jobs:
     # XXX: We need this hack until a better solution is available.
     # Reference: https://github.com/nvim-neorocks/luarocks-tag-release/issues/435
     - name: Expand The Template Rockspec
-      uses: ColinKennedy/luarocks-rockspec-expander@v1.0.1
+      uses: ColinKennedy/luarocks-rockspec-expander@54d46417390ee23b02310b4c69b25e395c489f32 # v1.0.1
       with:
         input: template.rockspec
         output: treemotion.nvim-scm-1.rockspec
@@ -146,13 +146,13 @@ jobs:
 
     steps:
     - name: Checkout
-      uses: actions/checkout@v7
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
     - name: Install Nix
-      uses: DeterminateSystems/nix-installer-action@v23
+      uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
 
     - name: Cache Nix Store
-      uses: DeterminateSystems/magic-nix-cache-action@v15
+      uses: DeterminateSystems/magic-nix-cache-action@84c0677f58dcedf3b91f8223ce36a9ea5b3c84b7 # v15
 
     # Building the packaged plugin runs the busted suite as its
     # `checkPhase`, so a successful build here is the test run.
