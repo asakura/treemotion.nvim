@@ -68,12 +68,14 @@ jobs:
         version: ${{ matrix.neovim }}
 
     - name: Install Lua
-      uses: luarocks/gh-actions-lua@56eba09993704b908cc3c7c2753e630d18cb9696 # v14 # pin-comment: no vX.Y.Z tag upstream
+      # pin-comment: no vX.Y.Z tag upstream
+      uses: luarocks/gh-actions-lua@56eba09993704b908cc3c7c2753e630d18cb9696 # v14
       with:
         luaVersion: "${{ matrix.luaVersion }}"
 
     - name: Install LuaRocks
-      uses: luarocks/gh-actions-luarocks@95d2308a0aff36ad31ebadca493ed14853399842 # v7 # pin-comment: no vX.Y.Z tag upstream
+      # pin-comment: no vX.Y.Z tag upstream
+      uses: luarocks/gh-actions-luarocks@95d2308a0aff36ad31ebadca493ed14853399842 # v7
 
     - name: Cache LuaRocks
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -179,7 +181,8 @@ jobs:
         github-token: ${{ github.token }}
 
     - name: Cache Nix Store
-      uses: DeterminateSystems/magic-nix-cache-action@84c0677f58dcedf3b91f8223ce36a9ea5b3c84b7 # v15 # pin-comment: no vX.Y.Z tag upstream
+      # pin-comment: no vX.Y.Z tag upstream
+      uses: DeterminateSystems/magic-nix-cache-action@84c0677f58dcedf3b91f8223ce36a9ea5b3c84b7 # v15
 
     # Building the packaged plugin runs the busted suite as its
     # `checkPhase`, so a successful build here is the test run.

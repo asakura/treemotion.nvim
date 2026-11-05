@@ -41,7 +41,8 @@ jobs:
           github-token: ${{ github.token }}
 
       - name: Cache Nix Store
-        uses: DeterminateSystems/magic-nix-cache-action@84c0677f58dcedf3b91f8223ce36a9ea5b3c84b7 # v15 # pin-comment: no vX.Y.Z tag upstream
+        # pin-comment: no vX.Y.Z tag upstream
+        uses: DeterminateSystems/magic-nix-cache-action@84c0677f58dcedf3b91f8223ce36a9ea5b3c84b7 # v15
 
       - name: Run llscheck
         run: nix build .#checks.x86_64-linux.llscheck -L
@@ -71,7 +72,8 @@ jobs:
           github-token: ${{ github.token }}
 
       - name: Cache Nix Store
-        uses: DeterminateSystems/magic-nix-cache-action@84c0677f58dcedf3b91f8223ce36a9ea5b3c84b7 # v15 # pin-comment: no vX.Y.Z tag upstream
+        # pin-comment: no vX.Y.Z tag upstream
+        uses: DeterminateSystems/magic-nix-cache-action@84c0677f58dcedf3b91f8223ce36a9ea5b3c84b7 # v15
 
       - name: Run LuaCov
         run: nix run .#coverage-html
