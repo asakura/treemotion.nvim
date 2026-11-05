@@ -49,7 +49,7 @@ jobs:
         run: emmylua_doc_cli --input lua/ --output markdown/generated --mixin markdown/manual
 
       - name: Deploy To GitHub Pages
-        uses: mhausenblas/mkdocs-deploy-gh-pages@d77dd03172e96abbcdb081d8c948224762033653 # 1.26
+        uses: mhausenblas/mkdocs-deploy-gh-pages@d77dd03172e96abbcdb081d8c948224762033653 # 1.26 # pin-comment: no vX.Y.Z tag upstream
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CONFIG_FILE: markdown/generated/mkdocs.yml
@@ -71,7 +71,7 @@ jobs:
           github-token: ${{ github.token }}
 
       - name: Cache Nix Store
-        uses: DeterminateSystems/magic-nix-cache-action@84c0677f58dcedf3b91f8223ce36a9ea5b3c84b7 # v15
+        uses: DeterminateSystems/magic-nix-cache-action@84c0677f58dcedf3b91f8223ce36a9ea5b3c84b7 # v15 # pin-comment: no vX.Y.Z tag upstream
 
       - name: Create API Documentation
         run: nix run .#api-documentation
