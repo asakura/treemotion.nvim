@@ -187,6 +187,13 @@ throwaway scripts.
   `cw` on whitespace, were taken from Neovim's built-in `dw` and `cw` on the
   same text.
 
+## No parser
+
+A buffer whose filetype has no grammar has no leaves to step through, so
+`runner.run` runs the built-in motion with `normal!` (`:help :normal`). Under an
+operator this still gives Vim's own range, because the cursor move is what
+defines the motion.
+
 ## Splitting decisions
 
 - **`@string` counts as prose, not just `@spell`.** tree-sitter-nix's highlight

@@ -3,6 +3,7 @@
 
 local logging = require("mega.logging")
 
+local leaf = require("treemotion._commands.motion.leaf")
 local operator = require("treemotion._commands.motion.operator")
 local position = require("treemotion._commands.motion.position")
 local settings = require("treemotion._commands.motion.settings")
@@ -140,6 +141,13 @@ function M.run(name, count)
     local motion = _get_motion(name, 2)
 
     count = count or 1
+
+    -- Without a grammar there are no leaves, so use Vim's own motion.
+    if not leaf.has_parser() then
+        vim.cmd.normal({ args = { count .. name }, bang = true })
+
+        return
+    end
 
     local start_row, start_column = position.cursor_position()
 
