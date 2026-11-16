@@ -1100,7 +1100,7 @@ describe("motion API - blank gaps inside one leaf/run", function()
 end)
 
 describe("motion API - no parser", function()
-    it("does nothing instead of erroring when the buffer has no treesitter parser", function()
+    it("falls back to the built-in motion when the buffer has no treesitter parser", function()
         local buffer = vim.api.nvim_create_buf(false, true)
         vim.api.nvim_buf_set_lines(buffer, 0, -1, false, { "plain text" })
         vim.api.nvim_set_current_buf(buffer)
@@ -1108,7 +1108,7 @@ describe("motion API - no parser", function()
 
         treemotion.run_motion_w()
 
-        assert.same(0, _get_cursor_column())
+        assert.same(6, _get_cursor_column())
 
         vim.api.nvim_buf_delete(buffer, { force = true })
     end)

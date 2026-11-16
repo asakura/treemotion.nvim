@@ -186,16 +186,34 @@ end
 --- injected content, so highlight-only injections (a C comment injected as
 --- `comment`) don't break a node into marker tokens.
 ---
+--- The current buffer's parser, or `nil` if its filetype has no grammar.
+---
+---@return vim.treesitter.LanguageTree?
+local function _get_parser()
+    -- `get_parser()` returns `nil` on some Neovim versions and errors on others.
+    local success, parser = pcall(vim.treesitter.get_parser, vim.api.nvim_get_current_buf())
+
+    if success and parser then
+        return parser
+    end
+
+    return nil
+end
+
+---@return boolean # Whether the current buffer has a treesitter parser.
+function M.has_parser()
+    return _get_parser() ~= nil
+end
+
 ---@param row integer
 ---@param column integer
 ---@param forward boolean
 ---@return TSNode?
 ---
 function M.leaf_at(row, column, forward)
-    -- `get_parser()` returns `nil` on some Neovim versions and errors on others.
-    local success, parser = pcall(vim.treesitter.get_parser, vim.api.nvim_get_current_buf())
+    local parser = _get_parser()
 
-    if not success or not parser then
+    if not parser then
         return nil
     end
 

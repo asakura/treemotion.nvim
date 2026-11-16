@@ -6,6 +6,10 @@ Notable changes since TreeMotion 0 (in development)
 ===============================================================================
 NEW FEATURES                                     *treemotion-new-features*
 
+- In a buffer without a treesitter parser, every motion falls back to Vim's
+  built-in one (`w`, `e`, `b`, `ge`, `W`, `E`, `B`, `gE`), including under an
+  operator, instead of doing nothing.
+
 - `commands.motion.operator_pending` (off by default) gives operators Vim's
   own ranges. `dw` keeps text the motion skips (`skipped_text`) and stops at
   a line's last word (`stop_at_line_end`), `cw` works like `ce`
